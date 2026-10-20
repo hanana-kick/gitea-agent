@@ -1944,6 +1944,8 @@ func Routes() *web.Router {
 			m.Get("/search", repo.TopicSearch)
 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryRepository))
 		m.Group("/admin/agent", func() {
+			m.Get("/keys", agent.ListAPIKeys)
+
 			m.Get("/providers", agent.ListProviders)
 			m.Post("/providers", bind(agent.CreateProviderOption{}), agent.CreateProvider)
 			m.Group("/providers/{id}", func() {

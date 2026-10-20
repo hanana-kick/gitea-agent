@@ -127,7 +127,7 @@ func Answer(ctx context.Context, ref string, req llm.ChatRequest) (reply, model 
 		if provider == nil {
 			return "", "", ErrModelRefInvalid{}
 		}
-		apiKey := resolveAPIKey(ctx, provider)
+		apiKey := ResolveProviderAPIKey(ctx, provider)
 		if apiKey == "" {
 			return "", "", errors.New("no api key available")
 		}

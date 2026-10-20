@@ -44,13 +44,11 @@
 							</td>
 							<td class="gt-ellipsis tw-max-w-48">{{if .BaseURL}}{{.BaseURL}}{{else}}—{{end}}</td>
 							<td class="gt-ellipsis tw-max-w-32">{{range $i, $h := .HeaderNames}}{{if $i}}, {{end}}{{$h}}{{else}}—{{end}}</td>
-							<td>
-								{{if .EnvKey}}
-									<span data-tooltip-content="{{ctx.Locale.Tr "agent.env_key"}}">{{.EnvKey}}</span>
-								{{else if .HasKey}}
-									{{svg "octicon-key"}}
+							<td class="gt-ellipsis tw-max-w-32">
+								{{if .HasKey}}
+									<span class="flex-text-inline">{{svg "octicon-key"}}{{index $.APIKeyNames .APIKeyID}}</span>
 								{{else}}
-									{{svg "octicon-x"}}
+									<span class="text light-2" data-tooltip-content="{{ctx.Locale.Tr "agent.api_key_none"}}">{{svg "octicon-x"}}</span>
 								{{end}}
 							</td>
 							<td class="tw-whitespace-nowrap">{{DateUtils.AbsoluteShort .CreatedUnix}}</td>

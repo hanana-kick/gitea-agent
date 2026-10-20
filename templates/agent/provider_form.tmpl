@@ -41,73 +41,18 @@
 					<p class="help">{{ctx.Locale.Tr "agent.base_url_fixed_help"}}</p>
 				</div>
 
-				<div class="required grouped field">
-					<label>{{ctx.Locale.Tr "agent.key_source"}}</label>
-					<br>
-					{{if .IsEdit}}
-						<div class="field">
-							<div class="ui radio checkbox">
-								<input type="radio" name="key_source" value="keep" {{if eq .Form.KeySource "keep"}}checked{{end}}>
-								<label>{{ctx.Locale.Tr "agent.key_source_keep"}}</label>
-								<span class="help">
-									{{if .Provider.EnvKey}}
-										{{ctx.Locale.Tr "agent.key_source_keep_env" .Provider.EnvKey}}
-									{{else if .Provider.HasKey}}
-										{{ctx.Locale.Tr "agent.key_source_keep_stored"}}
-									{{else}}
-										{{ctx.Locale.Tr "agent.key_source_keep_none"}}
-									{{end}}
-								</span>
-							</div>
-						</div>
-					{{end}}
-					<div class="field">
-						<div class="ui radio checkbox">
-							<input type="radio" name="key_source" value="api_key" {{if or (eq .Form.KeySource "api_key") (and (not .IsEdit) (ne .Form.KeySource "env_key"))}}checked{{end}}>
-							<label>{{ctx.Locale.Tr "agent.key_source_api_key"}}</label>
-							<span class="help">
-								{{if .IsEdit}}{{ctx.Locale.Tr "agent.key_source_api_key_edit_help"}}{{else}}{{ctx.Locale.Tr "agent.key_source_api_key_help"}}{{end}}
-							</span>
-						</div>
-					</div>
-					<div class="field">
-						<div class="ui radio checkbox">
-							<input type="radio" name="key_source" value="env_key" {{if eq .Form.KeySource "env_key"}}checked{{end}}>
-							<label>{{ctx.Locale.Tr "agent.key_source_env_key"}}</label>
-							<span class="help">{{ctx.Locale.Tr "agent.key_source_env_key_help"}}</span>
-						</div>
-					</div>
-				</div>
-				<div class="field" id="field-api-key">
-					<label for="api_key">{{ctx.Locale.Tr "agent.api_key"}}</label>
-					<input id="api_key" type="password" name="api_key" placeholder="{{ctx.Locale.TrString "agent.api_key_placeholder"}}" autocomplete="new-password">
-				</div>
-				<div class="field tw-hidden" id="field-env-key">
-					<label for="env_key">{{ctx.Locale.Tr "agent.env_key"}}</label>
-					<div class="flex-text-block">
-						<div class="tw-flex-1">
-							<input id="env_key" type="text" name="env_key" value="{{.Form.EnvKey}}" placeholder="{{ctx.Locale.TrString "agent.env_key_placeholder"}}" maxlength="255">
-						</div>
-						{{if .KeySources}}
-							<div class="ui selection dropdown tw-max-w-48">
-								<input type="hidden" id="env_key_pick" value="">
-								<div class="text">{{ctx.Locale.Tr "agent.env_key_pick"}}</div>
-								{{svg "octicon-triangle-down" 14 "dropdown icon"}}
-								<div class="menu">
-									{{range .KeySources}}
-										{{/* data-text keeps the selected label short: the kind is only shown in the menu */}}
-										<div class="item" data-value="{{.Name}}" data-text="{{.Name}}">
-											{{.Name}}
-											<span class="ui basic small label tw-ml-2">
-												{{if eq .Kind "secret"}}{{ctx.Locale.Tr "agent.env_key_kind_secret"}}{{else}}{{ctx.Locale.Tr "agent.env_key_kind_variable"}}{{end}}
-											</span>
-										</div>
-									{{end}}
-								</div>
-							</div>
+				<div class="required field">
+					<label for="api_key_id">{{ctx.Locale.Tr "agent.api_key"}}</label>
+					<select id="api_key_id" name="api_key_id" class="ui dropdown">
+						<option value="">{{ctx.Locale.Tr "agent.api_key_none"}}</option>
+						{{range .APIKeys}}
+							<option value="{{.ID}}"{{if eq .ID $.Form.APIKeyID}} selected{{end}}>{{.Name}}</option>
 						{{end}}
-					</div>
-					<p class="help">{{ctx.Locale.Tr "agent.env_key_help"}}</p>
+					</select>
+					<p class="help">
+						{{ctx.Locale.Tr "agent.api_key_select_help"}}
+						<a href="{{AppSubUrl}}/-/admin/agent/keys">{{ctx.Locale.Tr "agent.api_key_manage"}}</a>
+					</p>
 				</div>
 
 				<div class="required field">
@@ -203,13 +148,6 @@
 				document.getElementById("base-url-fixed").textContent = opt?.dataset.baseUrl || "";
 			};
 
-			// exactly one key source is used
-			const syncKeySource = () => {
-				const chosen = form.querySelector('input[name="key_source"]:checked')?.value;
-				document.getElementById("field-api-key").classList.toggle("tw-hidden", chosen === "env_key" || chosen === "keep");
-				document.getElementById("field-env-key").classList.toggle("tw-hidden", chosen !== "env_key");
-			};
-
 			// filter the fetched models as the user types
 			const filterEl = form.querySelector("#model-filter");
 			const listEl = form.querySelector("#model-list");
@@ -226,21 +164,9 @@
 				emptyEl.classList.toggle("tw-hidden", shown > 0);
 			};
 
-			// the picker only fills the field, so a name can also be typed by hand
-			const picker = form.querySelector("#env_key_pick");
-			if (picker) {
-				picker.addEventListener("change", () => {
-					const picked = picker.value;
-					if (!picked) return;
-					form.querySelector("#env_key").value = picked;
-				});
-			}
-
 			form.querySelector("#provider").addEventListener("change", syncBaseURL);
-			form.querySelectorAll('input[name="key_source"]').forEach((el) => el.addEventListener("change", syncKeySource));
 			filterEl?.addEventListener("input", syncModels);
 			syncBaseURL();
-			syncKeySource();
 			syncModels();
 		})();
 	</script>

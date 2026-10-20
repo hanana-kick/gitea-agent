@@ -113,7 +113,7 @@ func tryMember(ctx context.Context, role *agent_model.ModelGroup, member *agent_
 	}
 
 	target := provider.Name + "/" + member.Model
-	apiKey := resolveAPIKey(ctx, provider)
+	apiKey := ResolveProviderAPIKey(ctx, provider)
 	if apiKey == "" {
 		err := errors.New("no api key available")
 		result.Attempts = append(result.Attempts, RouteAttempt{Role: role.Name, Target: target, Error: err.Error()})

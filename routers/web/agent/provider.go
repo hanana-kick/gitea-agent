@@ -34,9 +34,7 @@ type providerForm struct {
 	Name       string
 	Provider   string
 	BaseURL    string
-	KeySource  string
-	APIKey     string
-	EnvKey     string
+	APIKeyID   int64
 	ManualRaw  string
 	HeadersRaw string
 	Selected   []string
@@ -62,8 +60,14 @@ func editProvidersRedirect(ctx *context.Context) {
 
 // Providers renders the BYOK provider management page.
 func Providers(ctx *context.Context) {
+	names, err := agent_service.APIKeyNames(ctx)
+	if err != nil {
+		ctx.ServerError("APIKeyNames", err)
+		return
+	}
 	ctx.Data["Title"] = ctx.Tr("agent.providers_title")
 	ctx.Data["PageIsAgentProviders"] = true
+	ctx.Data["APIKeyNames"] = names
 
 	page := max(ctx.FormInt("page"), 1)
 	keyword := ctx.FormTrim("q")
@@ -87,7 +91,7 @@ func Providers(ctx *context.Context) {
 
 // ProviderNew renders the form for adding a provider.
 func ProviderNew(ctx *context.Context) {
-	renderProviderForm(ctx, nil, providerForm{KeySource: agent_service.KeySourceAPIKey}, nil, "")
+	renderProviderForm(ctx, nil, providerForm{}, nil, "")
 }
 
 // ProviderNewPost creates a provider from the form.
@@ -106,14 +110,12 @@ func ProviderNewPost(ctx *context.Context) {
 	}
 
 	if _, err := agent_service.CreateProvider(ctx, ctx.Doer.ID, agent_service.ProviderOptions{
-		Name:      form.Name,
-		Provider:  form.Provider,
-		BaseURL:   form.BaseURL,
-		Models:    models,
-		KeySource: form.KeySource,
-		APIKey:    apiKeyFrom(form),
-		EnvKey:    envKeyFrom(form),
-		Headers:   headers,
+		Name:     form.Name,
+		Provider: form.Provider,
+		BaseURL:  form.BaseURL,
+		Models:   models,
+		APIKeyID: form.APIKeyID,
+		Headers:  headers,
 	}); err != nil {
 		renderProviderForm(ctx, nil, form, catalogFrom(ctx), err.Error())
 		return
@@ -143,8 +145,7 @@ func ProviderEdit(ctx *context.Context) {
 		Name:       p.Name,
 		Provider:   p.Provider,
 		BaseURL:    p.BaseURL,
-		KeySource:  agent_service.KeySourceKeep,
-		EnvKey:     p.EnvKey,
+		APIKeyID:   p.APIKeyID,
 		HeadersRaw: agent_service.FormatHeaderLines(p.CustomHeaders()),
 		Selected:   p.ModelIDs(),
 	}, p.Models(), "")
@@ -176,14 +177,12 @@ func ProviderEditPost(ctx *context.Context) {
 	}
 
 	if _, err := agent_service.UpdateProvider(ctx, p.ID, agent_service.ProviderOptions{
-		Name:      form.Name,
-		Provider:  form.Provider,
-		BaseURL:   form.BaseURL,
-		Models:    models,
-		KeySource: form.KeySource,
-		APIKey:    apiKeyFrom(form),
-		EnvKey:    envKeyFrom(form),
-		Headers:   headers,
+		Name:     form.Name,
+		Provider: form.Provider,
+		BaseURL:  form.BaseURL,
+		Models:   models,
+		APIKeyID: form.APIKeyID,
+		Headers:  headers,
 	}); err != nil {
 		renderProviderForm(ctx, p, form, catalogFrom(ctx), err.Error())
 		return
@@ -219,17 +218,16 @@ func fetchModels(ctx *context.Context, p *agent_model.Provider) {
 		return
 	}
 
-	apiKey, envKey := form.APIKey, form.EnvKey
-	// editing a provider with "keep the current key" leaves both fields empty
-	if apiKey == "" && envKey == "" && p != nil {
-		apiKey = agent_service.ResolveProviderAPIKey(ctx, p)
+	// an edit form without a fresh pick keeps the key already bound to the provider
+	apiKeyID := form.APIKeyID
+	if apiKeyID == 0 && p != nil {
+		apiKeyID = p.APIKeyID
 	}
 
 	models, err := agent_service.FetchModels(ctx, agent_service.ModelFetchOptions{
 		Provider: form.Provider,
 		BaseURL:  form.BaseURL,
-		APIKey:   apiKey,
-		EnvKey:   envKey,
+		APIKeyID: apiKeyID,
 		Headers:  headers,
 	})
 	if err != nil {
@@ -282,27 +280,11 @@ func providerFormFrom(ctx *context.Context) providerForm {
 		Name:       ctx.FormTrim("name"),
 		Provider:   ctx.FormTrim("provider"),
 		BaseURL:    ctx.FormTrim("base_url"),
-		KeySource:  ctx.FormTrim("key_source"),
-		APIKey:     ctx.FormTrim("api_key"),
-		EnvKey:     ctx.FormTrim("env_key"),
+		APIKeyID:   ctx.FormInt64("api_key_id"),
 		ManualRaw:  ctx.FormString("manual_models"),
 		HeadersRaw: ctx.FormString("headers"),
 		Selected:   ctx.FormStrings("models"),
 	}
-}
-
-func apiKeyFrom(form providerForm) string {
-	if form.KeySource == agent_service.KeySourceEnvKey {
-		return ""
-	}
-	return form.APIKey
-}
-
-func envKeyFrom(form providerForm) string {
-	if form.KeySource != agent_service.KeySourceEnvKey {
-		return ""
-	}
-	return form.EnvKey
 }
 
 // modelsFrom combines the checked models (named and described via the catalog) with
@@ -337,22 +319,10 @@ func validateProviderForm(ctx *context.Context, form providerForm, models []agen
 		return errors.New(ctx.Locale.TrString("agent.models_required"))
 	}
 
-	switch form.KeySource {
-	case agent_service.KeySourceKeep:
-		if p == nil {
-			return errors.New(ctx.Locale.TrString("agent.key_source_required"))
+	if form.APIKeyID != 0 {
+		if _, err := agent_service.GetAPIKey(ctx, form.APIKeyID); err != nil {
+			return errors.New(ctx.Locale.TrString("agent.api_key_invalid"))
 		}
-	case agent_service.KeySourceEnvKey:
-		if form.EnvKey == "" {
-			return errors.New(ctx.Locale.TrString("agent.env_key_required"))
-		}
-	case agent_service.KeySourceAPIKey:
-		// an empty key is fine on edit when one is already stored
-		if form.APIKey == "" && (p == nil || p.APIKeyEnc == "") {
-			return errors.New(ctx.Locale.TrString("agent.api_key_required"))
-		}
-	default:
-		return errors.New(ctx.Locale.TrString("agent.key_source_required"))
 	}
 	return nil
 }
@@ -390,10 +360,6 @@ func renderProviderForm(ctx *context.Context, p *agent_model.Provider, form prov
 	if form.Provider == "" && len(providerTypes) > 0 {
 		form.Provider = providerTypes[0].Type
 	}
-	if form.KeySource == "" {
-		form.KeySource = agent_service.KeySourceAPIKey
-	}
-
 	isEdit := p != nil
 	formAction := providersURL + "/new"
 	fetchAction := formAction + "/models"
@@ -405,7 +371,12 @@ func renderProviderForm(ctx *context.Context, p *agent_model.Provider, form prov
 	ctx.Data["Title"] = ctx.Tr("agent.add_provider")
 	ctx.Data["PageIsAgentProviders"] = true
 	ctx.Data["ProviderTypes"] = providerTypes
-	ctx.Data["KeySources"] = agent_service.KeySources(ctx)
+	keys, err := agent_service.ListAPIKeys(ctx)
+	if err != nil {
+		ctx.ServerError("ListAPIKeys", err)
+		return
+	}
+	ctx.Data["APIKeys"] = keys
 	ctx.Data["Form"] = form
 	ctx.Data["Catalog"] = catalog
 	ctx.Data["CatalogEncoded"] = encodeCatalog(catalog)

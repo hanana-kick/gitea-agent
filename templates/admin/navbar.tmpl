@@ -96,6 +96,9 @@
 				<a class="{{if .PageIsAgentProviders}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/providers">
 					{{ctx.Locale.Tr "agent.providers_title"}}
 				</a>
+				<a class="{{if .PageIsAgentAPIKeys}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/keys">
+					{{ctx.Locale.Tr "agent.api_keys_title"}}
+				</a>
 				<a class="{{if .PageIsAgentModelGroups}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/groups">
 					{{ctx.Locale.Tr "agent.groups_title"}}
 				</a>

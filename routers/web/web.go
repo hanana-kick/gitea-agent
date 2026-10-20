@@ -934,6 +934,11 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			m.Post("/providers/{id}/delete", agent_web.ProviderDelete)
 			m.Post("/providers/{id}/test", agent_web.ProviderTest)
 
+			m.Get("/keys", agent_web.APIKeys)
+			m.Post("/keys/new", agent_web.APIKeyNewPost)
+			m.Combo("/keys/{id}").Get(agent_web.APIKey).Post(agent_web.APIKeyPost)
+			m.Post("/keys/{id}/delete", agent_web.APIKeyDelete)
+
 			m.Get("/groups", agent_web.ModelGroups)
 			m.Combo("/groups/new").Get(agent_web.ModelGroupNew).Post(agent_web.ModelGroupNewPost)
 			m.Combo("/groups/{id}/edit").Get(agent_web.ModelGroupEdit).Post(agent_web.ModelGroupEditPost)

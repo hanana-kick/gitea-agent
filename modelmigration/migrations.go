@@ -434,6 +434,7 @@ func prepareMigrationTasks() []*migration {
 		newMigration(358, "Add agent_model_group tables", v28.AddAgentModelGroupTables),
 		newMigration(359, "Add agent conversation and message tables", v28.AddAgentConversationTables),
 		newMigration(360, "Add agent run table and session model binding", v28.AddAgentRunTable),
+		newMigration(361, "Move provider credentials into agent_api_key", v28.AddAgentAPIKeyTable),
 	}
 	return preparedMigrations
 }

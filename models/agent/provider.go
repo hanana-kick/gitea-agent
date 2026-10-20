@@ -41,28 +41,18 @@ type Provider struct {
 	Provider string `xorm:"NOT NULL"` // openai, openrouter, nvidia, opencode
 	BaseURL  string // endpoint in use; resolved from the provider type when unset
 	// Model is the first of Models, kept as a plain column for API clients and tests.
-	Model       string             `xorm:"NOT NULL"`
-	ModelsJSON  string             `xorm:"TEXT"`              // selected models as a JSON array
-	APIKeyEnc   string             `xorm:"LONGTEXT NOT NULL"` // encrypted API key
-	EnvKey      string             `xorm:"TEXT"`              // Actions secret/variable or environment variable holding the key
-	HeadersJSON string             `xorm:"TEXT"`              // optional extra request headers as a JSON object
-	HasKey      bool               `xorm:"-"`                 // computed: a key source is configured
+	Model      string `xorm:"NOT NULL"`
+	ModelsJSON string `xorm:"TEXT"` // selected models as a JSON array
+	// APIKeyID points at the credential in agent_api_key; 0 means none is bound.
+	APIKeyID    int64              `xorm:"INDEX NOT NULL DEFAULT 0"`
+	HeadersJSON string             `xorm:"TEXT"` // optional extra request headers as a JSON object
+	HasKey      bool               `xorm:"-"`    // computed: a key is bound
 	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
 	UpdatedUnix timeutil.TimeStamp `xorm:"updated NOT NULL"`
 }
 
 func (Provider) TableName() string {
 	return "agent_provider"
-}
-
-// GetEnvKey returns the Actions secret/variable name configured for this provider, if any.
-func (p *Provider) GetEnvKey() string {
-	return p.EnvKey
-}
-
-// SetEnvKey sets the name of the Actions secret/variable holding the API key.
-func (p *Provider) SetEnvKey(envKey string) {
-	p.EnvKey = envKey
 }
 
 // Models returns the selected models; an empty selection falls back to Model.

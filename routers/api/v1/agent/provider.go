@@ -33,9 +33,9 @@ type ProviderResponse struct {
 	HasKey   bool                  `json:"has_key"`
 	// HeaderNames lists configured custom request header names; values are never returned.
 	HeaderNames []string `json:"header_names"`
-	// EnvKey is the environment variable name used for the API key (if any).
-	EnvKey  string `json:"env_key"`
-	Created int64  `json:"created"`
+	APIKeyID    int64    `json:"api_key_id"`
+	APIKeyName  string   `json:"api_key_name"`
+	Created     int64    `json:"created"`
 }
 
 // CreateProviderOption is the request body for creating a provider.
@@ -45,9 +45,8 @@ type CreateProviderOption struct {
 	BaseURL  string                `json:"base_url"`
 	Model    string                `json:"model"` // single-model shorthand, superseded by Models
 	Models   []ProviderModelOption `json:"models"`
-	APIKey   string                `json:"api_key"`
+	APIKeyID int64                 `json:"api_key_id"`
 	Headers  map[string]string     `json:"headers"`
-	EnvKey   string                `json:"env_key"`
 }
 
 // UpdateProviderOption is the request body for updating a provider.
@@ -57,9 +56,8 @@ type UpdateProviderOption struct {
 	BaseURL  string                `json:"base_url"`
 	Model    string                `json:"model"` // single-model shorthand, superseded by Models
 	Models   []ProviderModelOption `json:"models"`
-	APIKey   string                `json:"api_key"`
+	APIKeyID int64                 `json:"api_key_id"`
 	Headers  map[string]string     `json:"headers"`
-	EnvKey   string                `json:"env_key"`
 }
 
 // ListProviders returns all providers of this instance.
@@ -72,7 +70,7 @@ func ListProviders(ctx *context.APIContext) {
 
 	list := make([]*ProviderResponse, 0, len(providers))
 	for _, p := range providers {
-		list = append(list, toResponse(p))
+		list = append(list, toResponse(ctx, p))
 	}
 	ctx.JSON(http.StatusOK, struct {
 		List  []*ProviderResponse `json:"list"`
@@ -92,7 +90,7 @@ func GetProvider(ctx *context.APIContext) {
 		}
 		return
 	}
-	ctx.JSON(http.StatusOK, toResponse(p))
+	ctx.JSON(http.StatusOK, toResponse(ctx, p))
 }
 
 // CreateProvider creates a new LLM provider.
@@ -102,10 +100,6 @@ func CreateProvider(ctx *context.APIContext) {
 		return
 	}
 
-	if form.APIKey == "" && form.EnvKey == "" {
-		ctx.APIError(http.StatusBadRequest, "either api_key or env_key must be provided")
-		return
-	}
 	models := toModels(form.Models, form.Model)
 	if len(models) == 0 {
 		ctx.APIError(http.StatusBadRequest, "at least one model must be provided")
@@ -121,9 +115,8 @@ func CreateProvider(ctx *context.APIContext) {
 		Provider: form.Provider,
 		BaseURL:  form.BaseURL,
 		Models:   models,
-		APIKey:   form.APIKey,
+		APIKeyID: form.APIKeyID,
 		Headers:  form.Headers,
-		EnvKey:   form.EnvKey,
 	})
 	if err != nil {
 		if errors.Is(err, agent_service.ErrUnsupportedProvider{}) {
@@ -133,7 +126,7 @@ func CreateProvider(ctx *context.APIContext) {
 		}
 		return
 	}
-	ctx.JSON(http.StatusCreated, toResponse(p))
+	ctx.JSON(http.StatusCreated, toResponse(ctx, p))
 }
 
 // UpdateProvider updates an existing LLM provider.
@@ -155,9 +148,8 @@ func UpdateProvider(ctx *context.APIContext) {
 		Provider: form.Provider,
 		BaseURL:  form.BaseURL,
 		Models:   models,
-		APIKey:   form.APIKey,
+		APIKeyID: form.APIKeyID,
 		Headers:  form.Headers,
-		EnvKey:   form.EnvKey,
 	})
 	if err != nil {
 		if errors.Is(err, agent_model.ErrProviderNotFound{}) {
@@ -169,7 +161,7 @@ func UpdateProvider(ctx *context.APIContext) {
 		}
 		return
 	}
-	ctx.JSON(http.StatusOK, toResponse(p))
+	ctx.JSON(http.StatusOK, toResponse(ctx, p))
 }
 
 // DeleteProvider deletes an LLM provider.
@@ -218,8 +210,14 @@ func toModels(models []ProviderModelOption, single string) []agent_model.Provide
 	return agent_model.NormalizeModels(out)
 }
 
-// toResponse converts a Provider model to a public response (secrets masked).
-func toResponse(p *agent_model.Provider) *ProviderResponse {
+// toResponse converts a Provider model to a public response. The credential itself is never
+// part of a response; only the name of the key it uses.
+func toResponse(ctx *context.APIContext, p *agent_model.Provider) *ProviderResponse {
+	names, err := agent_service.APIKeyNames(ctx)
+	if err != nil {
+		ctx.APIErrorInternal(err)
+		return nil
+	}
 	models := p.Models()
 	modelOptions := make([]ProviderModelOption, 0, len(models))
 	for _, m := range models {
@@ -232,9 +230,10 @@ func toResponse(p *agent_model.Provider) *ProviderResponse {
 		BaseURL:     p.BaseURL,
 		Model:       p.Model,
 		Models:      modelOptions,
-		HasKey:      p.APIKeyEnc != "" || p.EnvKey != "",
+		HasKey:      p.APIKeyID != 0,
 		HeaderNames: p.HeaderNames(),
-		EnvKey:      p.EnvKey,
+		APIKeyID:    p.APIKeyID,
+		APIKeyName:  names[p.APIKeyID],
 		Created:     int64(p.CreatedUnix),
 	}
 }
