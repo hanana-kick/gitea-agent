@@ -27,6 +27,7 @@ import (
 	"gitea.dev/modules/web/types"
 	"gitea.dev/routers/common"
 	"gitea.dev/routers/web/admin"
+	agent_web "gitea.dev/routers/web/agent"
 	"gitea.dev/routers/web/auth"
 	"gitea.dev/routers/web/devtest"
 	"gitea.dev/routers/web/explore"
@@ -908,6 +909,23 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			addSettingsVariablesRoutes()
 			addSettingsScopedWorkflowsRoutes()
 			m.Get("/job_queue", shared_actions.JobQueue)
+		})
+		m.Group("/agent", func() {
+			m.Get("/providers", agent_web.Providers)
+			m.Combo("/providers/new").Get(agent_web.ProviderNew).Post(agent_web.ProviderNewPost)
+			m.Get("/providers/new/models", agent_web.ProviderNewModelsRedirect)
+			m.Post("/providers/new/models", agent_web.ProviderNewFetchModels)
+			m.Combo("/providers/{id}/edit").Get(agent_web.ProviderEdit).Post(agent_web.ProviderEditPost)
+			m.Get("/providers/{id}/edit/models", agent_web.ProviderEditModelsRedirect)
+			m.Post("/providers/{id}/edit/models", agent_web.ProviderEditFetchModels)
+			m.Post("/providers/{id}/delete", agent_web.ProviderDelete)
+			m.Post("/providers/{id}/test", agent_web.ProviderTest)
+
+			m.Get("/groups", agent_web.ModelGroups)
+			m.Combo("/groups/new").Get(agent_web.ModelGroupNew).Post(agent_web.ModelGroupNewPost)
+			m.Combo("/groups/{id}/edit").Get(agent_web.ModelGroupEdit).Post(agent_web.ModelGroupEditPost)
+			m.Post("/groups/{id}/delete", agent_web.ModelGroupDelete)
+			m.Post("/groups/{id}/test", agent_web.ModelGroupTest)
 		})
 	}, adminReq, ctxDataSet(reqctx.ContextData{"EnableOAuth2": setting.OAuth2.Enabled, "EnablePackages": setting.Packages.Enabled}))
 	// ***** END: Admin *****

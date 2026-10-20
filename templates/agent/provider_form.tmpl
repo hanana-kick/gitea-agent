@@ -1,0 +1,247 @@
+{{template "admin/layout_head" (dict "pageClass" "admin new agent")}}
+	<div class="admin-setting-content">
+		<h4 class="ui top attached header">
+			{{if .IsEdit}}{{ctx.Locale.Tr "agent.edit_provider"}}{{else}}{{ctx.Locale.Tr "agent.add_provider"}}{{end}}
+		</h4>
+		<div class="ui attached segment">
+			{{if .ErrorMsg}}
+				<div class="ui error message">{{.ErrorMsg}}</div>
+			{{end}}
+			{{if .Notice}}
+				<div class="ui positive message">{{.Notice}}</div>
+			{{end}}
+			{{/* field order: name, template, base URL, key source, models, custom headers */}}
+			<form class="ui form" id="provider-new-form" action="{{.FormAction}}" method="post">
+				{{if .IsEdit}}<input type="hidden" name="provider_id" value="{{.Provider.ID}}">{{end}}
+				<div class="required field">
+					<label for="name">{{ctx.Locale.Tr "agent.provider_name"}}</label>
+					<input id="name" type="text" name="name" value="{{.Form.Name}}" placeholder="{{ctx.Locale.TrString "agent.provider_name_placeholder"}}" autofocus required maxlength="255">
+				</div>
+
+				<div class="required field">
+					<label for="provider">{{ctx.Locale.Tr "agent.provider_template"}}</label>
+					<select class="ui selection dropdown" id="provider" name="provider" required>
+						{{range .ProviderTypes}}
+							<option value="{{.Type}}" data-base-url="{{.DefaultBaseURL}}" data-requires-base-url="{{.RequiresBaseURL}}" {{if eq .Type $.Form.Provider}}selected{{end}}>{{ctx.Locale.Tr (printf "agent.provider_%s" .Type)}}</option>
+						{{end}}
+					</select>
+				</div>
+
+				<div class="required field" id="field-base-url">
+					<label for="base_url">{{ctx.Locale.Tr "agent.base_url"}}</label>
+					<input id="base_url" type="text" name="base_url" value="{{.Form.BaseURL}}" placeholder="{{ctx.Locale.TrString "agent.base_url_placeholder"}}" maxlength="255">
+					<p class="help" id="base-url-help">{{ctx.Locale.Tr "agent.base_url_help"}}</p>
+				</div>
+				<div class="field tw-hidden" id="field-base-url-fixed">
+					<label>{{ctx.Locale.Tr "agent.base_url"}}</label>
+					<div class="tw-flex tw-items-center tw-gap-2">
+						<code id="base-url-fixed"></code>
+						<span class="ui basic small label">{{ctx.Locale.Tr "agent.fixed"}}</span>
+					</div>
+					<p class="help">{{ctx.Locale.Tr "agent.base_url_fixed_help"}}</p>
+				</div>
+
+				<div class="required grouped field">
+					<label>{{ctx.Locale.Tr "agent.key_source"}}</label>
+					<br>
+					{{if .IsEdit}}
+						<div class="field">
+							<div class="ui radio checkbox">
+								<input type="radio" name="key_source" value="keep" {{if eq .Form.KeySource "keep"}}checked{{end}}>
+								<label>{{ctx.Locale.Tr "agent.key_source_keep"}}</label>
+								<span class="help">
+									{{if .Provider.EnvKey}}
+										{{ctx.Locale.Tr "agent.key_source_keep_env" .Provider.EnvKey}}
+									{{else if .Provider.HasKey}}
+										{{ctx.Locale.Tr "agent.key_source_keep_stored"}}
+									{{else}}
+										{{ctx.Locale.Tr "agent.key_source_keep_none"}}
+									{{end}}
+								</span>
+							</div>
+						</div>
+					{{end}}
+					<div class="field">
+						<div class="ui radio checkbox">
+							<input type="radio" name="key_source" value="api_key" {{if or (eq .Form.KeySource "api_key") (and (not .IsEdit) (ne .Form.KeySource "env_key"))}}checked{{end}}>
+							<label>{{ctx.Locale.Tr "agent.key_source_api_key"}}</label>
+							<span class="help">
+								{{if .IsEdit}}{{ctx.Locale.Tr "agent.key_source_api_key_edit_help"}}{{else}}{{ctx.Locale.Tr "agent.key_source_api_key_help"}}{{end}}
+							</span>
+						</div>
+					</div>
+					<div class="field">
+						<div class="ui radio checkbox">
+							<input type="radio" name="key_source" value="env_key" {{if eq .Form.KeySource "env_key"}}checked{{end}}>
+							<label>{{ctx.Locale.Tr "agent.key_source_env_key"}}</label>
+							<span class="help">{{ctx.Locale.Tr "agent.key_source_env_key_help"}}</span>
+						</div>
+					</div>
+				</div>
+				<div class="field" id="field-api-key">
+					<label for="api_key">{{ctx.Locale.Tr "agent.api_key"}}</label>
+					<input id="api_key" type="password" name="api_key" placeholder="{{ctx.Locale.TrString "agent.api_key_placeholder"}}" autocomplete="new-password">
+				</div>
+				<div class="field tw-hidden" id="field-env-key">
+					<label for="env_key">{{ctx.Locale.Tr "agent.env_key"}}</label>
+					<div class="flex-text-block">
+						<div class="tw-flex-1">
+							<input id="env_key" type="text" name="env_key" value="{{.Form.EnvKey}}" placeholder="{{ctx.Locale.TrString "agent.env_key_placeholder"}}" maxlength="255">
+						</div>
+						{{if .KeySources}}
+							<div class="ui selection dropdown tw-max-w-48">
+								<input type="hidden" id="env_key_pick" value="">
+								<div class="text">{{ctx.Locale.Tr "agent.env_key_pick"}}</div>
+								{{svg "octicon-triangle-down" 14 "dropdown icon"}}
+								<div class="menu">
+									{{range .KeySources}}
+										{{/* data-text keeps the selected label short: the kind is only shown in the menu */}}
+										<div class="item" data-value="{{.Name}}" data-text="{{.Name}}">
+											{{.Name}}
+											<span class="ui basic small label tw-ml-2">
+												{{if eq .Kind "secret"}}{{ctx.Locale.Tr "agent.env_key_kind_secret"}}{{else}}{{ctx.Locale.Tr "agent.env_key_kind_variable"}}{{end}}
+											</span>
+										</div>
+									{{end}}
+								</div>
+							</div>
+						{{end}}
+					</div>
+					<p class="help">{{ctx.Locale.Tr "agent.env_key_help"}}</p>
+				</div>
+
+				<div class="required field">
+					<label>{{ctx.Locale.Tr "agent.models"}}</label>
+					<input type="hidden" name="model_catalog" value="{{.CatalogEncoded}}">
+					{{/* toolbar: filter on the left, fetch action on the right */}}
+					<div class="flex-text-block tw-my-2">
+						<div class="tw-flex-1">
+							{{if .Catalog}}
+								<input type="search" id="model-filter" placeholder="{{ctx.Locale.TrString "agent.models_filter_placeholder"}}" autocomplete="off" aria-label="{{ctx.Locale.Tr "agent.models_filter"}}">
+							{{end}}
+						</div>
+						<button type="submit" class="ui button" formaction="{{.FetchAction}}" formnovalidate>{{ctx.Locale.Tr "agent.models_fetch"}}</button>
+					</div>
+					{{if .Catalog}}
+						{{/* no height utilities exist in the tw- set, so keep these two inline */}}
+						<div id="model-list" class="tw-flex tw-flex-col tw-gap-1 tw-overflow-auto tw-border tw-border-secondary tw-rounded tw-p-2 tw-mb-2" style="min-height: 6rem; max-height: 15rem">
+							{{range .Catalog}}
+								<div class="ui checkbox" data-model="{{.DisplayName}} {{.ID}}">
+									<input type="checkbox" name="models" value="{{.ID}}" {{if $.Form.HasSelected .ID}}checked{{end}}>
+									<label>
+										<strong>{{.DisplayName}}</strong>
+										{{if ne .Name .ID}}<span class="tw-text-text-light tw-ml-2">{{.ID}}</span>{{end}}
+										{{template "agent/model_inputs" .Inputs}}
+									</label>
+								</div>
+							{{end}}
+							<div class="tw-hidden tw-text-text-light" id="model-list-empty">{{ctx.Locale.Tr "agent.models_no_match"}}</div>
+						</div>
+					{{end}}
+					{{/* nested so the required marker of the models field does not apply */}}
+					<div class="tw-mt-2">
+						<label for="manual_models">{{ctx.Locale.Tr "agent.models_manual"}}</label>
+						<textarea id="manual_models" name="manual_models" rows="3" placeholder="{{ctx.Locale.TrString "agent.models_manual_placeholder"}}">{{.Form.ManualRaw}}</textarea>
+						<p class="help">{{ctx.Locale.Tr "agent.models_help"}}</p>
+					</div>
+				</div>
+
+				<div class="field">
+					<label for="headers">{{ctx.Locale.Tr "agent.headers"}}</label>
+					<textarea id="headers" name="headers" rows="3" placeholder="{{ctx.Locale.TrString "agent.headers_placeholder"}}">{{.Form.HeadersRaw}}</textarea>
+					<p class="help">{{ctx.Locale.Tr "agent.headers_help"}}</p>
+				</div>
+
+				<div class="field">
+					<button type="submit" class="ui primary button">
+						{{if .IsEdit}}{{ctx.Locale.Tr "save"}}{{else}}{{ctx.Locale.Tr "agent.add_provider"}}{{end}}
+					</button>
+					<a class="ui button" href="{{.CancelLink}}">{{ctx.Locale.Tr "cancel"}}</a>
+				</div>
+			</form>
+		</div>
+
+		<h4 class="ui top attached header">
+			{{ctx.Locale.Tr "agent.provider_defaults"}}
+		</h4>
+		<div class="ui attached table segment">
+			<table class="ui very basic table unstackable">
+				<thead>
+					<tr>
+						<th>{{ctx.Locale.Tr "agent.provider_template"}}</th>
+						<th>{{ctx.Locale.Tr "agent.base_url"}}</th>
+						<th>{{ctx.Locale.Tr "agent.fixed_headers"}}</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .ProviderTypes}}
+						<tr>
+							<td>{{ctx.Locale.Tr (printf "agent.provider_%s" .Type)}}</td>
+							<td>
+								{{if .RequiresBaseURL}}{{ctx.Locale.Tr "agent.base_url_user_supplied"}}{{else}}{{.DefaultBaseURL}}{{end}}
+							</td>
+							<td>{{range $i, $h := .FixedHeaders}}{{if $i}}, {{end}}{{$h}}{{else}}—{{end}}</td>
+						</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+	</div>
+
+	<script nonce="{{ctx.CspScriptNonce}}">
+		(() => {
+			const form = document.getElementById("provider-new-form");
+			if (!form) return;
+
+			// the template decides whether the base URL is typed in or fixed
+			const syncBaseURL = () => {
+				const opt = form.querySelector("#provider").selectedOptions[0];
+				const requires = opt?.dataset.requiresBaseUrl === "true";
+				document.getElementById("field-base-url").classList.toggle("tw-hidden", !requires);
+				document.getElementById("base_url").required = requires;
+				document.getElementById("field-base-url-fixed").classList.toggle("tw-hidden", requires);
+				document.getElementById("base-url-fixed").textContent = opt?.dataset.baseUrl || "";
+			};
+
+			// exactly one key source is used
+			const syncKeySource = () => {
+				const chosen = form.querySelector('input[name="key_source"]:checked')?.value;
+				document.getElementById("field-api-key").classList.toggle("tw-hidden", chosen === "env_key" || chosen === "keep");
+				document.getElementById("field-env-key").classList.toggle("tw-hidden", chosen !== "env_key");
+			};
+
+			// filter the fetched models as the user types
+			const filterEl = form.querySelector("#model-filter");
+			const listEl = form.querySelector("#model-list");
+			const emptyEl = form.querySelector("#model-list-empty");
+			const syncModels = () => {
+				if (!listEl) return;
+				const query = filterEl.value.trim().toLowerCase();
+				let shown = 0;
+				for (const row of listEl.querySelectorAll("[data-model]")) {
+					const match = !query || row.dataset.model.toLowerCase().includes(query);
+					row.classList.toggle("tw-hidden", !match);
+					if (match) shown++;
+				}
+				emptyEl.classList.toggle("tw-hidden", shown > 0);
+			};
+
+			// the picker only fills the field, so a name can also be typed by hand
+			const picker = form.querySelector("#env_key_pick");
+			if (picker) {
+				picker.addEventListener("change", () => {
+					const picked = picker.value;
+					if (!picked) return;
+					form.querySelector("#env_key").value = picked;
+				});
+			}
+
+			form.querySelector("#provider").addEventListener("change", syncBaseURL);
+			form.querySelectorAll('input[name="key_source"]').forEach((el) => el.addEventListener("change", syncKeySource));
+			filterEl?.addEventListener("input", syncModels);
+			syncBaseURL();
+			syncKeySource();
+			syncModels();
+		})();
+	</script>
+{{template "admin/layout_footer" .}}

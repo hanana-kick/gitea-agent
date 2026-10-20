@@ -90,6 +90,17 @@
 			</div>
 		</details>
 		{{end}}
+		<details class="item" {{if or .PageIsAgentProviders .PageIsAgentModelGroups}}open{{end}}>
+			<summary>{{ctx.Locale.Tr "admin.agent_providers"}}</summary>
+			<div class="menu">
+				<a class="{{if .PageIsAgentProviders}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/providers">
+					{{ctx.Locale.Tr "agent.providers_title"}}
+				</a>
+				<a class="{{if .PageIsAgentModelGroups}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/groups">
+					{{ctx.Locale.Tr "agent.groups_title"}}
+				</a>
+			</div>
+		</details>
 		<details class="item" {{if or .PageIsAdminConfig}}open{{end}}>
 			<summary>{{ctx.Locale.Tr "admin.config"}}</summary>
 			<div class="menu">

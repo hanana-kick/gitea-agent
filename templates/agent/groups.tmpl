@@ -1,0 +1,65 @@
+{{template "admin/layout_head" (dict "pageClass" "admin agent")}}
+	<div class="admin-setting-content">
+		<h4 class="ui top attached header">
+			{{ctx.Locale.Tr "agent.groups_title"}} ({{ctx.Locale.Tr "admin.total" .Total}})
+			<div class="ui right">
+				<a class="ui primary tiny button" href="{{AppSubUrl}}/-/admin/agent/groups/new">{{ctx.Locale.Tr "agent.group_add"}}</a>
+			</div>
+		</h4>
+		<div class="ui attached segment">
+			<form class="ui form ignore-dirty flex-text-block">
+				<div class="tw-flex-1">
+					{{template "shared/search/combo" dict "Value" .Keyword "Placeholder" (ctx.Locale.Tr "agent.group_search_placeholder")}}
+				</div>
+			</form>
+		</div>
+		<div class="ui attached table segment">
+			<table class="ui very basic selectable table unstackable">
+				<thead>
+					<tr>
+						<th>{{ctx.Locale.Tr "agent.group_name"}}</th>
+						<th>{{ctx.Locale.Tr "agent.group_id"}}</th>
+						<th>{{ctx.Locale.Tr "agent.group_description"}}</th>
+						<th>{{ctx.Locale.Tr "agent.group_mode"}}</th>
+						<th>{{ctx.Locale.Tr "agent.group_members"}}</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Roles}}
+						<tr>
+							<td class="tw-whitespace-nowrap">{{.Name}}</td>
+							<td class="tw-whitespace-nowrap"><code>{{.Slug}}</code></td>
+							<td class="gt-ellipsis tw-max-w-96">{{.Description}}</td>
+							<td class="tw-whitespace-nowrap">
+								{{if eq .ModeOrDefault "round_robin"}}{{ctx.Locale.Tr "agent.group_mode_round_robin"}}{{else}}{{ctx.Locale.Tr "agent.group_mode_fallback"}}{{end}}
+							</td>
+							<td>{{index $.MemberCounts .ID}}</td>
+							<td>
+								<div class="tw-flex tw-gap-2">
+									<a href="{{AppSubUrl}}/-/admin/agent/groups/{{.ID}}/edit" data-tooltip-content="{{ctx.Locale.Tr "agent.edit"}}">{{svg "octicon-pencil"}}</a>
+									<button type="button" class="btn interact-fg link-action"
+										data-url="{{AppSubUrl}}/-/admin/agent/groups/{{.ID}}/test"
+										data-modal-confirm-header="{{ctx.Locale.Tr "agent.group_test"}}"
+										data-modal-confirm-content="{{ctx.Locale.Tr "agent.group_test_confirm" .Name}}"
+										data-tooltip-content="{{ctx.Locale.Tr "agent.group_test"}}"
+									>{{svg "octicon-sync"}}</button>
+									<button type="button" class="btn interact-fg tw-text-red link-action"
+										data-url="{{AppSubUrl}}/-/admin/agent/groups/{{.ID}}/delete"
+										data-modal-confirm-header="{{ctx.Locale.Tr "agent.delete"}}"
+										data-modal-confirm-content="{{ctx.Locale.Tr "agent.group_delete_confirm" .Name}}"
+										data-tooltip-content="{{ctx.Locale.Tr "agent.delete"}}"
+									>{{svg "octicon-trash"}}</button>
+								</div>
+							</td>
+						</tr>
+					{{else}}
+						<tr><td class="tw-text-center" colspan="6">{{ctx.Locale.Tr "no_results_found"}}</td></tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+
+		{{template "base/paginate" .}}
+	</div>
+{{template "admin/layout_footer" .}}

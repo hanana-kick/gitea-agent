@@ -85,6 +85,7 @@ import (
 	"gitea.dev/modules/web/middleware"
 	"gitea.dev/routers/api/v1/activitypub"
 	"gitea.dev/routers/api/v1/admin"
+	"gitea.dev/routers/api/v1/agent"
 	"gitea.dev/routers/api/v1/misc"
 	"gitea.dev/routers/api/v1/notify"
 	"gitea.dev/routers/api/v1/org"
@@ -1942,6 +1943,16 @@ func Routes() *web.Router {
 		m.Group("/topics", func() {
 			m.Get("/search", repo.TopicSearch)
 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryRepository))
+		m.Group("/admin/agent", func() {
+			m.Get("/providers", agent.ListProviders)
+			m.Post("/providers", bind(agent.CreateProviderOption{}), agent.CreateProvider)
+			m.Group("/providers/{id}", func() {
+				m.Get("", agent.GetProvider)
+				m.Put("", bind(agent.UpdateProviderOption{}), agent.UpdateProvider)
+				m.Delete("", agent.DeleteProvider)
+				m.Post("/test", agent.TestProvider)
+			})
+		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryAdmin), reqToken(), reqSiteAdmin())
 	}, sudo())
 
 	return m

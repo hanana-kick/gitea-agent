@@ -10,6 +10,7 @@ import (
 	"runtime"
 
 	"gitea.dev/models"
+	_ "gitea.dev/models/agent" // register AgentProvider model
 	authmodel "gitea.dev/models/auth"
 	"gitea.dev/modules/cache"
 	"gitea.dev/modules/git"
@@ -34,6 +35,7 @@ import (
 	web_routers "gitea.dev/routers/web"
 	actions_service "gitea.dev/services/actions"
 	asymkey_service "gitea.dev/services/asymkey"
+
 	"gitea.dev/services/auth"
 	"gitea.dev/services/auth/source/oauth2"
 	"gitea.dev/services/automerge"

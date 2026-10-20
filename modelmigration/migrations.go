@@ -429,6 +429,9 @@ func prepareMigrationTasks() []*migration {
 		newMigration(353, "Add audit event table", v28.AddAuditEventTable),
 		newMigration(354, "Add Actions job queue indexes", v28.AddActionQueueIndexes),
 		newMigration(355, "Add AutoMerge merged_commit_id column", v28.AddAutoMergeMergedCommitID),
+		newMigration(356, "Add agent_provider table for BYOK LLM provider keys", v28.AddAgentProviderTable),
+		newMigration(357, "Add agent_provider custom headers column", v28.AddAgentProviderHeadersColumn),
+		newMigration(358, "Add agent_model_group tables", v28.AddAgentModelGroupTables),
 	}
 	return preparedMigrations
 }

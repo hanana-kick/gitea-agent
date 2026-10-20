@@ -1,0 +1,84 @@
+{{template "admin/layout_head" (dict "pageClass" "admin agent")}}
+	<div class="admin-setting-content">
+		<h4 class="ui top attached header">
+			{{ctx.Locale.Tr "agent.providers_title"}} ({{ctx.Locale.Tr "admin.total" .Total}})
+			<div class="ui right">
+				<a class="ui primary tiny button" href="{{AppSubUrl}}/-/admin/agent/providers/new">{{ctx.Locale.Tr "agent.add_provider"}}</a>
+			</div>
+		</h4>
+		<div class="ui attached segment">
+			<form class="ui form ignore-dirty flex-text-block">
+				<div class="tw-flex-1">
+					{{template "shared/search/combo" dict "Value" .Keyword "Placeholder" (ctx.Locale.Tr "agent.search_placeholder")}}
+				</div>
+			</form>
+		</div>
+		<div class="ui attached table segment">
+			<table class="ui very basic selectable table unstackable">
+				<thead>
+					<tr>
+						<th>{{ctx.Locale.Tr "agent.name"}}</th>
+						<th>{{ctx.Locale.Tr "agent.provider"}}</th>
+						<th>{{ctx.Locale.Tr "agent.model"}}</th>
+						<th>{{ctx.Locale.Tr "agent.base_url"}}</th>
+						<th>{{ctx.Locale.Tr "agent.headers"}}</th>
+						<th>{{ctx.Locale.Tr "agent.key"}}</th>
+						<th>{{ctx.Locale.Tr "admin.users.created"}}</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Providers}}
+						<tr>
+							<td class="tw-whitespace-nowrap">{{.Name}}</td>
+							<td><span class="ui basic label tw-py-0 tw-align-baseline">{{ctx.Locale.Tr (printf "agent.provider_%s" .Provider)}}</span></td>
+							<td class="tw-max-w-96">
+								<div class="tw-flex tw-flex-col tw-gap-1">
+									{{range .Models}}
+										<div class="gt-ellipsis" data-tooltip-content="{{.DisplayName}} — {{.ID}}">
+											{{.DisplayName}}
+											{{template "agent/model_inputs" .Inputs}}
+										</div>
+									{{end}}
+								</div>
+							</td>
+							<td class="gt-ellipsis tw-max-w-48">{{if .BaseURL}}{{.BaseURL}}{{else}}—{{end}}</td>
+							<td class="gt-ellipsis tw-max-w-32">{{range $i, $h := .HeaderNames}}{{if $i}}, {{end}}{{$h}}{{else}}—{{end}}</td>
+							<td>
+								{{if .EnvKey}}
+									<span data-tooltip-content="{{ctx.Locale.Tr "agent.env_key"}}">{{.EnvKey}}</span>
+								{{else if .HasKey}}
+									{{svg "octicon-key"}}
+								{{else}}
+									{{svg "octicon-x"}}
+								{{end}}
+							</td>
+							<td class="tw-whitespace-nowrap">{{DateUtils.AbsoluteShort .CreatedUnix}}</td>
+							<td>
+								<div class="tw-flex tw-gap-2">
+									<a href="{{AppSubUrl}}/-/admin/agent/providers/{{.ID}}/edit" data-tooltip-content="{{ctx.Locale.Tr "agent.edit"}}">{{svg "octicon-pencil"}}</a>
+									<button type="button" class="btn interact-fg link-action"
+										data-url="{{AppSubUrl}}/-/admin/agent/providers/{{.ID}}/test"
+										data-modal-confirm-header="{{ctx.Locale.Tr "agent.test"}}"
+										data-modal-confirm-content="{{ctx.Locale.Tr "agent.test_confirm" .Name}}"
+										data-tooltip-content="{{ctx.Locale.Tr "agent.test"}}"
+									>{{svg "octicon-sync"}}</button>
+									<button type="button" class="btn interact-fg tw-text-red link-action"
+										data-url="{{AppSubUrl}}/-/admin/agent/providers/{{.ID}}/delete"
+										data-modal-confirm-header="{{ctx.Locale.Tr "agent.delete"}}"
+										data-modal-confirm-content="{{ctx.Locale.Tr "agent.delete_confirm" .Name}}"
+										data-tooltip-content="{{ctx.Locale.Tr "agent.delete"}}"
+									>{{svg "octicon-trash"}}</button>
+								</div>
+							</td>
+						</tr>
+					{{else}}
+						<tr><td class="tw-text-center" colspan="8">{{ctx.Locale.Tr "no_results_found"}}</td></tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+
+		{{template "base/paginate" .}}
+	</div>
+{{template "admin/layout_footer" .}}
