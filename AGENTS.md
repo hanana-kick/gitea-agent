@@ -19,5 +19,4 @@
 - Run single tests with `go test -run '^TestName$' ./modulepath/` for Go, `pnpm exec vitest <path-filter>` for TS and `GITEA_TEST_E2E_FLAGS='<filepath>' make test-e2e` for e2e
 - Write the fewest, fastest tests covering the behavior, extending an existing one where possible. Prefer unit tests where logic is testable in isolation
 - Aim for sub-2s per integration test and sub-4s per e2e test. Wait on a deterministic condition rather than `sleep`, and prefer semantic locators in e2e tests
-- Never push directly to or merge into upstream/main; always create a feature branch and open a PR for human review.
-- All pushes, pulls, and PRs must be made only against `origin` (the user's fork). Agents must never send requests directly to `upstream` (e.g., no `upstream push`, no `upstream PR`, no `upstream pull`). Do not create or interact with branches on `upstream`.
+- `upstream` is read-only: it exists solely for `origin` to fetch updates from. Never push to, pull from, or create branches on `upstream`. All pushes, pulls, and PRs must be made only against `origin` (the user's fork). Agents must not send requests directly to `upstream` (e.g., no `upstream push`, no `upstream PR`, no `upstream pull`); the one allowed operation is `origin` fetching from `upstream`.
