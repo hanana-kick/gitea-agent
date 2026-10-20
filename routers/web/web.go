@@ -580,6 +580,19 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	m.Get("/pulls", reqSignIn, user.Pulls)
 	m.Get("/milestones", reqSignIn, reqMilestonesDashboardPageEnabled, user.Milestones)
 
+	// ***** START: Agent *****
+	m.Group("/-/agent", func() {
+		m.Get("", agent_web.Chat)
+		m.Post("/new", agent_web.ChatSessionNew)
+		m.Get("/{id}", agent_web.ChatSession)
+		m.Get("/{id}/events", agent_web.ChatEvents)
+		m.Post("/{id}/messages", agent_web.ChatMessageNew)
+		m.Post("/{id}/model", agent_web.ChatModelSet)
+		m.Post("/{id}/cancel", agent_web.ChatRunCancel)
+		m.Post("/{id}/delete", agent_web.ChatSessionDelete)
+	}, reqSignIn)
+	// ***** END: Agent *****
+
 	// ***** START: User *****
 	// "user/login" doesn't need signOut, then logged-in users can still access this route for redirection purposes by "/user/login?redirec_to=..."
 	m.Get("/user/login", auth.SignIn)

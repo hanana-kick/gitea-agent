@@ -99,6 +99,16 @@ func GetModelGroupByID(ctx context.Context, id int64) (*agent_model.ModelGroup, 
 	return group, nil
 }
 
+// GetModelGroupBySlug returns the group with the given slug, or nil when there is none.
+func GetModelGroupBySlug(ctx context.Context, slug string) (*agent_model.ModelGroup, error) {
+	group := &agent_model.ModelGroup{}
+	exist, err := db.GetEngine(ctx).Where("slug = ?", slug).Get(group)
+	if err != nil || !exist {
+		return nil, err
+	}
+	return group, nil
+}
+
 // GetModelGroupByName returns a group by its key.
 func GetModelGroupByName(ctx context.Context, name string) (*agent_model.ModelGroup, error) {
 	name = agent_model.NormalizeGroupName(name)

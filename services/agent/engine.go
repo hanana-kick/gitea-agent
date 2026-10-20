@@ -1,0 +1,359 @@
+// Copyright 2026 The Gitea Authors. All rights reserved.
+// SPDX-License-Identifier: MIT
+
+package agent
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"sync"
+	"time"
+
+	agent_model "gitea.dev/models/agent"
+	"gitea.dev/models/db"
+	"gitea.dev/modules/log"
+	"gitea.dev/modules/timeutil"
+	llm "gitea.dev/services/agent/llm"
+)
+
+const (
+	engineWorkers      = 4
+	engineQueueSize    = 256
+	engineRunTimeout   = 10 * time.Minute
+	engineHistoryLimit = 40
+	enginePromptLimit  = 100 * 1024 // cap the transcript handed to the model
+)
+
+// Event names published for one conversation.
+const (
+	EventMessage = "message" // a transcript entry was appended
+	EventRun     = "run"     // a run changed state
+)
+
+// Event is one update for the clients watching a conversation.
+type Event struct {
+	Name string
+	Data any
+}
+
+// RunState is the part of a run that clients need.
+type RunState struct {
+	ID         int64  `json:"id"`
+	Status     string `json:"status"`
+	Error      string `json:"error"`
+	Cancelable bool   `json:"cancelable"`
+}
+
+// RunStateOf renders a run for the clients watching it.
+func RunStateOf(run *agent_model.Run) RunState {
+	return RunState{
+		ID:         run.ID,
+		Status:     run.Status,
+		Error:      run.Error,
+		Cancelable: agent_model.IsRunActive(run.Status),
+	}
+}
+
+// ErrNoActiveRun is returned when there is nothing to cancel.
+type ErrNoActiveRun struct{}
+
+func (ErrNoActiveRun) Error() string { return "no run is active" }
+
+// Is reports whether target is an ErrNoActiveRun.
+func (ErrNoActiveRun) Is(target error) bool {
+	_, ok := target.(ErrNoActiveRun)
+	return ok
+}
+
+// Engine runs agent work outside any request, so a client may disconnect right after
+// sending and the answer is still produced and stored. Work uses a background context
+// because it outlives the request that started it.
+type Engine struct {
+	queue  chan int64
+	broker *eventBroker
+
+	mu      sync.Mutex
+	cancels map[int64]context.CancelFunc // conversation ID -> cancel of the active run
+	locks   map[int64]*sync.Mutex        // serializes the runs of one conversation
+}
+
+var engine = &Engine{
+	queue:   make(chan int64, engineQueueSize),
+	broker:  newEventBroker(),
+	cancels: make(map[int64]context.CancelFunc),
+	locks:   make(map[int64]*sync.Mutex),
+}
+
+// InitEngine recovers the runs a restart interrupted and starts the workers.
+func InitEngine(ctx context.Context) error {
+	if err := recoverRuns(ctx); err != nil {
+		return err
+	}
+	for range engineWorkers {
+		go engine.work()
+	}
+	return nil
+}
+
+// recoverRuns fails the runs that were in flight and re-queues the ones that never started.
+func recoverRuns(ctx context.Context) error {
+	if _, err := db.GetEngine(ctx).
+		Where("status = ?", agent_model.RunStatusRunning).
+		Cols("status", "error", "finished_unix").
+		Update(&agent_model.Run{
+			Status:       agent_model.RunStatusFailed,
+			Error:        "interrupted by a server restart",
+			FinishedUnix: timeutil.TimeStampNow(),
+		}); err != nil {
+		return err
+	}
+
+	runs := make([]*agent_model.Run, 0, 8)
+	if err := db.GetEngine(ctx).Where("status = ?", agent_model.RunStatusQueued).OrderBy("id ASC").Find(&runs); err != nil {
+		return err
+	}
+	for _, run := range runs {
+		engine.enqueue(run.ID)
+	}
+	if len(runs) > 0 {
+		log.Info("Agent engine: re-queued %d run(s) after restart", len(runs))
+	}
+	return nil
+}
+
+// SubmitUserMessage stores a user message and starts a run for it. The caller does not
+// wait for the answer.
+func SubmitUserMessage(ctx context.Context, conversation *agent_model.Conversation, content string) (*agent_model.Run, error) {
+	message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleUser, content)
+	if err != nil {
+		return nil, err
+	}
+	engine.broker.publish(conversation.ID, Event{Name: EventMessage, Data: message.ID})
+
+	run := &agent_model.Run{ConversationID: conversation.ID, Status: agent_model.RunStatusQueued}
+	if err := db.Insert(ctx, run); err != nil {
+		return nil, err
+	}
+	engine.enqueue(run.ID)
+	engine.publishRun(conversation.ID, run)
+	return run, nil
+}
+
+// CancelRun stops the run of a conversation, if one is active.
+func CancelRun(conversationID int64) error {
+	engine.mu.Lock()
+	cancel := engine.cancels[conversationID]
+	engine.mu.Unlock()
+	if cancel == nil {
+		return ErrNoActiveRun{}
+	}
+	cancel()
+	return nil
+}
+
+// ActiveRun returns the run of a conversation that is still going, if any.
+func ActiveRun(ctx context.Context, conversationID int64) (*agent_model.Run, error) {
+	run := &agent_model.Run{}
+	exist, err := db.GetEngine(ctx).
+		Where("conversation_id = ?", conversationID).
+		In("status", []string{agent_model.RunStatusQueued, agent_model.RunStatusRunning}).
+		OrderBy("id DESC").
+		Get(run)
+	if err != nil || !exist {
+		return nil, err
+	}
+	return run, nil
+}
+
+// LatestRun returns the most recent run of a conversation, whatever its state.
+func LatestRun(ctx context.Context, conversationID int64) (*agent_model.Run, error) {
+	run := &agent_model.Run{}
+	exist, err := db.GetEngine(ctx).
+		Where("conversation_id = ?", conversationID).
+		OrderBy("id DESC").
+		Get(run)
+	if err != nil || !exist {
+		return nil, err
+	}
+	return run, nil
+}
+
+// Subscribe attaches to the updates of a conversation. The returned function detaches.
+func Subscribe(conversationID int64) (<-chan Event, func()) {
+	return engine.broker.subscribe(conversationID)
+}
+
+func (e *Engine) enqueue(runID int64) {
+	select {
+	case e.queue <- runID:
+	default:
+		// the queue is full: fail the run loudly instead of losing it
+		ctx := context.Background()
+		if _, err := db.GetEngine(ctx).ID(runID).Cols("status", "error", "finished_unix").
+			Update(&agent_model.Run{Status: agent_model.RunStatusFailed, Error: "the agent queue is full", FinishedUnix: timeutil.TimeStampNow()}); err != nil {
+			log.Error("Agent engine: unable to fail run %d: %v", runID, err)
+		}
+	}
+}
+
+func (e *Engine) work() {
+	for runID := range e.queue {
+		e.execute(runID)
+	}
+}
+
+// execute runs one stored run to completion, whatever the state of its conversation's clients.
+func (e *Engine) execute(runID int64) {
+	ctx := context.Background()
+	run, exist, err := db.GetByID[agent_model.Run](ctx, runID)
+	if err != nil || !exist {
+		log.Error("Agent engine: unable to load run %d: %v", runID, err)
+		return
+	}
+	conversation, exist, err := db.GetByID[agent_model.Conversation](ctx, run.ConversationID)
+	if err != nil || !exist {
+		e.finishRun(ctx, run, agent_model.RunStatusFailed, "the session no longer exists")
+		return
+	}
+
+	lock := e.conversationLock(conversation.ID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), engineRunTimeout)
+	defer cancel()
+	e.setCancel(conversation.ID, cancel)
+	defer e.clearCancel(conversation.ID)
+
+	if _, err := db.GetEngine(ctx).ID(run.ID).Cols("status", "started_unix").
+		Update(&agent_model.Run{Status: agent_model.RunStatusRunning, StartedUnix: timeutil.TimeStampNow()}); err != nil {
+		log.Error("Agent engine: unable to start run %d: %v", run.ID, err)
+		return
+	}
+	run.Status = agent_model.RunStatusRunning
+	e.publishRun(conversation.ID, run)
+
+	reply, model, err := e.answer(runCtx, conversation)
+	if err != nil {
+		status := agent_model.RunStatusFailed
+		reason := err.Error()
+		if errors.Is(runCtx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
+			status = agent_model.RunStatusCanceled
+			reason = ""
+		} else if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			reason = "the model did not answer in time"
+		}
+		e.finishRun(ctx, run, status, reason)
+		return
+	}
+
+	if strings.TrimSpace(reply) == "" {
+		e.finishRun(ctx, run, agent_model.RunStatusFailed, "the model returned an empty answer")
+		return
+	}
+	message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleAssistant, reply)
+	if err != nil {
+		e.finishRun(ctx, run, agent_model.RunStatusFailed, err.Error())
+		return
+	}
+	e.broker.publish(conversation.ID, Event{Name: EventMessage, Data: message.ID})
+
+	run.Model = model
+	e.finishRun(ctx, run, agent_model.RunStatusSucceeded, "")
+}
+
+// answer builds the prompt from the stored transcript and asks the session model.
+func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversation) (string, string, error) {
+	if conversation.ModelRef == "" {
+		return "", "", ErrModelRefInvalid{}
+	}
+	history, err := ListMessages(ctx, conversation.ID)
+	if err != nil {
+		return "", "", err
+	}
+	return Answer(ctx, conversation.ModelRef, llm.ChatRequest{
+		Messages: buildPrompt(ctx, conversation, history),
+	})
+}
+
+func (e *Engine) finishRun(ctx context.Context, run *agent_model.Run, status, reason string) {
+	run.Status = status
+	run.Error = reason
+	run.FinishedUnix = timeutil.TimeStampNow()
+	if _, err := db.GetEngine(ctx).ID(run.ID).
+		Cols("status", "error", "model", "finished_unix").
+		Update(run); err != nil {
+		log.Error("Agent engine: unable to finish run %d: %v", run.ID, err)
+		return
+	}
+	e.publishRun(run.ConversationID, run)
+}
+
+func (e *Engine) publishRun(conversationID int64, run *agent_model.Run) {
+	e.broker.publish(conversationID, Event{Name: EventRun, Data: RunStateOf(run)})
+}
+
+func (e *Engine) setCancel(conversationID int64, cancel context.CancelFunc) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.cancels[conversationID] = cancel
+}
+
+func (e *Engine) clearCancel(conversationID int64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.cancels, conversationID)
+}
+
+func (e *Engine) conversationLock(conversationID int64) *sync.Mutex {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	lock := e.locks[conversationID]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		e.locks[conversationID] = lock
+	}
+	return lock
+}
+
+// eventBroker fans conversation updates out to the clients currently watching them.
+type eventBroker struct {
+	mu   sync.Mutex
+	subs map[int64]map[chan Event]struct{}
+}
+
+func newEventBroker() *eventBroker {
+	return &eventBroker{subs: make(map[int64]map[chan Event]struct{})}
+}
+
+func (b *eventBroker) subscribe(conversationID int64) (<-chan Event, func()) {
+	ch := make(chan Event, 64)
+	b.mu.Lock()
+	if b.subs[conversationID] == nil {
+		b.subs[conversationID] = make(map[chan Event]struct{})
+	}
+	b.subs[conversationID][ch] = struct{}{}
+	b.mu.Unlock()
+
+	return ch, func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if _, ok := b.subs[conversationID][ch]; ok {
+			delete(b.subs[conversationID], ch)
+			close(ch)
+		}
+	}
+}
+
+// publish never blocks: a slow client misses the event and catches up from the transcript.
+func (b *eventBroker) publish(conversationID int64, event Event) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for ch := range b.subs[conversationID] {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
+}

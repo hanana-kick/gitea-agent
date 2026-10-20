@@ -432,6 +432,8 @@ func prepareMigrationTasks() []*migration {
 		newMigration(356, "Add agent_provider table for BYOK LLM provider keys", v28.AddAgentProviderTable),
 		newMigration(357, "Add agent_provider custom headers column", v28.AddAgentProviderHeadersColumn),
 		newMigration(358, "Add agent_model_group tables", v28.AddAgentModelGroupTables),
+		newMigration(359, "Add agent conversation and message tables", v28.AddAgentConversationTables),
+		newMigration(360, "Add agent run table and session model binding", v28.AddAgentRunTable),
 	}
 	return preparedMigrations
 }

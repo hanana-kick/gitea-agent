@@ -10,7 +10,6 @@ import (
 	"runtime"
 
 	"gitea.dev/models"
-	_ "gitea.dev/models/agent" // register AgentProvider model
 	authmodel "gitea.dev/models/auth"
 	"gitea.dev/modules/cache"
 	"gitea.dev/modules/git"
@@ -34,8 +33,8 @@ import (
 	"gitea.dev/routers/private"
 	web_routers "gitea.dev/routers/web"
 	actions_service "gitea.dev/services/actions"
+	agent_service "gitea.dev/services/agent"
 	asymkey_service "gitea.dev/services/asymkey"
-
 	"gitea.dev/services/auth"
 	"gitea.dev/services/auth/source/oauth2"
 	"gitea.dev/services/automerge"
@@ -57,6 +56,8 @@ import (
 	"gitea.dev/services/uinotification"
 	"gitea.dev/services/webhook"
 	websocket_service "gitea.dev/services/websocket"
+
+	_ "gitea.dev/models/agent" // register AgentProvider model
 )
 
 func mustInit(fn func() error) {
@@ -166,6 +167,8 @@ func InitWebInstalled(ctx context.Context) {
 
 	auth.Init()
 	mustInit(svg.Init)
+
+	mustInitCtx(ctx, agent_service.InitEngine)
 
 	mustInitCtx(ctx, actions_service.Init)
 

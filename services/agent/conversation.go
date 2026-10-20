@@ -1,0 +1,300 @@
+// Copyright 2026 The Gitea Authors. All rights reserved.
+// SPDX-License-Identifier: MIT
+
+package agent
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	agent_model "gitea.dev/models/agent"
+	"gitea.dev/models/db"
+	access_model "gitea.dev/models/perm/access"
+	repo_model "gitea.dev/models/repo"
+	unit_model "gitea.dev/models/unit"
+	user_model "gitea.dev/models/user"
+	"gitea.dev/modules/timeutil"
+)
+
+// ErrConversationNotFound is returned when a session does not exist.
+type ErrConversationNotFound struct{}
+
+func (ErrConversationNotFound) Error() string { return "agent session not found" }
+
+// Is reports whether target is an ErrConversationNotFound.
+func (ErrConversationNotFound) Is(target error) bool {
+	_, ok := target.(ErrConversationNotFound)
+	return ok
+}
+
+// ErrConversationDenied is returned when the doer may not use a session.
+type ErrConversationDenied struct{}
+
+func (ErrConversationDenied) Error() string { return "agent session is not accessible" }
+
+// Is reports whether target is an ErrConversationDenied.
+func (ErrConversationDenied) Is(target error) bool {
+	_, ok := target.(ErrConversationDenied)
+	return ok
+}
+
+// ErrResidentUndeletable is returned when someone tries to delete the instance-wide session.
+type ErrResidentUndeletable struct{}
+
+func (ErrResidentUndeletable) Error() string { return "the resident session can not be deleted" }
+
+// Is reports whether target is an ErrResidentUndeletable.
+func (ErrResidentUndeletable) Is(target error) bool {
+	_, ok := target.(ErrResidentUndeletable)
+	return ok
+}
+
+// RepositoryConversations groups the sessions of one repository.
+type RepositoryConversations struct {
+	Repo     *repo_model.Repository
+	Sessions []*agent_model.Conversation
+}
+
+// ConversationList is the sidebar content: the resident session, the server sessions and
+// the repository sessions grouped by repository.
+type ConversationList struct {
+	Resident     *agent_model.Conversation
+	Servers      []*agent_model.Conversation
+	Repositories []*RepositoryConversations
+}
+
+// ListConversations returns every session the doer may open. The resident session is
+// created on first use so the instance always has one.
+func ListConversations(ctx context.Context, doer *user_model.User) (*ConversationList, error) {
+	list := &ConversationList{}
+	var err error
+	if doer.IsAdmin {
+		if list.Resident, err = EnsureResidentConversation(ctx); err != nil {
+			return nil, err
+		}
+		if list.Servers, err = findConversations(ctx, agent_model.ConversationKindServer); err != nil {
+			return nil, err
+		}
+	}
+
+	sessions, err := findConversations(ctx, agent_model.ConversationKindRepository)
+	if err != nil {
+		return nil, err
+	}
+	repoIDs := make([]int64, 0, len(sessions))
+	for _, session := range sessions {
+		repoIDs = append(repoIDs, session.RepoID)
+	}
+	repos, err := repo_model.GetRepositoriesMapByIDs(ctx, repoIDs)
+	if err != nil {
+		return nil, err
+	}
+	byRepo := make(map[int64]*RepositoryConversations, len(list.Repositories))
+	for _, session := range sessions {
+		repo := repos[session.RepoID]
+		if repo == nil {
+			continue
+		}
+		allowed, err := CanUseRepository(ctx, doer, repo)
+		if err != nil || !allowed {
+			continue
+		}
+		group := byRepo[repo.ID]
+		if group == nil {
+			group = &RepositoryConversations{Repo: repo}
+			byRepo[repo.ID] = group
+			list.Repositories = append(list.Repositories, group)
+		}
+		group.Sessions = append(group.Sessions, session)
+	}
+	return list, nil
+}
+
+func findConversations(ctx context.Context, kind string) ([]*agent_model.Conversation, error) {
+	sessions := make([]*agent_model.Conversation, 0, 8)
+	err := db.GetEngine(ctx).
+		Where("kind = ?", kind).
+		OrderBy("updated_unix DESC").
+		Find(&sessions)
+	return sessions, err
+}
+
+// EnsureResidentConversation returns the instance-wide session, creating it when absent.
+func EnsureResidentConversation(ctx context.Context) (*agent_model.Conversation, error) {
+	sessions, err := findConversations(ctx, agent_model.ConversationKindResident)
+	if err != nil {
+		return nil, err
+	}
+	if len(sessions) > 0 {
+		return sessions[0], nil
+	}
+	session := &agent_model.Conversation{Kind: agent_model.ConversationKindResident, Title: "Pod"}
+	if err := db.Insert(ctx, session); err != nil {
+		return nil, fmt.Errorf("create resident session: %w", err)
+	}
+	return session, nil
+}
+
+// CreateConversation stores a new session of the given kind.
+func CreateConversation(ctx context.Context, kind string, repoID int64, title string) (*agent_model.Conversation, error) {
+	if !agent_model.IsValidConversationKind(kind) {
+		return nil, fmt.Errorf("unknown session kind %q", kind)
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = defaultConversationTitle(kind)
+	}
+	session := &agent_model.Conversation{Kind: kind, RepoID: repoID, Title: title}
+	if err := db.Insert(ctx, session); err != nil {
+		return nil, fmt.Errorf("create session: %w", err)
+	}
+	return session, nil
+}
+
+func defaultConversationTitle(kind string) string {
+	switch kind {
+	case agent_model.ConversationKindRepository:
+		return "Repository agent"
+	case agent_model.ConversationKindServer:
+		return "Server agent"
+	}
+	return "Pod"
+}
+
+// GetConversation returns a session the doer may open.
+func GetConversation(ctx context.Context, doer *user_model.User, id int64) (*agent_model.Conversation, error) {
+	session, exist, err := db.GetByID[agent_model.Conversation](ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !exist {
+		return nil, ErrConversationNotFound{}
+	}
+	allowed, err := CanUseConversation(ctx, doer, session)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, ErrConversationDenied{}
+	}
+	return session, nil
+}
+
+// CanUseConversation reports whether the doer may open the session: site admins own the
+// resident and server sessions, repository sessions need write access to their repository.
+func CanUseConversation(ctx context.Context, doer *user_model.User, session *agent_model.Conversation) (bool, error) {
+	switch session.Kind {
+	case agent_model.ConversationKindResident, agent_model.ConversationKindServer:
+		return doer.IsAdmin, nil
+	case agent_model.ConversationKindRepository:
+		repo, err := repo_model.GetRepositoryByID(ctx, session.RepoID)
+		if err != nil {
+			return false, err
+		}
+		if repo == nil {
+			return false, nil
+		}
+		return CanUseRepository(ctx, doer, repo)
+	}
+	return false, nil
+}
+
+// CanUseRepository reports whether the doer may drive an agent on the repository: the agent
+// edits code, so code write access is the bar.
+func CanUseRepository(ctx context.Context, doer *user_model.User, repo *repo_model.Repository) (bool, error) {
+	perm, err := access_model.GetDoerRepoPermission(ctx, repo, doer)
+	if err != nil {
+		return false, err
+	}
+	return perm.CanWrite(unit_model.TypeCode), nil
+}
+
+// DeleteConversation removes a session and its transcript. The resident session stays.
+func DeleteConversation(ctx context.Context, session *agent_model.Conversation) error {
+	if session.Kind == agent_model.ConversationKindResident {
+		return ErrResidentUndeletable{}
+	}
+	if _, err := db.GetEngine(ctx).Where("conversation_id = ?", session.ID).Delete(&agent_model.Message{}); err != nil {
+		return err
+	}
+	_, err := db.DeleteByID[agent_model.Conversation](ctx, session.ID)
+	return err
+}
+
+// ListMessages returns the transcript of a session, oldest first.
+func ListMessages(ctx context.Context, conversationID int64) ([]*agent_model.Message, error) {
+	messages := make([]*agent_model.Message, 0, 16)
+	err := db.GetEngine(ctx).
+		Where("conversation_id = ?", conversationID).
+		OrderBy("id ASC").
+		Find(&messages)
+	return messages, err
+}
+
+// SetConversationModel binds a session to the model it answers with.
+func SetConversationModel(ctx context.Context, conversation *agent_model.Conversation, ref string) error {
+	conversation.ModelRef = ref
+	_, err := db.GetEngine(ctx).ID(conversation.ID).Cols("model_ref").Update(conversation)
+	return err
+}
+
+// GetMessage returns one transcript entry.
+func GetMessage(ctx context.Context, id int64) (*agent_model.Message, error) {
+	message, exist, err := db.GetByID[agent_model.Message](ctx, id)
+	if err != nil || !exist {
+		return nil, err
+	}
+	return message, nil
+}
+
+// AppendMessage stores one transcript entry and marks the session as recently used.
+func AppendMessage(ctx context.Context, conversationID int64, role, content string) (*agent_model.Message, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, errors.New("a message needs content")
+	}
+	switch role {
+	case agent_model.MessageRoleUser, agent_model.MessageRoleAssistant, agent_model.MessageRoleSystem:
+	default:
+		return nil, fmt.Errorf("unknown message role %q", role)
+	}
+	message := &agent_model.Message{ConversationID: conversationID, Role: role, Content: content}
+	if err := db.Insert(ctx, message); err != nil {
+		return nil, err
+	}
+	_, err := db.GetEngine(ctx).
+		ID(conversationID).
+		Cols("updated_unix").
+		Update(&agent_model.Conversation{UpdatedUnix: timeutil.TimeStampNow()})
+	if err != nil {
+		return nil, err
+	}
+	return message, nil
+}
+
+// WritableRepositories lists recent repositories the doer may drive an agent on, for the
+// repository picker of the chat screen.
+func WritableRepositories(ctx context.Context, doer *user_model.User, limit int) ([]*repo_model.Repository, error) {
+	repos, _, err := repo_model.SearchRepository(ctx, repo_model.SearchRepoOptions{
+		ListOptions: db.ListOptions{Page: 1, PageSize: limit},
+		Actor:       doer,
+		Private:     true,
+		OrderBy:     db.SearchOrderByRecentUpdated,
+	})
+	if err != nil {
+		return nil, err
+	}
+	writable := make([]*repo_model.Repository, 0, len(repos))
+	for _, repo := range repos {
+		allowed, err := CanUseRepository(ctx, doer, repo)
+		if err != nil {
+			return nil, err
+		}
+		if allowed {
+			writable = append(writable, repo)
+		}
+	}
+	return writable, nil
+}

@@ -1,0 +1,164 @@
+{{template "base/head" .}}
+<div role="main" aria-label="{{.Title}}" class="page-content agent-chat-page{{if .Session}} has-session{{end}}">
+	{{template "base/alert" ctx.RootData}}
+	<div class="ui container agent-chat">
+		<aside class="agent-chat-sidebar" aria-label="{{ctx.Locale.Tr "agent.chat_sessions"}}">
+			<div class="agent-chat-sidebar-head">{{ctx.Locale.Tr "agent.chat_sessions"}}</div>
+			<div class="agent-chat-sidebar-scroll">
+				{{with .Sessions.Resident}}
+					<section class="agent-chat-section">
+						<h4 class="agent-chat-section-title">
+							<span>{{ctx.Locale.Tr "agent.chat_resident"}}</span>
+						</h4>
+						<a class="agent-chat-session{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
+							{{svg "gitea-pod" 18}}
+							<span class="gt-ellipsis">{{.Title}}</span>
+						</a>
+						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_resident_help"}}</p>
+					</section>
+				{{end}}
+
+				{{if .SignedUser.IsAdmin}}
+					<section class="agent-chat-section">
+						<h4 class="agent-chat-section-title">
+							<span>{{ctx.Locale.Tr "agent.chat_server"}}</span>
+							<form method="post" action="{{AppSubUrl}}/-/agent/new">
+								<input type="hidden" name="kind" value="server">
+								<button type="submit" class="ui mini basic icon button" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_new_server"}}">{{svg "octicon-plus"}}</button>
+							</form>
+						</h4>
+						{{range .Sessions.Servers}}
+							<div class="agent-chat-session-row">
+								<a class="agent-chat-session{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
+									{{svg "octicon-server" 18}}
+									<span class="gt-ellipsis">{{.Title}}</span>
+									<span class="agent-chat-session-time">{{DateUtils.TimeSince .UpdatedUnix}}</span>
+								</a>
+								<form method="post" action="{{AppSubUrl}}/-/agent/{{.ID}}/delete">
+									<button type="submit" class="agent-chat-row-action" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_delete"}}">{{svg "octicon-trash"}}</button>
+								</form>
+							</div>
+						{{else}}
+							<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_server"}}</p>
+						{{end}}
+						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_server_help"}}</p>
+					</section>
+				{{end}}
+
+				<section class="agent-chat-section">
+					<h4 class="agent-chat-section-title">
+						<span>{{ctx.Locale.Tr "agent.chat_repository"}}</span>
+					</h4>
+					{{if .WritableRepos}}
+						<form class="agent-chat-repo-new" method="post" action="{{AppSubUrl}}/-/agent/new">
+							<input type="hidden" name="kind" value="repository">
+							<select name="repo_id" class="ui dropdown" required>
+								{{range .WritableRepos}}
+									<option value="{{.ID}}">{{.FullName}}</option>
+								{{end}}
+							</select>
+							<button type="submit" class="ui mini button">{{svg "octicon-plus"}}{{ctx.Locale.Tr "agent.chat_start_repository"}}</button>
+						</form>
+					{{end}}
+					{{range .Sessions.Repositories}}
+						<div class="agent-chat-repo">
+							<a class="agent-chat-repo-name gt-ellipsis" href="{{.Repo.Link}}" title="{{.Repo.FullName}}">{{.Repo.FullName}}</a>
+							{{range .Sessions}}
+								<div class="agent-chat-session-row">
+									<a class="agent-chat-session{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
+										{{svg "octicon-repo" 18}}
+										<span class="gt-ellipsis">{{.Title}}</span>
+										<span class="agent-chat-session-time">{{DateUtils.TimeSince .UpdatedUnix}}</span>
+									</a>
+									<form method="post" action="{{AppSubUrl}}/-/agent/{{.ID}}/delete">
+										<button type="submit" class="agent-chat-row-action" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_delete"}}">{{svg "octicon-trash"}}</button>
+									</form>
+								</div>
+							{{end}}
+						</div>
+					{{else}}
+						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_repository"}}</p>
+					{{end}}
+					<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_repository_help"}}</p>
+				</section>
+			</div>
+		</aside>
+
+		<main class="agent-chat-main" aria-label="{{ctx.Locale.Tr "agent.chat_title"}}"
+			{{if .Session}}data-conversation-id="{{.Session.ID}}"
+			data-last-message-id="{{.LastMessageID}}"
+			data-events-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/events"
+			data-messages-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages"
+			data-cancel-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/cancel"
+			data-labels="{{.LabelsJSON}}"{{end}}>
+			{{if .Session}}
+				<header class="agent-chat-head">
+					<a class="agent-chat-back" href="{{AppSubUrl}}/-/agent" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_sessions"}}">{{svg "octicon-chevron-left"}}</a>
+					<div class="agent-chat-head-icon">
+						{{if eq .Session.Kind "resident"}}{{svg "gitea-pod" 20}}{{else if eq .Session.Kind "server"}}{{svg "octicon-server" 20}}{{else}}{{svg "octicon-repo" 20}}{{end}}
+					</div>
+					<div class="agent-chat-head-text">
+						<div class="agent-chat-head-title gt-ellipsis">{{.Session.Title}}</div>
+						{{if .Repo}}
+							<div class="agent-chat-meta"><a href="{{.Repo.Link}}">{{.Repo.FullName}}</a></div>
+						{{end}}
+					</div>
+					<form class="agent-chat-model" method="post" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/model">
+						<select name="model_ref" class="ui dropdown" aria-label="{{ctx.Locale.Tr "agent.chat_model"}}">
+							<option value="">{{ctx.Locale.Tr "agent.chat_model_none"}}</option>
+							{{range .ModelOptions}}
+								<option value="{{.Ref}}"{{if eq .Ref $.Session.ModelRef}} selected{{end}}>{{.Label}}</option>
+							{{end}}
+						</select>
+						<button type="submit" class="ui mini button">{{ctx.Locale.Tr "agent.chat_model_apply"}}</button>
+					</form>
+					{{if ne .Session.Kind "resident"}}
+						<form method="post" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/delete">
+							<button type="submit" class="ui basic icon button" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_delete"}}">{{svg "octicon-trash"}}</button>
+						</form>
+					{{end}}
+				</header>
+
+				<div class="agent-chat-status{{if not (or .RunActive (eq .Run.Status "failed") (eq .Run.Status "canceled"))}} tw-hidden{{end}}" data-status="{{if .Run}}{{.Run.Status}}{{end}}">
+					<span class="agent-chat-status-text">{{.RunText}}</span>
+					<button type="button" class="agent-chat-status-cancel agent-chat-row-action{{if not .RunActive}} tw-hidden{{end}}">{{ctx.Locale.Tr "agent.chat_cancel"}}</button>
+				</div>
+
+				<div class="agent-chat-messages">
+					{{range .Messages}}
+						<div class="agent-chat-message {{.Role}}">
+							<div class="agent-chat-message-meta">
+								{{if eq .Role "user"}}
+									{{ctx.Locale.Tr "agent.chat_you"}}
+								{{else if eq .Role "assistant"}}
+									{{ctx.Locale.Tr "agent.chat_agent"}}
+								{{else}}
+									{{ctx.Locale.Tr "agent.chat_system"}}
+								{{end}}
+								· {{DateUtils.TimeSince .CreatedUnix}}
+							</div>
+							<div class="agent-chat-bubble">{{.Content}}</div>
+						</div>
+					{{else}}
+						<div class="agent-chat-empty">{{ctx.Locale.Tr "agent.chat_no_messages"}}</div>
+					{{end}}
+				</div>
+
+				<form class="agent-chat-composer" method="post" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages">
+					<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"{{if not .Session.ModelRef}} disabled{{end}}></textarea>
+					<button type="submit" class="ui primary button"{{if not .Session.ModelRef}} disabled{{end}}>{{ctx.Locale.Tr "agent.chat_send"}}</button>
+				</form>
+				{{if not .Session.ModelRef}}
+					<p class="agent-chat-hint agent-chat-hint-block">{{ctx.Locale.Tr "agent.chat_model_required"}}</p>
+				{{end}}
+			{{else}}
+				<div class="agent-chat-empty-main">
+					{{svg "gitea-pod-outline" 56}}
+					<p class="agent-chat-empty-title">{{ctx.Locale.Tr "agent.chat_select_session"}}</p>
+					<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_select_session_help"}}</p>
+				</div>
+			{{end}}
+		</main>
+	</div>
+</div>
+{{template "base/footer" .}}
