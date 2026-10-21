@@ -24,6 +24,7 @@ import octiconCode from '../../public/assets/img/svg/octicon-code.svg';
 import octiconColumns from '../../public/assets/img/svg/octicon-columns.svg';
 import octiconCopy from '../../public/assets/img/svg/octicon-copy.svg';
 import octiconPaperclip from '../../public/assets/img/svg/octicon-paperclip.svg';
+import octiconPencil from '../../public/assets/img/svg/octicon-pencil.svg';
 import octiconDash from '../../public/assets/img/svg/octicon-dash.svg';
 import octiconDiffAdded from '../../public/assets/img/svg/octicon-diff-added.svg';
 import octiconDiffModified from '../../public/assets/img/svg/octicon-diff-modified.svg';
@@ -118,6 +119,7 @@ const svgs = {
   'octicon-columns': octiconColumns,
   'octicon-copy': octiconCopy,
   'octicon-paperclip': octiconPaperclip,
+  'octicon-pencil': octiconPencil,
   'octicon-dash': octiconDash,
   'octicon-diff-added': octiconDiffAdded,
   'octicon-diff-modified': octiconDiffModified,

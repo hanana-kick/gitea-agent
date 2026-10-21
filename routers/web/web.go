@@ -590,6 +590,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		m.Get("/{id}/attachments/{aid}", agent_web.ChatAttachment)
 		m.Get("/{id}/messages", agent_web.ChatMessagesBefore)
 		m.Post("/{id}/messages", agent_web.ChatMessageNew)
+		m.Post("/{id}/messages/{mid}", agent_web.ChatMessageEdit)
 		m.Post("/{id}/model", agent_web.ChatModelSet)
 		m.Post("/{id}/title", agent_web.ChatTitlePost)
 		m.Post("/{id}/folder", agent_web.ChatSessionFolder)

@@ -148,13 +148,23 @@ func SubmitUserMessage(ctx context.Context, conversation *agent_model.Conversati
 	}
 	engine.broker.publish(conversation.ID, Event{Name: EventMessage, Data: message.ID})
 
+	run, err := StartRun(ctx, conversation)
+	if err != nil {
+		return nil, nil, err
+	}
+	return message, run, nil
+}
+
+// StartRun queues a new run for a conversation. It is used when a message only needs an
+// answer, e.g. after an edit rewound the transcript.
+func StartRun(ctx context.Context, conversation *agent_model.Conversation) (*agent_model.Run, error) {
 	run := &agent_model.Run{ConversationID: conversation.ID, Status: agent_model.RunStatusQueued}
 	if err := db.Insert(ctx, run); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	engine.enqueue(run.ID)
 	engine.publishRun(conversation.ID, run)
-	return message, run, nil
+	return run, nil
 }
 
 // CancelRun stops the run of a conversation, if one is active.

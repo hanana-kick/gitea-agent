@@ -40,18 +40,20 @@
 						{{svg "octicon-comment-discussion"}}
 						<span>{{ctx.Locale.Tr "agent.chat_conversations"}}</span>
 						{{if .SignedUser.IsAdmin}}
-							<button type="button" class="muted btn agent-chat-header-action show-modal"
+							<button type="button" class="btn agent-chat-group-action show-modal"
 								data-modal="#agent-chat-folder-modal"
 								data-modal-form.url="{{AppSubUrl}}/-/agent/folders/new"
-								data-tooltip-content="{{ctx.Locale.Tr "agent.chat_folder_new"}}">{{svg "octicon-plus"}}</button>
+								data-tooltip-content="{{ctx.Locale.Tr "agent.chat_folder_new"}}">
+								{{svg "octicon-file-directory" 16}}<span class="agent-chat-group-action-plus">{{svg "octicon-plus" 10}}</span>
+							</button>
 						{{end}}
 					</div>
 
-					<a class="agent-chat-card{{if .IsDraft}} active{{end}}" href="{{AppSubUrl}}/-/agent/new">
+					<a class="agent-chat-card agent-chat-card-new{{if .IsDraft}} active{{end}}" href="{{AppSubUrl}}/-/agent/new">
 						<span class="agent-chat-card-main">
-							<span class="agent-chat-card-icon">{{svg "octicon-plus" 18}}</span>
 							<span class="agent-chat-card-name">{{ctx.Locale.Tr "agent.chat_new_conversation"}}</span>
 						</span>
+						<span class="agent-chat-card-icon">{{svg "octicon-plus" 16}}</span>
 					</a>
 
 					{{range .Sessions.Servers}}
@@ -217,9 +219,6 @@
 						</select>
 						<button type="submit" class="ui mini button">{{ctx.Locale.Tr "agent.chat_model_apply"}}</button>
 					</form>
-					<button type="button" class="ui basic icon button agent-chat-copy-conversation"
-						data-export-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/export"
-						data-tooltip-content="{{ctx.Locale.Tr "agent.chat_copy_conversation"}}">{{svg "octicon-copy"}}</button>
 					<a class="ui basic icon button" href="{{AppSubUrl}}/-/agent/{{.Session.ID}}/export" download="conversation.md"
 						data-tooltip-content="{{ctx.Locale.Tr "agent.chat_download"}}">{{svg "octicon-download"}}</a>
 					{{if ne .Session.Kind "resident"}}
@@ -251,7 +250,6 @@
 									{{ctx.Locale.Tr "agent.chat_system"}}
 								{{end}}
 								· {{DateUtils.TimeSince .CreatedUnix}}
-								<button type="button" class="agent-chat-copy-message" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_copy"}}">{{svg "octicon-copy" 14}}</button>
 							</div>
 							<div class="agent-chat-bubble">
 								<div class="render-content markup">{{ctx.RenderUtils.MarkdownToHtml .Content}}</div>
@@ -266,6 +264,15 @@
 											</a>
 										{{end}}
 									</div>
+								{{end}}
+							</div>
+							<div class="agent-chat-message-actions">
+								<button type="button" class="agent-chat-copy-message" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_copy"}}">{{svg "octicon-copy" 14}}</button>
+								{{if eq .Role "user"}}
+									<button type="button" class="agent-chat-edit-message show-modal"
+										data-modal="#agent-chat-edit-modal"
+										data-modal-form.url="{{AppSubUrl}}/-/agent/{{$.Session.ID}}/messages/{{.ID}}"
+										data-tooltip-content="{{ctx.Locale.Tr "agent.chat_edit"}}">{{svg "octicon-pencil" 14}}</button>
 								{{end}}
 							</div>
 							<div class="agent-chat-source tw-hidden">{{.Content}}</div>
@@ -307,6 +314,23 @@
 			<div class="actions">
 				<button class="ui cancel button" type="button">{{ctx.Locale.Tr "cancel"}}</button>
 				<button class="ui primary button" type="submit">{{ctx.Locale.Tr "save"}}</button>
+			</div>
+		</form>
+	</div>
+
+	<div class="ui modal" id="agent-chat-edit-modal">
+		<div class="header">{{ctx.Locale.Tr "agent.chat_edit"}}</div>
+		<form class="ui form" method="post" id="agent-chat-edit-form">
+			<div class="content">
+				<div class="required field">
+					<label for="agent-chat-edit-input">{{ctx.Locale.Tr "agent.chat_message"}}</label>
+					<textarea id="agent-chat-edit-input" name="content" rows="6" required></textarea>
+				</div>
+				<p class="help">{{ctx.Locale.Tr "agent.chat_edit_confirm"}}</p>
+			</div>
+			<div class="actions">
+				<button class="ui cancel button" type="button">{{ctx.Locale.Tr "cancel"}}</button>
+				<button class="ui primary button" type="submit">{{ctx.Locale.Tr "agent.chat_edit"}}</button>
 			</div>
 		</form>
 	</div>

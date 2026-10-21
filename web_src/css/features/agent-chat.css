@@ -162,6 +162,32 @@
   color: var(--color-text-light-2);
 }
 
+.agent-chat-group-action {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 2px;
+  margin-left: auto;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.agent-chat-group-action:hover {
+  color: var(--color-text);
+}
+
+.agent-chat-group-action-plus {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: flex;
+  padding: 1px;
+  background: var(--color-body);
+  border-radius: var(--border-radius-full);
+}
+
 .agent-chat-divider {
   margin: 8px 2px;
   border-top: 1px solid var(--color-secondary);
@@ -406,21 +432,33 @@ button.agent-chat-card {
   text-align: right;
 }
 
+.agent-chat-message-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.agent-chat-message:hover .agent-chat-message-actions,
+.agent-chat-message-actions:focus-within {
+  opacity: 1;
+}
+
 .agent-chat-copy-message,
+.agent-chat-edit-message,
 .agent-chat-load-older {
-  padding: 0 2px;
+  padding: 2px;
   color: var(--color-text-light-2);
   cursor: pointer;
   background: none;
   border: 0;
+  border-radius: var(--border-radius);
 }
 
-.agent-chat-copy-message {
-  margin-left: 4px;
-  vertical-align: middle;
-}
-
-.agent-chat-copy-message:hover {
+.agent-chat-copy-message:hover,
+.agent-chat-edit-message:hover {
   color: var(--color-text);
 }
 
@@ -443,6 +481,12 @@ button.agent-chat-card {
   text-align: left;
   background: var(--color-secondary);
   border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-message.assistant .agent-chat-bubble,
+.agent-chat-message.system .agent-chat-bubble {
+  padding: 0;
+  background: none;
 }
 
 .agent-chat-bubble .markup > :first-child {
@@ -567,6 +611,11 @@ button.agent-chat-card {
 
   .agent-chat-message {
     max-width: 92%;
+  }
+
+  /* touch screens have no hover, so the message actions stay visible */
+  .agent-chat-message-actions {
+    opacity: 1;
   }
 
   .agent-chat-head,

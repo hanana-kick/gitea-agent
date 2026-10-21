@@ -4172,9 +4172,13 @@
   "agent.chat_draft_help": "Sending a message starts this conversation.",
   "agent.chat_resident_immutable": "The resident session always keeps the name Pod.",
   "agent.chat_copy": "Copy markdown",
-  "agent.chat_copy_conversation": "Copy the whole conversation",
   "agent.chat_download": "Download as markdown",
   "agent.chat_load_older": "Load earlier messages",
   "agent.chat_attach": "Attach files",
-  "agent.chat_attachment_failed": "The file %s was not attached: %s"
+  "agent.chat_attachment_failed": "The file %s was not attached: %s",
+  "agent.chat_edit": "Edit and ask again",
+  "agent.chat_edit_only_user": "Only your own messages can be edited.",
+  "agent.chat_edited": "The message was edited; the agent is answering again.",
+  "agent.chat_edit_confirm": "Everything after this message is removed and the agent answers the edited message again.",
+  "agent.chat_message": "Message"
 }

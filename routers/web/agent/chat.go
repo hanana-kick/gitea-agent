@@ -52,7 +52,8 @@ func chatError(ctx *context.Context, err error) {
 // Chat renders the chat screen with the session list and no session open. Small screens
 // use this as the session list page.
 func Chat(ctx *context.Context) {
-	renderChat(ctx, nil)
+	prepareChat(ctx, nil)
+	ctx.HTML(http.StatusOK, tplChat)
 }
 
 // ChatSession renders the chat screen with one session open.
@@ -62,10 +63,12 @@ func ChatSession(ctx *context.Context) {
 		chatError(ctx, err)
 		return
 	}
-	renderChat(ctx, session)
+	prepareChat(ctx, session)
+	ctx.HTML(http.StatusOK, tplChat)
 }
 
-func renderChat(ctx *context.Context, session *agent_model.Conversation) {
+// prepareChat fills the page data of the chat screen. The caller renders once.
+func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 	list, err := agent_service.ListConversations(ctx, ctx.Doer)
 	if err != nil {
 		ctx.ServerError("ListConversations", err)
@@ -152,6 +155,7 @@ func renderChat(ctx *context.Context, session *agent_model.Conversation) {
 			"canceled": string(ctx.Tr("agent.chat_status_canceled")),
 			"cancel":   string(ctx.Tr("agent.chat_cancel")),
 			"copy":     string(ctx.Tr("agent.chat_copy")),
+			"edit":     string(ctx.Tr("agent.chat_edit")),
 			"error":    string(ctx.Tr("agent.chat_status_error")),
 		}
 		labelsJSON, err := json.Marshal(labels)
@@ -164,7 +168,6 @@ func renderChat(ctx *context.Context, session *agent_model.Conversation) {
 		ctx.Data["RunCancelable"] = run != nil && agent_model.IsRunActive(run.Status)
 		ctx.Data["RunText"] = runText(run, labels)
 	}
-	ctx.HTML(http.StatusOK, tplChat)
 }
 
 // ChatDraft renders the chat screen for a conversation that does not exist yet: the first
@@ -193,7 +196,7 @@ func ChatDraft(ctx *context.Context) {
 			return
 		}
 	}
-	renderChat(ctx, nil)
+	prepareChat(ctx, nil)
 	ctx.Data["IsDraft"] = true
 	ctx.Data["DraftKind"] = kind
 	ctx.Data["Repo"] = repo
@@ -513,6 +516,34 @@ func ChatMessageNew(ctx *context.Context) {
 	}
 	storeUploads(ctx, session, message)
 	answer(ctx, session.ID)
+}
+
+// ChatMessageEdit rewrites a user message and asks the agent again from that point.
+func ChatMessageEdit(ctx *context.Context) {
+	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
+	if err != nil {
+		chatError(ctx, err)
+		return
+	}
+	if _, err := agent_service.EditUserMessage(ctx, session, ctx.PathParamInt64("mid"), ctx.FormString("content")); err != nil {
+		switch {
+		case errors.Is(err, agent_service.ErrMessageNotEditable{}):
+			ctx.Flash.Error(ctx.Tr("agent.chat_edit_only_user"))
+		case errors.Is(err, agent_service.ErrConversationNotFound{}):
+			ctx.NotFound(nil)
+			return
+		default:
+			ctx.Flash.Error(ctx.Tr("agent.chat_message_empty"))
+		}
+		ctx.Redirect(chatSessionURL(session.ID))
+		return
+	}
+	if _, err := agent_service.StartRun(ctx, session); err != nil {
+		ctx.ServerError("StartRun", err)
+		return
+	}
+	ctx.Flash.Success(ctx.Tr("agent.chat_edited"))
+	ctx.Redirect(chatSessionURL(session.ID))
 }
 
 // ChatRunCancel stops the run of a session.

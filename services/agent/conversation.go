@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -17,6 +18,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	unit_model "gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	"gitea.dev/modules/log"
 	"gitea.dev/modules/timeutil"
 )
 
@@ -499,6 +501,72 @@ func SetConversationFolder(ctx context.Context, conversation *agent_model.Conver
 	conversation.FolderID = folderID
 	_, err := db.GetEngine(ctx).ID(conversation.ID).Cols("folder_id", "updated_unix").
 		Update(&agent_model.Conversation{FolderID: folderID, UpdatedUnix: timeutil.TimeStampNow()})
+	return err
+}
+
+// ErrMessageNotEditable is returned when a message can not be edited.
+type ErrMessageNotEditable struct{}
+
+func (ErrMessageNotEditable) Error() string { return "only a user message can be edited" }
+
+// Is reports whether target is an ErrMessageNotEditable.
+func (ErrMessageNotEditable) Is(target error) bool {
+	_, ok := target.(ErrMessageNotEditable)
+	return ok
+}
+
+// EditUserMessage rewrites a user message and drops everything after it, so the agent
+// answers the edited message again.
+func EditUserMessage(ctx context.Context, conversation *agent_model.Conversation, messageID int64, content string) (*agent_model.Message, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, errors.New("a message needs content")
+	}
+	message, exist, err := db.GetByID[agent_model.Message](ctx, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if !exist || message.ConversationID != conversation.ID {
+		return nil, ErrConversationNotFound{}
+	}
+	if message.Role != agent_model.MessageRoleUser {
+		return nil, ErrMessageNotEditable{}
+	}
+	if err := DeleteMessagesAfter(ctx, conversation.ID, messageID); err != nil {
+		return nil, err
+	}
+	message.Content = content
+	if _, err := db.GetEngine(ctx).ID(message.ID).Cols("content").Update(message); err != nil {
+		return nil, err
+	}
+	return message, nil
+}
+
+// DeleteMessagesAfter removes every message newer than the given one, together with the
+// files those messages carried.
+func DeleteMessagesAfter(ctx context.Context, conversationID, messageID int64) error {
+	attachments := make([]*agent_model.Attachment, 0, 4)
+	if err := db.GetEngine(ctx).
+		Where("conversation_id = ?", conversationID).
+		And("message_id > ?", messageID).
+		Find(&attachments); err != nil {
+		return err
+	}
+	for _, attachment := range attachments {
+		if err := os.Remove(AttachmentPath(attachment)); err != nil && !os.IsNotExist(err) {
+			log.Warn("unable to remove attachment file %d: %v", attachment.ID, err)
+		}
+	}
+	if _, err := db.GetEngine(ctx).
+		Where("conversation_id = ?", conversationID).
+		And("message_id > ?", messageID).
+		Delete(&agent_model.Attachment{}); err != nil {
+		return err
+	}
+	_, err := db.GetEngine(ctx).
+		Where("conversation_id = ?", conversationID).
+		And("id > ?", messageID).
+		Delete(&agent_model.Message{})
 	return err
 }
 

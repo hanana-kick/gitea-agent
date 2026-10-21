@@ -4,7 +4,7 @@ import {svg} from '../svg.ts';
 import {errorMessage} from '../modules/errors.ts';
 import {addDelegatedEventListener, createElementFromHTML, hideElem, showElem, toggleElem} from '../utils/dom.ts';
 
-type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, cancel: string, error: string, copy: string};
+type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, cancel: string, error: string, copy: string, edit: string};
 type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string};
 type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[]};
 type AgentChatRun = {id: number, status: string, error: string, cancelable: boolean};
@@ -61,6 +61,7 @@ export function initAgentChat() {
   const inputEl = mainEl.querySelector<HTMLTextAreaElement>('.agent-chat-input')!;
   const ajaxHeaders = {'X-Requested-With': 'XMLHttpRequest'};
   const elConversationID = mainEl.getAttribute('data-conversation-id')!;
+  const editURL = `${mainEl.getAttribute('data-messages-url')}/`;
 
   statusCancelEl.textContent = labels.cancel;
   statusCancelEl.addEventListener('click', () => {
@@ -87,7 +88,6 @@ export function initAgentChat() {
     metaEl.className = 'agent-chat-message-meta';
     metaEl.textContent = `${message.roleLabel} · `;
     metaEl.insertAdjacentHTML('beforeend', message.timeHTML);
-    metaEl.insertAdjacentHTML('beforeend', copyButton());
 
     const bubbleEl = document.createElement('div');
     bubbleEl.className = 'agent-chat-bubble';
@@ -115,16 +115,19 @@ export function initAgentChat() {
       bubbleEl.append(listEl);
     }
 
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'agent-chat-message-actions';
+    actionsEl.insertAdjacentHTML('beforeend', `<button type="button" class="agent-chat-copy-message" data-tooltip-content="${labels.copy}">${svg('octicon-copy', 14)}</button>`);
+    if (message.role === 'user') {
+      actionsEl.insertAdjacentHTML('beforeend', `<button type="button" class="agent-chat-edit-message show-modal" data-modal="#agent-chat-edit-modal" data-modal-form.url="${editURL}" data-tooltip-content="${labels.edit}">${svg('octicon-pencil', 14)}</button>`);
+    }
+
     const sourceEl = document.createElement('div');
     sourceEl.className = 'agent-chat-source tw-hidden';
     sourceEl.textContent = message.content;
 
-    messageEl.append(metaEl, bubbleEl, sourceEl);
+    messageEl.append(metaEl, bubbleEl, actionsEl, sourceEl);
     return messageEl;
-  }
-
-  function copyButton(): string {
-    return `<button type="button" class="agent-chat-copy-message" data-tooltip-content="${labels.copy}">${svg('octicon-copy', 14)}</button>`;
   }
 
   function appendMessage(message: AgentChatMessage) {
@@ -184,17 +187,6 @@ export function initAgentChat() {
     messagesEl.querySelector('.agent-chat-load-older')?.addEventListener('click', loadOlder);
   }
 
-  function initCopyConversation() {
-    const button = document.querySelector<HTMLElement>('.agent-chat-copy-conversation');
-    if (!button) return;
-    button.addEventListener('click', () => {
-      copyToClipboardWithFeedback(button, async () => {
-        const resp = await GET(button.getAttribute('data-export-url')!);
-        return await resp.text();
-      });
-    });
-  }
-
   function applyRun(run: AgentChatRun) {
     if (run.status === 'queued' || run.status === 'running') {
       showStatus(run.status, run.status === 'queued' ? labels.queued : labels.running, run.cancelable);
@@ -210,6 +202,17 @@ export function initAgentChat() {
 
   // the folder modals are shared by every row: the global "show-modal" handler fills the
   // form action, the icon radio and the folder select are set here
+  // the edit modal is shared: it takes the text of the clicked message
+  function initMessageActions() {
+    const editForm = document.querySelector<HTMLFormElement>('#agent-chat-edit-form');
+    if (!editForm) return;
+    addDelegatedEventListener(messagesEl, 'click', '.agent-chat-edit-message', (button) => {
+      const source = button.closest('.agent-chat-message')!.querySelector('.agent-chat-source');
+      editForm.setAttribute('action', button.getAttribute('data-modal-form.url')!);
+      editForm.querySelector<HTMLTextAreaElement>('textarea[name="content"]')!.value = source!.textContent!;
+    });
+  }
+
   function initMoreMenus() {
     const folderModal = document.querySelector<HTMLFormElement>('#agent-chat-folder-form');
     const pickModal = document.querySelector<HTMLFormElement>('#agent-chat-folder-pick-form');
@@ -262,7 +265,7 @@ export function initAgentChat() {
   }
 
   initTranscript();
-  initCopyConversation();
+  initMessageActions();
   scrollToLastQuestion();
 
   composerEl.addEventListener('submit', async (event) => {
