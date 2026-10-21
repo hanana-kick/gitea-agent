@@ -593,6 +593,7 @@ button.agent-chat-card {
 
 .agent-chat-attach {
   position: relative; /* keeps the transparent file input inside the label */
+  order: -1; /* the attachment sits left of the input, the DOM keeps the input first */
   display: flex;
   align-items: center;
   padding: 6px;
@@ -757,6 +758,11 @@ button.agent-chat-card {
 
   .agent-chat-input {
     flex: 1 1 100%;
+  }
+
+  /* the input owns a row here, the attachment belongs under it */
+  .agent-chat-attach {
+    order: 0;
   }
 
   .agent-chat-composer .ui.button {
