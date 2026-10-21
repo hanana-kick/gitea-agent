@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Message represents a chat message.
@@ -150,6 +152,12 @@ func cleanModels(models []ModelInfo) []ModelInfo {
 	return out
 }
 
+const (
+	// streamIdleTimeout is how long a stream may stay silent before it counts as dead.
+	streamIdleTimeout = 2 * time.Minute
+	streamIdleCheck   = 5 * time.Second
+)
+
 // DoChatStream sends a streaming chat request and calls onDelta for every piece it reads.
 // The returned response carries the assembled answer.
 func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header http.Header, req ChatRequest, onDelta OnDelta) (ChatResponse, error) {
@@ -168,6 +176,33 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 	for k, v := range header {
 		httpReq.Header[k] = v
 	}
+
+	// a stream that goes silent is dead: providers send at least keep-alives while working
+	streamCtx, cancelStream := context.WithCancel(ctx)
+	defer cancelStream()
+	var idleMu sync.Mutex
+	lastPiece := time.Now()
+	watchdogDone := make(chan struct{})
+	defer close(watchdogDone)
+	go func() {
+		ticker := time.NewTicker(streamIdleCheck)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-watchdogDone:
+				return
+			case <-ticker.C:
+				idleMu.Lock()
+				idle := time.Since(lastPiece)
+				idleMu.Unlock()
+				if idle > streamIdleTimeout {
+					cancelStream()
+					return
+				}
+			}
+		}
+	}()
+	httpReq = httpReq.WithContext(streamCtx)
 
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
@@ -222,6 +257,7 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 					Reasoning        string `json:"reasoning"`
 					ReasoningContent string `json:"reasoning_content"`
 				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
 		}
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
@@ -239,9 +275,18 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 		if len(chunk.Choices) == 0 {
 			continue
 		}
+		idleMu.Lock()
+		lastPiece = time.Now()
+		idleMu.Unlock()
+
+		// some providers do not send [DONE], the finish reason is the end of the answer
+		finished := chunk.Choices[0].FinishReason != ""
 		delta := chunk.Choices[0].Delta
 		thought := delta.Reasoning + delta.ReasoningContent
 		if delta.Content == "" && thought == "" {
+			if finished {
+				break
+			}
 			continue
 		}
 		answer.WriteString(delta.Content)
@@ -251,8 +296,14 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 				return ChatResponse{}, err
 			}
 		}
+		if finished {
+			break
+		}
 	}
 	if err := scanner.Err(); err != nil {
+		if streamCtx.Err() != nil && ctx.Err() == nil {
+			return ChatResponse{}, errors.New("the model stopped sending its answer")
+		}
 		return ChatResponse{}, err
 	}
 

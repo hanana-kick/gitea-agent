@@ -50,7 +50,8 @@ function fitLayout() {
   if (!chat || !footer) return;
   const top = chat.getBoundingClientRect().top + window.scrollY;
   // the page owns the viewport, so the footer sits at its bottom and the panel fills the rest
-  chat.style.height = `${Math.max(240, Math.round(innerHeight - top - footer.offsetHeight - 8))}px`;
+  const height = `${Math.max(240, Math.round(innerHeight - top - footer.offsetHeight - 8))}px`;
+  if (chat.style.height !== height) chat.style.height = height; // writing the same value loops the observer
 }
 
 export function initAgentChat() {
@@ -329,8 +330,9 @@ export function initAgentChat() {
     const header = document.querySelector<HTMLElement>('.agent-chat-head-title');
     if (header && elConversationID === String(conversation.id)) header.textContent = conversation.title;
     const id = String(conversation.id);
-    for (const link of document.querySelectorAll<HTMLElement>('.agent-chat-card-main, .agent-chat-card')) {
-      if (link.getAttribute('href')!.split('/').pop() !== id) continue;
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('.agent-chat-card-main, a.agent-chat-card')) {
+      const href = link.getAttribute('href');
+      if (!href || href.split('/').pop() !== id) continue;
       const label = link.querySelector<HTMLElement>('.gt-ellipsis, .agent-chat-card-name');
       // the resident session shows what it worked on instead of its own name
       if (label) label.textContent = conversation.summary || conversation.title;
