@@ -8,7 +8,7 @@ type AgentChatLabels = {queued: string, running: string, failed: string, cancele
 type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string};
 type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[]};
 type AgentChatRun = {id: number, status: string, error: string, cancelable: boolean};
-type AgentChatConversation = {id: number, title: string, icon: string};
+type AgentChatConversation = {id: number, title: string, summary: string, icon: string};
 
 // a conversation does not exist until its first message, so the draft posts the message and
 // then follows the created conversation
@@ -240,7 +240,8 @@ export function initAgentChat() {
     for (const link of document.querySelectorAll<HTMLElement>('.agent-chat-card-main, .agent-chat-card')) {
       if (link.getAttribute('href')!.split('/').pop() !== id) continue;
       const label = link.querySelector<HTMLElement>('.gt-ellipsis, .agent-chat-card-name');
-      if (label) label.textContent = conversation.title;
+      // the resident session shows what it worked on instead of its own name
+      if (label) label.textContent = conversation.summary || conversation.title;
     }
   }
 

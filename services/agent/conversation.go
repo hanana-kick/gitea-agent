@@ -376,6 +376,18 @@ func SetConversationTitle(ctx context.Context, conversation *agent_model.Convers
 	return err
 }
 
+// SetConversationSummary stores what the session has been working on lately.
+func SetConversationSummary(ctx context.Context, conversation *agent_model.Conversation, summary string) error {
+	summary = strings.TrimSpace(summary)
+	if runes := []rune(summary); len(runes) > 200 {
+		summary = string(runes[:200])
+	}
+	conversation.Summary = summary
+	_, err := db.GetEngine(ctx).ID(conversation.ID).Cols("summary", "updated_unix").
+		Update(&agent_model.Conversation{Summary: summary, UpdatedUnix: timeutil.TimeStampNow()})
+	return err
+}
+
 // SetConversationIcon sets the icon of a session; an empty name clears it.
 func SetConversationIcon(ctx context.Context, conversation *agent_model.Conversation, icon string) error {
 	if icon != "" && !slices.Contains(ConversationIcons(), icon) {

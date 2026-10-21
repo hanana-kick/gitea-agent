@@ -34,6 +34,9 @@ type Conversation struct {
 	Kind   string `xorm:"VARCHAR(16) NOT NULL"`
 	RepoID int64  `xorm:"INDEX NOT NULL DEFAULT 0"` // only set for repository sessions
 	Title  string `xorm:"VARCHAR(100) NOT NULL"`
+	// Summary describes the recent work of the session. The resident session keeps the name
+	// Pod, so its generated name is shown as this summary instead.
+	Summary string `xorm:"VARCHAR(200) NOT NULL DEFAULT ''"`
 	// ModelRef is the model this session answers with: "group:<slug>" or
 	// "provider:<id>/<model>". Empty means the session has no model yet.
 	ModelRef string `xorm:"VARCHAR(160) NOT NULL DEFAULT ''"`

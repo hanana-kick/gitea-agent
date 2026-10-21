@@ -438,6 +438,7 @@ func prepareMigrationTasks() []*migration {
 		newMigration(362, "Add agent session icon and title state", v28.AddAgentConversationTitleAndIcon),
 		newMigration(363, "Add agent conversation folders", v28.AddAgentConversationFolders),
 		newMigration(364, "Add agent attachments", v28.AddAgentAttachments),
+		newMigration(365, "Add agent session summary", v28.AddAgentConversationSummary),
 	}
 	return preparedMigrations
 }

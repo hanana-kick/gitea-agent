@@ -25,10 +25,13 @@
 				<div class="ui attached segment agent-chat-list">
 					{{/* the resident session is the entry to the global bot, so it always comes first */}}
 					{{with .Sessions.Resident}}
+						<div class="agent-chat-group-title">
+							{{svg "gitea-pod-outline"}}
+							<span>{{.Title}}</span>
+						</div>
 						<a class="agent-chat-card agent-chat-card-resident{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
-							<span class="agent-chat-card-icon">{{svg "gitea-pod-outline" 24}}</span>
 							<span class="agent-chat-card-text">
-								<span class="agent-chat-card-name gt-ellipsis">{{.Title}}</span>
+								<span class="agent-chat-card-name gt-ellipsis">{{if .Summary}}{{.Summary}}{{else}}{{.Title}}{{end}}</span>
 								<span class="agent-chat-card-desc">{{ctx.Locale.Tr "agent.chat_resident_desc"}}</span>
 							</span>
 						</a>

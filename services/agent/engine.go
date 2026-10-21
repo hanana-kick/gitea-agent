@@ -38,14 +38,16 @@ const (
 
 // ConversationState is the part of a session that clients show in a list.
 type ConversationState struct {
-	ID    int64  `json:"id"`
-	Title string `json:"title"`
-	Icon  string `json:"icon"`
+	ID int64 `json:"id"`
+	// Summary is what the session worked on lately; the resident shows it instead of its name.
+	Summary string `json:"summary"`
+	Title   string `json:"title"`
+	Icon    string `json:"icon"`
 }
 
 // State renders a session for the clients watching it.
 func State(conversation *agent_model.Conversation) ConversationState {
-	return ConversationState{ID: conversation.ID, Title: conversation.Title, Icon: conversation.Icon}
+	return ConversationState{ID: conversation.ID, Title: conversation.Title, Summary: conversation.Summary, Icon: conversation.Icon}
 }
 
 // Event is one update for the clients watching a conversation.
@@ -306,12 +308,11 @@ func messageIDs(messages []*agent_model.Message) []int64 {
 
 // nameConversation asks the model for a title once the first answer exists, so a session
 // stops being called "new conversation". Failures keep the placeholder title.
+// nameConversation names a new session, or refreshes what the resident has been working on.
 func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model.Conversation) {
-	if conversation.TitleSet || conversation.ModelRef == "" {
-		return
-	}
-	if conversation.Kind == agent_model.ConversationKindResident {
-		return // the resident session is always called Pod
+	resident := conversation.Kind == agent_model.ConversationKindResident
+	if conversation.ModelRef == "" || (!resident && conversation.TitleSet) {
+		return // the resident keeps its name, so it is summarized on every exchange
 	}
 	history, err := ListMessages(ctx, conversation.ID, engineNameHistoryLimit)
 	if err != nil || len(history) < 2 {
@@ -321,10 +322,17 @@ func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), engineTitleTimeout)
 	defer cancel()
 
+	system, ask := "You name chat conversations. Answer with a title of at most six "+
+		"words, no quotes, no punctuation at the end, in the language the user writes in.",
+		"Name this conversation:\n\n"
+	if resident {
+		system, ask = "You summarize the latest work of an agent. Answer with at most six words, "+
+			"no quotes, no punctuation at the end, in the language the user writes in.",
+			"What is the agent working on:\n\n"
+	}
 	prompt := []llm.Message{
-		{Role: "system", Content: "You name chat conversations. Answer with a title of at most six " +
-			"words, no quotes, no punctuation at the end, in the language the user writes in."},
-		{Role: "user", Content: "Name this conversation:\n\n" + conversationExcerpt(history)},
+		{Role: "system", Content: system},
+		{Role: "user", Content: ask + conversationExcerpt(history)},
 	}
 	// no max token limit: models that think before answering would spend a small budget on
 	// reasoning and return no content at all
@@ -338,7 +346,11 @@ func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model
 		log.Debug("Agent engine: session %d keeps its placeholder title, the model named nothing", conversation.ID)
 		return
 	}
-	if err := SetConversationTitle(ctx, conversation, title); err != nil {
+	store := SetConversationTitle
+	if resident {
+		store = SetConversationSummary
+	}
+	if err := store(ctx, conversation, title); err != nil {
 		log.Warn("Agent engine: unable to store name of session %d: %v", conversation.ID, err)
 		return
 	}
