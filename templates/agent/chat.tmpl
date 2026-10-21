@@ -1,5 +1,5 @@
 {{template "base/head" .}}
-<div role="main" aria-label="{{.Title}}" class="page-content agent-chat-page{{if .Session}} has-session{{end}}">
+<div role="main" aria-label="{{.Title}}" class="page-content agent-chat-page{{if or .Session .IsDraft}} has-panel{{end}}">
 	{{template "base/alert" ctx.RootData}}
 	<div class="ui container fluid padded flex-container agent-chat">
 		<div class="flex-container-nav agent-chat-nav" aria-label="{{ctx.Locale.Tr "agent.chat_sessions"}}">

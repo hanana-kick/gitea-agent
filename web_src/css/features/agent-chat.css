@@ -40,6 +40,9 @@
 .agent-chat-main {
   display: flex;
   flex-direction: column;
+  /* a comfortable reading width, centred in the space left by the session list */
+  max-width: 900px;
+  margin-inline: auto;
   height: calc(100dvh - var(--agent-chat-offset));
   min-width: 0;
   min-height: 0;
@@ -612,8 +615,9 @@ button.agent-chat-card {
     width: auto;
   }
 
-  .agent-chat-page.has-session .agent-chat-nav,
-  .agent-chat-page:not(.has-session) .agent-chat-main {
+  /* one panel at a time: the list, or the chat with its draft */
+  .agent-chat-page.has-panel .agent-chat-nav,
+  .agent-chat-page:not(.has-panel) .agent-chat-main {
     display: none !important;
   }
 
@@ -633,6 +637,19 @@ button.agent-chat-card {
   .agent-chat-head,
   .agent-chat-composer {
     padding: 8px;
+  }
+
+  /* the composer wraps: input on its own row, the attachment and send below */
+  .agent-chat-composer {
+    flex-wrap: wrap;
+  }
+
+  .agent-chat-input {
+    flex: 1 1 100%;
+  }
+
+  .agent-chat-composer .ui.button {
+    margin-left: auto;
   }
 
   .agent-chat-model {
