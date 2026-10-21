@@ -68,19 +68,21 @@ type DeltaState struct {
 
 // RunState is the part of a run that clients need.
 type RunState struct {
-	ID         int64  `json:"id"`
-	Status     string `json:"status"`
-	Error      string `json:"error"`
-	Cancelable bool   `json:"cancelable"`
+	ID             int64  `json:"id"`
+	ConversationID int64  `json:"conversationId"`
+	Status         string `json:"status"`
+	Error          string `json:"error"`
+	Cancelable     bool   `json:"cancelable"`
 }
 
 // RunStateOf renders a run for the clients watching it.
 func RunStateOf(run *agent_model.Run) RunState {
 	return RunState{
-		ID:         run.ID,
-		Status:     run.Status,
-		Error:      run.Error,
-		Cancelable: agent_model.IsRunActive(run.Status),
+		ID:             run.ID,
+		ConversationID: run.ConversationID,
+		Status:         run.Status,
+		Error:          run.Error,
+		Cancelable:     agent_model.IsRunActive(run.Status),
 	}
 }
 
@@ -260,6 +262,11 @@ func NotifyConversation(conversation *agent_model.Conversation) {
 // Subscribe attaches to the updates of a conversation. The returned function detaches.
 func Subscribe(conversationID int64) (<-chan Event, func()) {
 	return engine.broker.subscribe(conversationID)
+}
+
+// SubscribeRunEvents attaches to the run changes of every conversation.
+func SubscribeRunEvents() (<-chan Event, func()) {
+	return engine.broker.subscribeAll()
 }
 
 func (e *Engine) enqueue(runID int64) {
@@ -522,12 +529,16 @@ func (e *Engine) conversationLock(conversationID int64) *sync.Mutex {
 
 // eventBroker fans conversation updates out to the clients currently watching them.
 type eventBroker struct {
-	mu   sync.Mutex
-	subs map[int64]map[chan Event]struct{}
+	mu     sync.Mutex
+	subs   map[int64]map[chan Event]struct{}
+	global map[chan Event]struct{} // every run change, for the session list
 }
 
 func newEventBroker() *eventBroker {
-	return &eventBroker{subs: make(map[int64]map[chan Event]struct{})}
+	return &eventBroker{
+		subs:   make(map[int64]map[chan Event]struct{}),
+		global: make(map[chan Event]struct{}),
+	}
 }
 
 func (b *eventBroker) subscribe(conversationID int64) (<-chan Event, func()) {
@@ -557,6 +568,33 @@ func (b *eventBroker) publish(conversationID int64, event Event) {
 		select {
 		case ch <- event:
 		default:
+		}
+	}
+	// run changes reach every page: the session list marks which conversation is answering
+	if event.Name != EventRun {
+		return
+	}
+	for ch := range b.global {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
+}
+
+// subscribeAll listens to the run changes of every conversation.
+func (b *eventBroker) subscribeAll() (<-chan Event, func()) {
+	ch := make(chan Event, 64)
+	b.mu.Lock()
+	b.global[ch] = struct{}{}
+	b.mu.Unlock()
+
+	return ch, func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if _, ok := b.global[ch]; ok {
+			delete(b.global, ch)
+			close(ch)
 		}
 	}
 }

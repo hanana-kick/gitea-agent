@@ -4,11 +4,11 @@ import {svg} from '../svg.ts';
 import {errorMessage} from '../modules/errors.ts';
 import {addDelegatedEventListener, createElementFromHTML, toggleElem} from '../utils/dom.ts';
 
-type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string, busy: string};
+type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string};
 type AgentChatDelta = {runId: number, content?: string, reasoning?: string, reset?: boolean};
 type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string};
 type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[]};
-type AgentChatRun = {id: number, status: string, error: string, cancelable: boolean};
+type AgentChatRun = {id: number, conversationId: number, status: string, error: string, cancelable: boolean};
 type AgentChatConversation = {id: number, title: string, summary: string, icon: string};
 
 // a conversation does not exist until its first message, so the draft posts the message and
@@ -64,9 +64,44 @@ export function initAgentChat() {
   initDraftComposer();
   initMoreMenus();
 
+  // the session list marks the conversations that are answering right now
+  const chatEl = document.querySelector<HTMLElement>('.agent-chat');
+  const sessionBusyLabel = chatEl?.getAttribute('data-busy-label') ?? '';
+  function setSessionBusy(conversationID: string, isBusy: boolean) {
+    const card = document.querySelector<HTMLElement>(`.agent-chat-card[data-session-id="${CSS.escape(conversationID)}"]`);
+    if (!card) return;
+    const existing = card.querySelector<HTMLElement>('.agent-chat-card-busy');
+    if (!isBusy) {
+      existing?.remove();
+      return;
+    }
+    if (existing) return;
+    const dot = createElementFromHTML(`<span class="agent-chat-card-busy" data-tooltip-content="${sessionBusyLabel}"><i></i><i></i><i></i></span>`);
+    (card.querySelector('.agent-chat-card-main') ?? card).append(dot);
+  }
+
+  // without an open conversation the list still follows the runs of every conversation
+  function followAllRuns() {
+    const url = chatEl?.getAttribute('data-runs-url');
+    if (!url || !window.EventSource || !document.querySelector('.agent-chat-card[data-session-id]')) return;
+    const source = new EventSource(url);
+    source.addEventListener('run', (event: MessageEvent) => {
+      const run = JSON.parse(event.data) as AgentChatRun;
+      setSessionBusy(String(run.conversationId), run.status === 'queued' || run.status === 'running');
+    });
+    source.addEventListener('error', () => {
+      if (source.readyState === EventSource.CLOSED) return;
+      source.close();
+      setTimeout(followAllRuns, reconnectDelay);
+    });
+  }
+
   // `data-conversation-id` marks the page as a live chat, all URLs and labels are rendered by the server
   const mainEl = document.querySelector<HTMLElement>('.agent-chat-main[data-conversation-id]');
-  if (!mainEl) return;
+  if (!mainEl) {
+    followAllRuns();
+    return;
+  }
 
   const eventsUrl = mainEl.getAttribute('data-events-url')!;
   const messagesUrl = mainEl.getAttribute('data-messages-url')!;
@@ -261,22 +296,8 @@ export function initAgentChat() {
     if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  // the session list shows which conversation is answering
-  function setSessionBusy(isBusy: boolean) {
-    const card = document.querySelector<HTMLElement>(`.agent-chat-card[data-session-id="${CSS.escape(elConversationID)}"]`);
-    if (!card) return;
-    const existing = card.querySelector<HTMLElement>('.agent-chat-card-busy');
-    if (!isBusy) {
-      existing?.remove();
-      return;
-    }
-    if (existing) return;
-    const dot = createElementFromHTML(`<span class="agent-chat-card-busy" data-tooltip-content="${labels.busy}"><i></i><i></i><i></i></span>`);
-    (card.querySelector('.agent-chat-card-main') ?? card).append(dot);
-  }
-
   function applyRun(run: AgentChatRun) {
-    setSessionBusy(run.status === 'queued' || run.status === 'running');
+    setSessionBusy(elConversationID, run.status === 'queued' || run.status === 'running');
     if (run.status === 'queued' || run.status === 'running') {
       setBusy(true);
       const state = pendingEl?.getAttribute('data-state');
@@ -375,7 +396,12 @@ export function initAgentChat() {
       applyDelta(JSON.parse(event.data) as AgentChatDelta);
     });
     source.addEventListener('run', (event: MessageEvent) => {
-      applyRun(JSON.parse(event.data) as AgentChatRun);
+      const run = JSON.parse(event.data) as AgentChatRun;
+      if (String(run.conversationId) === elConversationID) {
+        applyRun(run);
+      } else {
+        setSessionBusy(String(run.conversationId), run.status === 'queued' || run.status === 'running');
+      }
     });
     source.addEventListener('conversation', (event: MessageEvent) => {
       applyConversation(JSON.parse(event.data) as AgentChatConversation);

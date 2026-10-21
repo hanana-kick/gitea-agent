@@ -164,7 +164,6 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 			"edit":      string(ctx.Tr("agent.chat_edit")),
 			"error":     string(ctx.Tr("agent.chat_status_error")),
 			"reasoning": string(ctx.Tr("agent.chat_reasoning")),
-			"busy":      string(ctx.Tr("agent.chat_busy")),
 		}
 		labelsJSON, err := json.Marshal(labels)
 		if err != nil {

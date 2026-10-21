@@ -68,6 +68,9 @@ func ChatEvents(ctx *context.Context) {
 
 	events, unsubscribe := agent_service.Subscribe(conversation.ID)
 	defer unsubscribe()
+	// the run changes of every conversation drive the busy marks in the session list
+	allRuns, unsubscribeAll := agent_service.SubscribeRunEvents()
+	defer unsubscribeAll()
 
 	// catch the client up on what it missed, then report the current run
 	replayEvents(ctx, conversation, eventsSince(ctx))
@@ -88,6 +91,58 @@ func ChatEvents(ctx *context.Context) {
 			}
 			flusher.Flush()
 		case event, ok := <-events:
+			if !ok {
+				return
+			}
+			if err := writeEvent(ctx, flusher, event.Name, event.Data); err != nil {
+				return
+			}
+			flusher.Flush()
+		case event, ok := <-allRuns:
+			if !ok {
+				return
+			}
+			if err := writeEvent(ctx, flusher, event.Name, event.Data); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+// ChatEventsAll streams the run changes of every conversation, so a page without an open
+// conversation still marks the sessions that are answering.
+func ChatEventsAll(ctx *context.Context) {
+	flusher, ok := ctx.Resp.(http.Flusher)
+	if !ok {
+		ctx.ServerError("agent events", fmt.Errorf("the response writer does not support streaming"))
+		return
+	}
+	header := ctx.Resp.Header()
+	header.Set("Content-Type", "text/event-stream")
+	header.Set("Cache-Control", "no-cache")
+	header.Set("Connection", "keep-alive")
+	header.Set("X-Accel-Buffering", "no")
+	ctx.Resp.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	runs, unsubscribe := agent_service.SubscribeRunEvents()
+	defer unsubscribe()
+
+	heartbeat := time.NewTicker(eventsHeartbeat)
+	defer heartbeat.Stop()
+
+	clientGone := ctx.Req.Context().Done()
+	for {
+		select {
+		case <-clientGone:
+			return
+		case <-heartbeat.C:
+			if _, err := fmt.Fprint(ctx.Resp, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case event, ok := <-runs:
 			if !ok {
 				return
 			}

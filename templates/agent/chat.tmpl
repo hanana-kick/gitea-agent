@@ -1,7 +1,7 @@
 {{template "base/head" .}}
 <div role="main" aria-label="{{.Title}}" class="page-content agent-chat-page{{if or .Session .IsDraft}} has-panel{{end}}">
 	{{template "base/alert" ctx.RootData}}
-	<div class="ui container fluid padded flex-container agent-chat">
+	<div class="ui container fluid padded flex-container agent-chat" data-runs-url="{{AppSubUrl}}/-/agent/events" data-busy-label="{{ctx.Locale.Tr "agent.chat_busy"}}">
 		<div class="flex-container-nav agent-chat-nav" aria-label="{{ctx.Locale.Tr "agent.chat_sessions"}}">
 			<div class="ui two item menu agent-chat-tabs">
 				<a class="item{{if eq .Scope "pod"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=pod">{{ctx.Locale.Tr "agent.chat_tab_pod"}}</a>

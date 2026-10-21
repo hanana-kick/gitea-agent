@@ -583,6 +583,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	// ***** START: Agent *****
 	m.Group("/-/agent", func() {
 		m.Get("", agent_web.Chat)
+		m.Get("/events", agent_web.ChatEventsAll)
 		m.Combo("/new").Get(agent_web.ChatDraft).Post(agent_web.ChatDraftCreate)
 		m.Get("/{id}", agent_web.ChatSession)
 		m.Get("/{id}/events", agent_web.ChatEvents)
