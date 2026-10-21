@@ -340,20 +340,6 @@ button.agent-chat-card {
   width: 100%;
 }
 
-.agent-chat-row-action {
-  padding: 4px;
-  color: var(--color-text-light-2);
-  cursor: pointer;
-  background: none;
-  border: 0;
-  border-radius: var(--border-radius);
-}
-
-.agent-chat-row-action:hover {
-  color: var(--color-red);
-  background: var(--color-hover);
-}
-
 .agent-chat-hint {
   margin: 4px 0 0;
   font-size: 11px;
@@ -384,26 +370,6 @@ button.agent-chat-card {
   align-items: center;
   padding: 8px 12px;
   border-bottom: 1px solid var(--color-secondary);
-}
-
-.agent-chat-status {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 6px 12px;
-  font-size: 12px;
-  color: var(--color-text-light-2);
-  background: var(--color-box-body-highlight);
-  border-bottom: 1px solid var(--color-secondary);
-}
-
-.agent-chat-status[data-status="failed"] {
-  color: var(--color-red);
-}
-
-.agent-chat-status-text {
-  flex: 1;
-  min-width: 0;
 }
 
 .agent-chat-hint-block {
@@ -662,8 +628,41 @@ button.agent-chat-card {
   display: flex;
   gap: 8px;
   align-items: flex-end;
+  margin: 0; /* the form component adds its own margin */
   padding: 10px 12px;
   border-top: 1px solid var(--color-secondary);
+}
+
+/* what the last finished run has to say; running answers are reported by the send button */
+.agent-chat-composer-error {
+  margin: 0;
+  padding: 6px 12px 0;
+  font-size: 12px;
+  color: var(--color-red);
+}
+
+.agent-chat-composer-error.is-info {
+  color: var(--color-text-light-2);
+}
+
+/* the send button turns into the cancel button while an answer is running */
+.agent-chat-send.busy::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid currentcolor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: agent-chat-spin 0.8s linear infinite;
+}
+
+@keyframes agent-chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .agent-chat-input {

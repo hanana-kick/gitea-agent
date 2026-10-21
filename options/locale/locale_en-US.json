@@ -4114,8 +4114,6 @@
   "agent.chat_system": "System",
   "agent.chat_resident_undeletable": "The resident session can not be deleted.",
   "agent.chat_model_required": "No model is assigned to this role yet. An admin can assign one under Model roles.",
-  "agent.chat_status_queued": "Waiting for the agent…",
-  "agent.chat_status_running": "The agent is answering…",
   "agent.chat_status_failed": "The agent failed",
   "agent.chat_status_canceled": "The run was canceled.",
   "agent.chat_status_error": "The message could not be sent.",

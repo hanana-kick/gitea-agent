@@ -183,10 +183,29 @@ func CancelRun(conversationID int64) error {
 	engine.mu.Lock()
 	cancel := engine.cancels[conversationID]
 	engine.mu.Unlock()
-	if cancel == nil {
+	if cancel != nil {
+		cancel()
+		return nil
+	}
+
+	// a queued run has no cancel func yet: finish it here, its worker then finds nothing to do
+	ctx := context.Background()
+	run, err := ActiveRun(ctx, conversationID)
+	if err != nil {
+		return err
+	}
+	if run == nil {
 		return ErrNoActiveRun{}
 	}
-	cancel()
+	if run.Status != agent_model.RunStatusQueued {
+		return ErrNoActiveRun{}
+	}
+	run.Status = agent_model.RunStatusCanceled
+	run.FinishedUnix = timeutil.TimeStampNow()
+	if _, err := db.GetEngine(ctx).ID(run.ID).Cols("status", "finished_unix").Update(run); err != nil {
+		return err
+	}
+	engine.publishRun(run.ConversationID, run)
 	return nil
 }
 
@@ -253,6 +272,9 @@ func (e *Engine) execute(runID int64) {
 	if err != nil || !exist {
 		log.Error("Agent engine: unable to load run %d: %v", runID, err)
 		return
+	}
+	if run.Status != agent_model.RunStatusQueued {
+		return // cancelled while it waited in the queue
 	}
 	conversation, exist, err := db.GetByID[agent_model.Conversation](ctx, run.ConversationID)
 	if err != nil || !exist {

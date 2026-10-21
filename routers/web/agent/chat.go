@@ -150,11 +150,8 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 			return
 		}
 		labels := map[string]string{
-			"queued":    string(ctx.Tr("agent.chat_status_queued")),
-			"running":   string(ctx.Tr("agent.chat_status_running")),
 			"failed":    string(ctx.Tr("agent.chat_status_failed")),
 			"canceled":  string(ctx.Tr("agent.chat_status_canceled")),
-			"cancel":    string(ctx.Tr("agent.chat_cancel")),
 			"copy":      string(ctx.Tr("agent.chat_copy")),
 			"edit":      string(ctx.Tr("agent.chat_edit")),
 			"error":     string(ctx.Tr("agent.chat_status_error")),
@@ -168,7 +165,7 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 		ctx.Data["LabelsJSON"] = string(labelsJSON)
 		ctx.Data["RunActive"] = run != nil && agent_model.IsRunActive(run.Status)
 		ctx.Data["RunCancelable"] = run != nil && agent_model.IsRunActive(run.Status)
-		ctx.Data["RunText"] = runText(run, labels)
+		ctx.Data["RunNote"] = runNote(run, labels)
 	}
 }
 
@@ -626,16 +623,13 @@ func repositorySessionCount(list *agent_service.ConversationList) int {
 	return count
 }
 
-// runText renders the status strip text of a run; succeeded runs show nothing.
-func runText(run *agent_model.Run, labels map[string]string) string {
+// runNote renders what the composer says about a finished run; running runs say nothing
+// because the send button already shows that.
+func runNote(run *agent_model.Run, labels map[string]string) string {
 	if run == nil {
 		return ""
 	}
 	switch run.Status {
-	case agent_model.RunStatusQueued:
-		return labels["queued"]
-	case agent_model.RunStatusRunning:
-		return labels["running"]
 	case agent_model.RunStatusCanceled:
 		return labels["canceled"]
 	case agent_model.RunStatusFailed:

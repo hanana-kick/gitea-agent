@@ -4,7 +4,7 @@ import {svg} from '../svg.ts';
 import {errorMessage} from '../modules/errors.ts';
 import {addDelegatedEventListener, createElementFromHTML, hideElem, showElem, toggleElem} from '../utils/dom.ts';
 
-type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, cancel: string, error: string, copy: string, edit: string, reasoning: string};
+type AgentChatLabels = {failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string};
 type AgentChatDelta = {runId: number, content?: string, reasoning?: string, reset?: boolean};
 type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string};
 type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[]};
@@ -73,29 +73,27 @@ export function initAgentChat() {
   const cancelUrl = mainEl.getAttribute('data-cancel-url')!;
   const labels = JSON.parse(mainEl.getAttribute('data-labels')!) as AgentChatLabels;
   const messagesEl = mainEl.querySelector<HTMLElement>('.agent-chat-messages')!;
-  const statusEl = mainEl.querySelector<HTMLElement>('.agent-chat-status')!;
-  const statusTextEl = mainEl.querySelector<HTMLElement>('.agent-chat-status-text')!;
-  const statusCancelEl = mainEl.querySelector<HTMLElement>('.agent-chat-status-cancel')!;
   const composerEl = mainEl.querySelector<HTMLFormElement>('.agent-chat-composer')!;
+  const sendEl = mainEl.querySelector<HTMLButtonElement>('.agent-chat-send')!;
+  const noteEl = mainEl.querySelector<HTMLElement>('.agent-chat-composer-error')!;
   const inputEl = mainEl.querySelector<HTMLTextAreaElement>('.agent-chat-input')!;
   const ajaxHeaders = {'X-Requested-With': 'XMLHttpRequest'};
   const elConversationID = mainEl.getAttribute('data-conversation-id')!;
   const editURL = `${mainEl.getAttribute('data-messages-url')}/`;
-
-  statusCancelEl.textContent = labels.cancel;
-  statusCancelEl.addEventListener('click', () => {
-    POST(cancelUrl, {headers: ajaxHeaders}); // no await
-  });
+  const idleLabel = sendEl.getAttribute('data-idle-label')!;
+  const busyLabel = sendEl.getAttribute('data-busy-label')!;
+  let busy = sendEl.hasAttribute('data-busy');
 
   // without EventSource nothing is streamed, so the composer keeps its native submit (redirect)
   if (!window.EventSource) return;
 
-  function showStatus(status: string, text: string, cancelable: boolean) {
-    // the CSS colors the strip by `data-status`, the server set it to the last known run
-    statusEl.setAttribute('data-status', status);
-    statusTextEl.textContent = text;
-    toggleElem(statusCancelEl, cancelable);
-    showElem(statusEl);
+  // the send button reports a running answer: it turns into the cancel button
+  function setBusy(next: boolean, note = '') {
+    busy = next;
+    sendEl.textContent = busy ? busyLabel : idleLabel;
+    sendEl.classList.toggle('busy', busy);
+    noteEl.textContent = note;
+    toggleElem(noteEl, note !== '');
   }
 
   function buildMessage(message: AgentChatMessage): HTMLElement {
@@ -257,17 +255,18 @@ export function initAgentChat() {
   }
 
   function applyRun(run: AgentChatRun) {
-    // a finished run either appended its message or failed: the live bubble has served its purpose
-    if (run.status !== 'queued' && run.status !== 'running') dropLive();
     if (run.status === 'queued' || run.status === 'running') {
-      showStatus(run.status, run.status === 'queued' ? labels.queued : labels.running, run.cancelable);
-    } else if (run.status === 'failed') {
-      showStatus(run.status, run.error ? `${labels.failed}: ${run.error}` : labels.failed, false);
+      setBusy(true);
+      return;
+    }
+    // a finished run either appended its message or failed: the live bubble has served its purpose
+    dropLive();
+    if (run.status === 'failed') {
+      setBusy(false, run.error ? `${labels.failed}: ${run.error}` : labels.failed);
     } else if (run.status === 'canceled') {
-      showStatus(run.status, labels.canceled, false);
+      setBusy(false, labels.canceled);
     } else {
-      hideElem(statusEl);
-      hideElem(statusCancelEl);
+      setBusy(false);
     }
   }
 
@@ -368,15 +367,19 @@ export function initAgentChat() {
 
   composerEl.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (busy) {
+      POST(cancelUrl, {headers: ajaxHeaders}); // the same button stops the answer
+      return;
+    }
     try {
       const resp = await POST(messagesUrl, {data: new FormData(composerEl), headers: ajaxHeaders});
       if (!resp.ok) {
-        showStatus('failed', `${labels.error} (${resp.status} ${resp.statusText})`, false);
+        setBusy(false, `${labels.error} (${resp.status} ${resp.statusText})`);
         return;
       }
       inputEl.value = '';
     } catch (error) {
-      showStatus('failed', `${labels.error} (${errorMessage(error)})`, false);
+      setBusy(false, `${labels.error} (${errorMessage(error)})`);
     }
   });
 

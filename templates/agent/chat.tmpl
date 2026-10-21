@@ -183,7 +183,7 @@
 					<div class="agent-chat-empty">{{ctx.Locale.Tr "agent.chat_draft_help"}}</div>
 				</div>
 
-				<form class="agent-chat-composer agent-chat-draft" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/new" data-draft-url="{{AppSubUrl}}/-/agent/new">
+				<form class="ui form agent-chat-composer agent-chat-draft" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/new" data-draft-url="{{AppSubUrl}}/-/agent/new">
 					<input type="hidden" name="kind" value="{{.DraftKind}}">
 					{{if .Repo}}<input type="hidden" name="repo_id" value="{{.Repo.ID}}">{{end}}
 					<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"{{if not .CanAnswer}} disabled{{end}}></textarea>
@@ -217,11 +217,6 @@
 						</form>
 					{{end}}
 				</header>
-
-				<div class="agent-chat-status{{if not (or .RunActive (eq .Run.Status "failed") (eq .Run.Status "canceled"))}} tw-hidden{{end}}" data-status="{{if .Run}}{{.Run.Status}}{{end}}">
-					<span class="agent-chat-status-text">{{.RunText}}</span>
-					<button type="button" class="agent-chat-status-cancel agent-chat-row-action{{if not .RunActive}} tw-hidden{{end}}">{{ctx.Locale.Tr "agent.chat_cancel"}}</button>
-				</div>
 
 				<div class="agent-chat-messages">
 					{{if .HasOlderMessages}}
@@ -272,13 +267,16 @@
 					{{end}}
 				</div>
 
-				<form class="agent-chat-composer" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages">
+				<p class="agent-chat-composer-error{{if or (not .RunNote) (ne .Run.Status "failed")}} is-info{{end}}{{if not .RunNote}} tw-hidden{{end}}">{{.RunNote}}</p>
+				<form class="ui form agent-chat-composer" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages">
 					<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"{{if not .CanAnswer}} disabled{{end}}></textarea>
 					<label class="agent-chat-attach" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_attach"}}">
 						{{svg "octicon-paperclip" 16}}
 						<input type="file" name="files" multiple>
 					</label>
-					<button type="submit" class="ui primary button"{{if not .CanAnswer}} disabled{{end}}>{{ctx.Locale.Tr "agent.chat_send"}}</button>
+					<button type="submit" class="ui primary button agent-chat-send"{{if not .CanAnswer}} disabled{{end}}
+						data-idle-label="{{ctx.Locale.Tr "agent.chat_send"}}" data-busy-label="{{ctx.Locale.Tr "agent.chat_cancel"}}"
+						{{if .RunActive}}data-busy{{end}}>{{if .RunActive}}{{ctx.Locale.Tr "agent.chat_cancel"}}{{else}}{{ctx.Locale.Tr "agent.chat_send"}}{{end}}</button>
 				</form>
 				{{if not .CanAnswer}}
 					<p class="agent-chat-hint agent-chat-hint-block">{{ctx.Locale.Tr "agent.chat_model_required"}}</p>
