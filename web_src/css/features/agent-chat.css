@@ -443,6 +443,24 @@ button.agent-chat-card {
   }
 }
 
+/* the block under the last message: what its answer is doing right now */
+.agent-chat-pending-status {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-pending[data-state="failed"] .agent-chat-pending-status {
+  color: var(--color-red);
+}
+
+.agent-chat-pending[data-state="failed"] .agent-chat-reasoning-dots,
+.agent-chat-pending[data-state="canceled"] .agent-chat-reasoning-dots {
+  display: none;
+}
+
 /* shown while the model reasons, before any answer text arrives */
 .agent-chat-reasoning {
   display: flex;

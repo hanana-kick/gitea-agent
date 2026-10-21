@@ -4116,6 +4116,8 @@
   "agent.chat_model_required": "No model is assigned to this role yet. An admin can assign one under Model roles.",
   "agent.chat_status_failed": "The agent failed",
   "agent.chat_status_canceled": "The run was canceled.",
+  "agent.chat_pending_queued": "Waiting for an answer…",
+  "agent.chat_pending_running": "Preparing an answer…",
   "agent.chat_status_error": "The message could not be sent.",
   "agent.chat_cancel": "Cancel",
   "agent.api_keys_title": "API keys",

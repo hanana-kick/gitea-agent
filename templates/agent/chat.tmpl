@@ -265,9 +265,18 @@
 					{{else}}
 						<div class="agent-chat-empty">{{ctx.Locale.Tr "agent.chat_no_messages"}}</div>
 					{{end}}
+					{{if .PendingText}}
+						{{/* what the answer to the last message is doing: queued, running, failed, canceled */}}
+						<div class="agent-chat-message assistant agent-chat-pending" data-state="{{.PendingState}}" data-run-id="{{.PendingRunID}}">
+							<div class="agent-chat-bubble">
+								<div class="agent-chat-pending-status"><span class="agent-chat-reasoning-dots"><i></i><i></i><i></i></span><span class="agent-chat-pending-label">{{.PendingText}}</span></div>
+								<div class="agent-chat-live-text"></div>
+							</div>
+						</div>
+					{{end}}
 				</div>
 
-				<p class="agent-chat-composer-error{{if or (not .RunNote) (ne .Run.Status "failed")}} is-info{{end}}{{if not .RunNote}} tw-hidden{{end}}">{{.RunNote}}</p>
+				<p class="agent-chat-composer-error{{if not .ComposerError}} tw-hidden{{end}}">{{.ComposerError}}</p>
 				<form class="ui form agent-chat-composer" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages">
 					<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"{{if not .CanAnswer}} disabled{{end}}></textarea>
 					<label class="agent-chat-attach" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_attach"}}">

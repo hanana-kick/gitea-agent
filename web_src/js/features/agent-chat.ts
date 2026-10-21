@@ -2,9 +2,9 @@ import {GET, POST} from '../modules/fetch.ts';
 import {copyToClipboardWithFeedback} from '../modules/clipboard.ts';
 import {svg} from '../svg.ts';
 import {errorMessage} from '../modules/errors.ts';
-import {addDelegatedEventListener, createElementFromHTML, hideElem, showElem, toggleElem} from '../utils/dom.ts';
+import {addDelegatedEventListener, createElementFromHTML, toggleElem} from '../utils/dom.ts';
 
-type AgentChatLabels = {failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string};
+type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string};
 type AgentChatDelta = {runId: number, content?: string, reasoning?: string, reset?: boolean};
 type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string};
 type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[]};
@@ -149,7 +149,7 @@ export function initAgentChat() {
 
   function appendMessage(message: AgentChatMessage) {
     if (messagesEl.querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`)) return;
-    dropLive();
+    dropPending();
 
     const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= bottomThreshold;
     for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
@@ -205,51 +205,58 @@ export function initAgentChat() {
     messagesEl.querySelector('.agent-chat-load-older')?.addEventListener('click', loadOlder);
   }
 
-  // the answer is shown while it arrives and replaced by the stored message at the end
-  let liveEl: HTMLElement | null = null;
-  let liveRunID = 0;
+  // the block under the last message says what its answer is doing; the stored message
+  // replaces it once the run succeeds
+  type AgentChatPendingState = 'queued' | 'running' | 'reasoning' | 'streaming' | 'failed' | 'canceled';
 
-  function dropLive() {
-    liveEl?.remove();
-    liveEl = null;
+  let pendingEl = messagesEl.querySelector<HTMLElement>('.agent-chat-pending');
+  let pendingRunID = Number(pendingEl?.getAttribute('data-run-id') ?? 0);
+
+  function dropPending() {
+    pendingEl?.remove();
+    pendingEl = null;
   }
 
-  function ensureLive(): HTMLElement {
-    if (liveEl) return liveEl;
+  function ensurePending(): HTMLElement {
+    if (pendingEl) return pendingEl;
     for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
     const el = document.createElement('div');
-    el.className = 'agent-chat-message assistant agent-chat-live';
+    el.className = 'agent-chat-message assistant agent-chat-pending';
     el.innerHTML = `<div class="agent-chat-bubble">
-      <div class="agent-chat-reasoning tw-hidden"><span class="agent-chat-reasoning-dots"><i></i><i></i><i></i></span><span class="agent-chat-reasoning-label"></span></div>
+      <div class="agent-chat-pending-status"><span class="agent-chat-reasoning-dots"><i></i><i></i><i></i></span><span class="agent-chat-pending-label"></span></div>
       <div class="agent-chat-live-text"></div>
     </div>`;
-    el.querySelector('.agent-chat-reasoning-label')!.textContent = labels.reasoning;
     messagesEl.append(el);
-    liveEl = el;
+    pendingEl = el;
     return el;
+  }
+
+  function setPendingState(state: AgentChatPendingState, text: string) {
+    const el = ensurePending();
+    el.setAttribute('data-state', state);
+    el.querySelector('.agent-chat-pending-label')!.textContent = text;
+    // once text arrives the label would only repeat what is already readable
+    toggleElem(el.querySelector<HTMLElement>('.agent-chat-pending-status')!, state !== 'streaming');
   }
 
   function applyDelta(delta: AgentChatDelta) {
     if (delta.reset) {
-      dropLive();
-      liveRunID = 0;
+      dropPending();
+      pendingRunID = 0;
       return; // another role member starts over
     }
     if (!delta.content && !delta.reasoning) return;
-    if (delta.runId !== liveRunID) {
-      dropLive();
-      liveRunID = delta.runId;
+    if (delta.runId !== pendingRunID) {
+      dropPending();
+      pendingRunID = delta.runId;
     }
 
     const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= bottomThreshold;
-    const el = ensureLive();
-    const reasoningEl = el.querySelector<HTMLElement>('.agent-chat-reasoning')!;
-    const textEl = el.querySelector<HTMLElement>('.agent-chat-live-text')!;
     if (delta.content) {
-      textEl.textContent += delta.content;
-      hideElem(reasoningEl); // the answer started, the thinking is over
-    } else if (!textEl.textContent) {
-      showElem(reasoningEl); // the model is still reasoning
+      ensurePending().querySelector<HTMLElement>('.agent-chat-live-text')!.textContent += delta.content;
+      setPendingState('streaming', '');
+    } else {
+      setPendingState('reasoning', labels.reasoning); // the model thinks before it answers
     }
     if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
@@ -257,17 +264,22 @@ export function initAgentChat() {
   function applyRun(run: AgentChatRun) {
     if (run.status === 'queued' || run.status === 'running') {
       setBusy(true);
+      const state = pendingEl?.getAttribute('data-state');
+      if (run.status === 'queued' || !state || state === 'queued') {
+        setPendingState(run.status === 'queued' ? 'queued' : 'running', run.status === 'queued' ? labels.queued : labels.running);
+      }
       return;
     }
-    // a finished run either appended its message or failed: the live bubble has served its purpose
-    dropLive();
-    if (run.status === 'failed') {
-      setBusy(false, run.error ? `${labels.failed}: ${run.error}` : labels.failed);
-    } else if (run.status === 'canceled') {
-      setBusy(false, labels.canceled);
-    } else {
-      setBusy(false);
+    setBusy(false);
+    if (run.status === 'succeeded') {
+      dropPending(); // the stored message takes its place
+      pendingRunID = 0;
+      return;
     }
+    // the failure stays under the message it belongs to
+    setPendingState(run.status === 'failed' ? 'failed' : 'canceled',
+      run.status === 'failed' ? (run.error ? `${labels.failed}: ${run.error}` : labels.failed) : labels.canceled);
+    pendingRunID = 0;
   }
 
   // the folder modals are shared by every row: the global "show-modal" handler fills the
@@ -378,6 +390,7 @@ export function initAgentChat() {
         return;
       }
       inputEl.value = '';
+      if (!pendingEl) setPendingState('queued', labels.queued); // the run event follows, this avoids a gap
     } catch (error) {
       setBusy(false, `${labels.error} (${errorMessage(error)})`);
     }

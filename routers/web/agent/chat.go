@@ -150,6 +150,8 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 			return
 		}
 		labels := map[string]string{
+			"queued":    string(ctx.Tr("agent.chat_pending_queued")),
+			"running":   string(ctx.Tr("agent.chat_pending_running")),
 			"failed":    string(ctx.Tr("agent.chat_status_failed")),
 			"canceled":  string(ctx.Tr("agent.chat_status_canceled")),
 			"copy":      string(ctx.Tr("agent.chat_copy")),
@@ -165,7 +167,11 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 		ctx.Data["LabelsJSON"] = string(labelsJSON)
 		ctx.Data["RunActive"] = run != nil && agent_model.IsRunActive(run.Status)
 		ctx.Data["RunCancelable"] = run != nil && agent_model.IsRunActive(run.Status)
-		ctx.Data["RunNote"] = runNote(run, labels)
+		ctx.Data["PendingState"], ctx.Data["PendingText"] = pendingState(run, labels)
+		ctx.Data["PendingRunID"] = int64(0)
+		if run != nil {
+			ctx.Data["PendingRunID"] = run.ID
+		}
 	}
 }
 
@@ -623,22 +629,26 @@ func repositorySessionCount(list *agent_service.ConversationList) int {
 	return count
 }
 
-// runNote renders what the composer says about a finished run; running runs say nothing
-// because the send button already shows that.
-func runNote(run *agent_model.Run, labels map[string]string) string {
+// pendingState describes what the answer to the last message is doing, so a reloaded
+// transcript shows the same thing the live one does.
+func pendingState(run *agent_model.Run, labels map[string]string) (state, text string) {
 	if run == nil {
-		return ""
+		return "", ""
 	}
 	switch run.Status {
+	case agent_model.RunStatusQueued:
+		return "queued", labels["queued"]
+	case agent_model.RunStatusRunning:
+		return "running", labels["running"]
 	case agent_model.RunStatusCanceled:
-		return labels["canceled"]
+		return "canceled", labels["canceled"]
 	case agent_model.RunStatusFailed:
 		if run.Error == "" {
-			return labels["failed"]
+			return "failed", labels["failed"]
 		}
-		return labels["failed"] + ": " + run.Error
+		return "failed", labels["failed"] + ": " + run.Error
 	}
-	return ""
+	return "", ""
 }
 
 // answer replies to a request that may or may not be an XHR.
