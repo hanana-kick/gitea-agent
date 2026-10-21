@@ -1,54 +1,54 @@
 {{template "base/head" .}}
 <div role="main" aria-label="{{.Title}}" class="page-content agent-chat-page{{if .Session}} has-session{{end}}">
 	{{template "base/alert" ctx.RootData}}
-	<div class="ui container agent-chat">
-		<aside class="agent-chat-sidebar" aria-label="{{ctx.Locale.Tr "agent.chat_sessions"}}">
-			<div class="agent-chat-sidebar-head">{{ctx.Locale.Tr "agent.chat_sessions"}}</div>
-			<div class="agent-chat-sidebar-scroll">
+	<div class="ui container fluid padded flex-container agent-chat">
+		<div class="flex-container-nav agent-chat-nav" aria-label="{{ctx.Locale.Tr "agent.chat_sessions"}}">
+			<div class="ui fluid vertical menu agent-chat-sessions">
+				<div class="header item">{{ctx.Locale.Tr "agent.chat_sessions"}}</div>
 				{{with .Sessions.Resident}}
-					<section class="agent-chat-section">
-						<h4 class="agent-chat-section-title">
-							<span>{{ctx.Locale.Tr "agent.chat_resident"}}</span>
-						</h4>
-						<a class="agent-chat-session{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
-							{{svg "gitea-pod" 18}}
-							<span class="gt-ellipsis">{{.Title}}</span>
-						</a>
+					<div class="item agent-chat-group">
+						<div class="agent-chat-group-title">{{ctx.Locale.Tr "agent.chat_resident"}}</div>
+						<div class="menu">
+							<a class="item{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
+								{{svg "gitea-pod-outline"}}<span class="gt-ellipsis">{{.Title}}</span>
+							</a>
+						</div>
 						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_resident_help"}}</p>
-					</section>
+					</div>
 				{{end}}
 
 				{{if .SignedUser.IsAdmin}}
-					<section class="agent-chat-section">
-						<h4 class="agent-chat-section-title">
+					<div class="item agent-chat-group">
+						<div class="agent-chat-group-title">
 							<span>{{ctx.Locale.Tr "agent.chat_server"}}</span>
 							<form method="post" action="{{AppSubUrl}}/-/agent/new">
 								<input type="hidden" name="kind" value="server">
-								<button type="submit" class="ui mini basic icon button" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_new_server"}}">{{svg "octicon-plus"}}</button>
+								<button type="submit" class="agent-chat-row-action" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_new_server"}}">{{svg "octicon-plus"}}</button>
 							</form>
-						</h4>
-						{{range .Sessions.Servers}}
-							<div class="agent-chat-session-row">
-								<a class="agent-chat-session{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
-									{{svg "octicon-server" 18}}
-									<span class="gt-ellipsis">{{.Title}}</span>
-									<span class="agent-chat-session-time">{{DateUtils.TimeSince .UpdatedUnix}}</span>
-								</a>
-								<form method="post" action="{{AppSubUrl}}/-/agent/{{.ID}}/delete">
-									<button type="submit" class="agent-chat-row-action" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_delete"}}">{{svg "octicon-trash"}}</button>
-								</form>
-							</div>
-						{{else}}
-							<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_server"}}</p>
-						{{end}}
+						</div>
+						<div class="menu">
+							{{range .Sessions.Servers}}
+								<div class="item agent-chat-session-row">
+									<a class="agent-chat-session-link{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
+										{{svg "octicon-server" 18}}
+										<span class="gt-ellipsis">{{.Title}}</span>
+									</a>
+									<form method="post" action="{{AppSubUrl}}/-/agent/{{.ID}}/delete">
+										<button type="submit" class="agent-chat-row-action" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_delete"}}">{{svg "octicon-trash"}}</button>
+									</form>
+								</div>
+							{{else}}
+								<div class="item agent-chat-hint-item">{{ctx.Locale.Tr "agent.chat_no_server"}}</div>
+							{{end}}
+						</div>
 						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_server_help"}}</p>
-					</section>
+					</div>
 				{{end}}
 
-				<section class="agent-chat-section">
-					<h4 class="agent-chat-section-title">
+				<div class="item agent-chat-group">
+					<div class="agent-chat-group-title">
 						<span>{{ctx.Locale.Tr "agent.chat_repository"}}</span>
-					</h4>
+					</div>
 					{{if .WritableRepos}}
 						<form class="agent-chat-repo-new" method="post" action="{{AppSubUrl}}/-/agent/new">
 							<input type="hidden" name="kind" value="repository">
@@ -60,31 +60,32 @@
 							<button type="submit" class="ui mini button">{{svg "octicon-plus"}}{{ctx.Locale.Tr "agent.chat_start_repository"}}</button>
 						</form>
 					{{end}}
-					{{range .Sessions.Repositories}}
-						<div class="agent-chat-repo">
-							<a class="agent-chat-repo-name gt-ellipsis" href="{{.Repo.Link}}" title="{{.Repo.FullName}}">{{.Repo.FullName}}</a>
-							{{range .Sessions}}
-								<div class="agent-chat-session-row">
-									<a class="agent-chat-session{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
-										{{svg "octicon-repo" 18}}
-										<span class="gt-ellipsis">{{.Title}}</span>
-										<span class="agent-chat-session-time">{{DateUtils.TimeSince .UpdatedUnix}}</span>
-									</a>
-									<form method="post" action="{{AppSubUrl}}/-/agent/{{.ID}}/delete">
-										<button type="submit" class="agent-chat-row-action" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_delete"}}">{{svg "octicon-trash"}}</button>
-									</form>
-								</div>
-							{{end}}
-						</div>
-					{{else}}
-						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_repository"}}</p>
-					{{end}}
+					<div class="menu">
+						{{range .Sessions.Repositories}}
+							<div class="agent-chat-repo">
+								<a class="agent-chat-repo-name gt-ellipsis" href="{{.Repo.Link}}" title="{{.Repo.FullName}}">{{.Repo.FullName}}</a>
+								{{range .Sessions}}
+									<div class="item agent-chat-session-row">
+										<a class="agent-chat-session-link{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
+											{{svg "octicon-repo" 18}}
+											<span class="gt-ellipsis">{{.Title}}</span>
+										</a>
+										<form method="post" action="{{AppSubUrl}}/-/agent/{{.ID}}/delete">
+											<button type="submit" class="agent-chat-row-action" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_delete"}}">{{svg "octicon-trash"}}</button>
+										</form>
+									</div>
+								{{end}}
+							</div>
+						{{else}}
+							<div class="item agent-chat-hint-item">{{ctx.Locale.Tr "agent.chat_no_repository"}}</div>
+						{{end}}
+					</div>
 					<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_repository_help"}}</p>
-				</section>
+				</div>
 			</div>
-		</aside>
+		</div>
 
-		<main class="agent-chat-main" aria-label="{{ctx.Locale.Tr "agent.chat_title"}}"
+		<div class="flex-container-main agent-chat-main" aria-label="{{ctx.Locale.Tr "agent.chat_title"}}"
 			{{if .Session}}data-conversation-id="{{.Session.ID}}"
 			data-last-message-id="{{.LastMessageID}}"
 			data-events-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/events"
@@ -95,7 +96,7 @@
 				<header class="agent-chat-head">
 					<a class="agent-chat-back" href="{{AppSubUrl}}/-/agent" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_sessions"}}">{{svg "octicon-chevron-left"}}</a>
 					<div class="agent-chat-head-icon">
-						{{if eq .Session.Kind "resident"}}{{svg "gitea-pod" 20}}{{else if eq .Session.Kind "server"}}{{svg "octicon-server" 20}}{{else}}{{svg "octicon-repo" 20}}{{end}}
+						{{if eq .Session.Kind "resident"}}{{svg "gitea-pod-outline" 20}}{{else if eq .Session.Kind "server"}}{{svg "octicon-server" 20}}{{else}}{{svg "octicon-repo" 20}}{{end}}
 					</div>
 					<div class="agent-chat-head-text">
 						<div class="agent-chat-head-title gt-ellipsis">{{.Session.Title}}</div>
@@ -158,7 +159,7 @@
 					<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_select_session_help"}}</p>
 				</div>
 			{{end}}
-		</main>
+		</div>
 	</div>
 </div>
 {{template "base/footer" .}}

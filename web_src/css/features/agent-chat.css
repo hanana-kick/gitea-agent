@@ -1,14 +1,11 @@
 /* agent chat screen: session list on the left, transcript on the right */
 
 .agent-chat {
-  --agent-chat-offset: 103px; /* navbar + footer + margin, the panel fills the rest */
+  --agent-chat-offset: 167px; /* navbar + footer + page spacing, the panels fill the rest */
 
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: 14px;
   height: calc(100dvh - var(--agent-chat-offset));
   min-height: 420px;
-  padding: 14px 0;
+  padding: 0 var(--page-spacing);
   /* the page bottom padding would otherwise leave a gap above the footer */
   margin-bottom: calc(-1 * var(--page-space-bottom));
 }
@@ -23,7 +20,7 @@
   margin: 0;
 }
 
-.agent-chat-sidebar,
+/* the session list reuses the admin sidebar components: flex-container-nav + vertical menu */
 .agent-chat-main {
   display: flex;
   flex-direction: column;
@@ -35,48 +32,55 @@
   border-radius: var(--border-radius-medium);
 }
 
-.agent-chat-sidebar-head {
-  padding: 10px 12px;
-  font-size: 12px;
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-light-2);
-  text-transform: uppercase;
-  border-bottom: 1px solid var(--color-secondary);
+.agent-chat-nav {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  min-height: 0;
 }
 
-.agent-chat-sidebar-scroll {
+.agent-chat-sessions {
   flex: 1;
   min-height: 0;
-  padding: 6px;
+  margin: 0;
   overflow-y: auto;
 }
 
-.agent-chat-section + .agent-chat-section {
-  margin-top: 14px;
+.agent-chat-sessions .header.item {
+  font-size: 12px;
+  color: var(--color-text-light-2);
+  text-transform: uppercase;
 }
 
-.agent-chat-section-title {
+.agent-chat-group {
+  padding: 8px 10px;
+}
+
+.agent-chat-group-title {
   display: flex;
   gap: 6px;
   align-items: center;
-  padding: 2px 6px;
-  margin: 0 0 4px;
   font-size: 12px;
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-light-2);
 }
 
-.agent-chat-section-title form {
+.agent-chat-group-title form {
   margin-left: auto;
 }
 
-.agent-chat-session-row {
-  display: flex;
-  gap: 2px;
-  align-items: center;
+.agent-chat-sessions .menu .item {
+  padding: 6px 8px;
 }
 
-.agent-chat-session {
+.agent-chat-session-row {
+  display: flex !important;
+  gap: 2px;
+  align-items: center;
+  padding: 0 !important;
+}
+
+.agent-chat-session-link {
   display: flex;
   flex: 1;
   gap: 6px;
@@ -88,12 +92,12 @@
   border-radius: var(--border-radius);
 }
 
-.agent-chat-session:hover {
+.agent-chat-session-link:hover {
   color: var(--color-text);
   background: var(--color-hover);
 }
 
-.agent-chat-session.active {
+.agent-chat-session-link.active {
   font-weight: var(--font-weight-semibold);
   background: var(--color-active);
 }
@@ -120,9 +124,14 @@
 }
 
 .agent-chat-hint {
-  margin: 4px 8px 0;
+  margin: 4px 0 0;
   font-size: 11px;
   line-height: 1.4;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-hint-item {
+  font-size: 12px;
   color: var(--color-text-light-2);
 }
 
@@ -130,7 +139,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 2px 6px 6px;
+  padding: 2px 0 6px;
 }
 
 .agent-chat-repo-new .ui.dropdown {
@@ -144,7 +153,7 @@
 
 .agent-chat-repo-name {
   display: block;
-  padding: 2px 8px;
+  padding: 2px 0;
   font-size: 12px;
   color: var(--color-text-light-2);
 }
@@ -304,16 +313,18 @@
 
 @media (max-width: 767.98px) {
   .agent-chat {
-    --agent-chat-offset: 157px; /* the footer wraps to several lines here */
+    --agent-chat-offset: 221px; /* the footer wraps to several lines here */
 
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0;
-    padding: 8px 0;
+    padding: 0 8px;
   }
 
-  .agent-chat-page.has-session .agent-chat-sidebar,
+  .agent-chat-nav {
+    width: auto;
+  }
+
+  .agent-chat-page.has-session .agent-chat-nav,
   .agent-chat-page:not(.has-session) .agent-chat-main {
-    display: none;
+    display: none !important;
   }
 
   .agent-chat-back {

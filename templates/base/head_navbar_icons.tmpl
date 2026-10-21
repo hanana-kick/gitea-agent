@@ -4,7 +4,7 @@
 	{{- $activeStopwatch := call $data.GetActiveStopwatch -}}
 	{{- $notificationUnreadCount := call $data.GetNotificationUnreadCount -}}
 	<a class="item {{$itemExtraClass}}" href="{{AppSubUrl}}/-/agent" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_title"}}">
-		{{svg "gitea-pod" 22}}
+		<div class="flex-text-block">{{svg "gitea-pod-outline"}}</div>
 	</a>
 	<a class="item {{$itemExtraClass}}" href="{{AppSubUrl}}/notifications" data-tooltip-content="{{ctx.Locale.Tr "notifications"}}">
 		<div class="tw-relative flex-text-block">
