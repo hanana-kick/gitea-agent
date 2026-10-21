@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,13 @@ const (
 	engineNameHistoryLimit = 8
 	engineTitleTimeout     = 60 * time.Second
 	engineTitleExcerpt     = 500
+
+	// the resident summarises recent work, so it reads further back and spends its
+	// excerpt budget from the newest exchange backwards
+	engineSummaryHistoryLimit = 20
+	engineSummaryBudget       = 1600
+	engineSummaryNewest       = 700
+	engineSummaryOlder        = 160
 )
 
 // Event names published for one conversation.
@@ -360,8 +368,6 @@ func messageIDs(messages []*agent_model.Message) []int64 {
 	return ids
 }
 
-// nameConversation asks the model for a title once the first answer exists, so a session
-// stops being called "new conversation". Failures keep the placeholder title.
 // nameConversation names a new session, or refreshes what the resident has been working on.
 func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model.Conversation) {
 	resident := conversation.Kind == agent_model.ConversationKindResident
@@ -372,7 +378,11 @@ func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model
 	if err != nil || ref == "" {
 		return // naming is a convenience, the session keeps its placeholder without it
 	}
-	history, err := ListMessages(ctx, conversation.ID, engineNameHistoryLimit)
+	historyLimit := engineNameHistoryLimit
+	if resident {
+		historyLimit = engineSummaryHistoryLimit
+	}
+	history, err := ListMessages(ctx, conversation.ID, historyLimit)
 	if err != nil || len(history) < 2 {
 		return
 	}
@@ -384,13 +394,14 @@ func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model
 		"words, no quotes, no punctuation at the end, in the language the user writes in.",
 		"Name this conversation:\n\n"
 	if resident {
-		system, ask = "You summarize the latest work of an agent. Answer with at most six words, "+
-			"no quotes, no punctuation at the end, in the language the user writes in.",
-			"What is the agent working on:\n\n"
+		system, ask = "You summarize the latest work of an agent. Focus on the most recent "+
+			"exchange of the transcript; everything before it is only context. Answer with at most six "+
+			"words, no quotes, no punctuation at the end, in the language the user writes in.",
+			"What has the agent been working on most recently:\n\n"
 	}
 	prompt := []llm.Message{
 		{Role: "system", Content: system},
-		{Role: "user", Content: ask + conversationExcerpt(history)},
+		{Role: "user", Content: ask + conversationExcerpt(history, resident)},
 	}
 	// no max token limit: models that think before answering would spend a small budget on
 	// reasoning and return no content at all
@@ -415,28 +426,75 @@ func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model
 	e.broker.publish(conversation.ID, Event{Name: EventConversation, Data: State(conversation)})
 }
 
-// conversationExcerpt renders the start of a transcript for the naming request.
-func conversationExcerpt(history []*agent_model.Message) string {
-	var builder strings.Builder
-	added := 0
+// conversationExcerpt renders a transcript excerpt for the summary request. Conversation
+// naming reads the opening; the resident summarises recent work, so its budget is spent
+// from the newest exchange backwards and earlier messages only give context.
+func conversationExcerpt(history []*agent_model.Message, resident bool) string {
+	messages := make([]*agent_model.Message, 0, len(history))
 	for _, message := range history {
 		if message.Role == agent_model.MessageRoleSystem {
 			continue
 		}
-		content := strings.TrimSpace(message.Content)
-		if content == "" {
-			continue
-		}
-		if runes := []rune(content); len(runes) > engineTitleExcerpt {
-			content = string(runes[:engineTitleExcerpt])
-		}
-		builder.WriteString(message.Role + ": " + content + "\n")
-		added++
-		if added >= 4 {
-			break
+		if content := strings.TrimSpace(message.Content); content != "" {
+			messages = append(messages, message)
 		}
 	}
-	return builder.String()
+	if len(messages) == 0 {
+		return ""
+	}
+
+	if !resident {
+		var builder strings.Builder
+		for _, message := range messages {
+			line, used := excerptLine(message, engineTitleExcerpt, engineSummaryBudget)
+			if used == 0 {
+				break
+			}
+			builder.WriteString(line)
+		}
+		return builder.String()
+	}
+
+	lastUser := -1
+	for i, message := range messages {
+		if message.Role == agent_model.MessageRoleUser {
+			lastUser = i
+		}
+	}
+
+	var parts []string
+	remaining := engineSummaryBudget
+	for i := len(messages) - 1; i >= 0; i-- {
+		limit := engineSummaryOlder
+		if i >= lastUser {
+			limit = engineSummaryNewest // the newest exchange carries the meaning
+		}
+		line, used := excerptLine(messages[i], limit, remaining)
+		if used == 0 {
+			break
+		}
+		remaining -= used
+		parts = append(parts, line)
+	}
+	slices.Reverse(parts)
+	return strings.Join(parts, "\n")
+}
+
+// excerptLine renders one transcript line, capped per message and by the budget left.
+func excerptLine(message *agent_model.Message, limit, remaining int) (string, int) {
+	content := message.Content
+	if runes := []rune(content); len(runes) > limit {
+		content = string(runes[:limit]) + "…"
+	}
+	line := message.Role + ": " + strings.TrimSpace(content) + "\n"
+	runes := []rune(line)
+	if len(runes) > remaining {
+		if remaining <= 0 {
+			return "", 0
+		}
+		runes = runes[:remaining]
+	}
+	return string(runes), len(runes)
 }
 
 // cleanConversationTitle drops the decorations a model likes to add around a title.

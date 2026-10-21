@@ -152,6 +152,20 @@
   padding: 10px;
 }
 
+/* the answering dots of the list and the summary share the row with the name:
+   the name shrinks instead of pushing them out */
+.agent-chat-card-resident .agent-chat-card-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-chat-card-resident .agent-chat-card-name {
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap; /* the summary shares the row with the answering dots, so it shrinks */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* the new conversation icon is a row action, so it shares the right edge of the menus */
 .agent-chat-card-new .agent-chat-card-icon {
   padding-right: 4px;
@@ -172,10 +186,6 @@
 
 .agent-chat-card-name {
   min-width: 0;
-}
-
-.agent-chat-card-resident .agent-chat-card-name {
-  font-weight: var(--font-weight-semibold);
 }
 
 /* a session that is answering right now */
@@ -444,6 +454,11 @@ button.agent-chat-card {
   min-height: 0;
   padding: 12px;
   overflow-y: auto;
+}
+
+/* the scroll spacer that pins the last question: a flex child collapses unless it grows */
+.agent-chat-scroll-pad {
+  flex: 0 0 auto;
 }
 
 .agent-chat-message {
