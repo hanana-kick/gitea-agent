@@ -85,7 +85,7 @@ func ListConversations(ctx context.Context, doer *user_model.User) (*Conversatio
 		if list.Resident, err = EnsureResidentConversation(ctx); err != nil {
 			return nil, err
 		}
-		if list.Servers, err = findConversations(ctx, agent_model.ConversationKindServer); err != nil {
+		if list.Servers, err = findConversations(ctx, agent_model.ConversationKindServer, doer.ID); err != nil {
 			return nil, err
 		}
 	}
@@ -110,7 +110,7 @@ func ListConversations(ctx context.Context, doer *user_model.User) (*Conversatio
 	}
 	list.Servers = root
 
-	sessions, err := findConversations(ctx, agent_model.ConversationKindRepository)
+	sessions, err := findConversations(ctx, agent_model.ConversationKindRepository, doer.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -143,10 +143,11 @@ func ListConversations(ctx context.Context, doer *user_model.User) (*Conversatio
 	return list, nil
 }
 
-func findConversations(ctx context.Context, kind string) ([]*agent_model.Conversation, error) {
+// findConversations lists the sessions of one owner; ownerID 0 is the instance-wide set.
+func findConversations(ctx context.Context, kind string, ownerID int64) ([]*agent_model.Conversation, error) {
 	sessions := make([]*agent_model.Conversation, 0, 8)
 	err := db.GetEngine(ctx).
-		Where("kind = ?", kind).
+		Where("kind = ? AND owner_id = ?", kind, ownerID).
 		OrderBy("updated_unix DESC").
 		Find(&sessions)
 	return sessions, err
@@ -154,7 +155,7 @@ func findConversations(ctx context.Context, kind string) ([]*agent_model.Convers
 
 // EnsureResidentConversation returns the instance-wide session, creating it when absent.
 func EnsureResidentConversation(ctx context.Context) (*agent_model.Conversation, error) {
-	sessions, err := findConversations(ctx, agent_model.ConversationKindResident)
+	sessions, err := findConversations(ctx, agent_model.ConversationKindResident, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +175,7 @@ func EnsureResidentConversation(ctx context.Context) (*agent_model.Conversation,
 }
 
 // CreateConversation stores a new session of the given kind.
-func CreateConversation(ctx context.Context, kind string, repoID int64, title string) (*agent_model.Conversation, error) {
+func CreateConversation(ctx context.Context, kind string, ownerID, repoID int64, title string) (*agent_model.Conversation, error) {
 	if !agent_model.IsValidConversationKind(kind) {
 		return nil, fmt.Errorf("unknown session kind %q", kind)
 	}
@@ -182,7 +183,7 @@ func CreateConversation(ctx context.Context, kind string, repoID int64, title st
 	if title == "" {
 		title = defaultConversationTitle(kind)
 	}
-	session := &agent_model.Conversation{Kind: kind, RepoID: repoID, Title: title}
+	session := &agent_model.Conversation{Kind: kind, OwnerID: ownerID, RepoID: repoID, Title: title}
 	if err := db.Insert(ctx, session); err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}

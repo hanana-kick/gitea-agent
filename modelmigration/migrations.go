@@ -441,6 +441,7 @@ func prepareMigrationTasks() []*migration {
 		newMigration(365, "Add agent session summary", v28.AddAgentConversationSummary),
 		newMigration(366, "Add agent model roles", v28.AddAgentModelRole),
 		newMigration(367, "Add agent tool permissions", v28.AddAgentToolPermission),
+		newMigration(368, "Add agent conversation owner", v28.AddAgentConversationOwner),
 	}
 	return preparedMigrations
 }

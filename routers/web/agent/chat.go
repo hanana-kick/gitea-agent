@@ -261,7 +261,7 @@ func ChatDraftCreate(ctx *context.Context) {
 		return
 	}
 
-	session, err := agent_service.CreateConversation(ctx, kind, repoID, chatTitle(ctx, "agent.chat_new_conversation"))
+	session, err := agent_service.CreateConversation(ctx, kind, ctx.Doer.ID, repoID, chatTitle(ctx, "agent.chat_new_conversation"))
 	if err != nil {
 		ctx.ServerError("CreateConversation", err)
 		return
