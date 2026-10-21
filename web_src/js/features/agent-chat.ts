@@ -40,7 +40,7 @@ function initDraftComposer() {
 
 const reconnectDelay = 2000; // ms, the browser's own reconnect would replay the cursor from the first connect
 const bottomThreshold = 80; // px
-const messageBottomPad = 96; // px kept under the last question, so it sits at the top
+const messageBottomPad = 36; // px kept under the last question, so it sits at the top
 
 // the panel fills the space between the navbar and the footer, both of which depend on
 // the viewport and the locale, so the height is measured instead of guessed in CSS
@@ -192,6 +192,8 @@ export function initAgentChat() {
     mainEl!.setAttribute('data-last-message-id', String(message.id));
     if (message.role === 'user') {
       padForLastQuestion();
+      // the pending block must stay next to the question: pad again after it lands
+      requestAnimationFrame(() => padForLastQuestion());
       // the browser keeps the caret in view, so wait for the input to settle before anchoring
       requestAnimationFrame(() => {
         padForLastQuestion();
@@ -243,8 +245,10 @@ export function initAgentChat() {
     const users = messagesEl.querySelectorAll<HTMLElement>('.agent-chat-message.user');
     const last = users[users.length - 1];
     if (!last) return;
-    // the bubble is what is read, so the pad counts from it, not from the meta line
+    // the bubble is what is read, so the pad counts from it, not from the meta line;
+    // while an answer streams the pad would only push it away, so none is added
     const bubble = last.querySelector<HTMLElement>('.agent-chat-bubble') ?? last;
+    if (messagesEl.querySelector('.agent-chat-pending')) return;
     const overflow = messagesEl.scrollHeight - (bubble.offsetTop + bubble.offsetHeight) - messagesEl.clientHeight;
     const wanted = Math.max(0, messageBottomPad - overflow);
     if (wanted <= 0) return;
