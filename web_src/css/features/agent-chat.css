@@ -20,7 +20,7 @@
   margin: 0;
 }
 
-/* the session list reuses the admin sidebar components: flex-container-nav + vertical menu */
+/* the session list follows the dashboard repo list: tabs, attached header, search, list */
 .agent-chat-main {
   display: flex;
   flex-direction: column;
@@ -39,58 +39,49 @@
   min-height: 0;
 }
 
-.agent-chat-sessions {
-  flex: 1;
-  min-height: 0;
-  margin: 0;
-  overflow-y: auto;
+.agent-chat-tabs {
+  flex-shrink: 0;
 }
 
-.agent-chat-tabs {
+.agent-chat-header-action {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.agent-chat-header-action:hover {
+  color: var(--color-text);
+}
+
+.agent-chat-search {
   padding: 8px !important;
 }
 
-.agent-chat-tabs .small-menu-items {
-  width: 100%;
-}
-
-.agent-chat-tabs .small-menu-items .item {
-  padding: 6px 7px !important;
-  font-size: 12px;
-}
-
-.agent-chat-count {
-  margin-left: 4px;
-  font-size: 11px;
-  color: var(--color-text-light-2);
-}
-
-.agent-chat-group {
-  padding: 8px 10px;
+.agent-chat-list {
+  flex: 1;
+  min-height: 0;
+  padding: 8px !important;
+  overflow-y: auto;
 }
 
 .agent-chat-group-title {
   display: flex;
   gap: 6px;
   align-items: center;
+  margin-bottom: 4px;
   font-size: 12px;
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-light-2);
 }
 
-.agent-chat-group-title form {
-  margin-left: auto;
-}
-
-.agent-chat-sessions .menu .item {
-  padding: 6px 8px;
-}
-
 .agent-chat-session-row {
-  display: flex !important;
+  display: flex;
   gap: 2px;
   align-items: center;
-  padding: 0 !important;
 }
 
 .agent-chat-session-link {
@@ -115,13 +106,6 @@
   background: var(--color-active);
 }
 
-.agent-chat-session-time {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--color-text-light-2);
-  white-space: nowrap;
-}
-
 .agent-chat-row-action {
   padding: 4px;
   color: var(--color-text-light-2);
@@ -141,23 +125,6 @@
   font-size: 11px;
   line-height: 1.4;
   color: var(--color-text-light-2);
-}
-
-.agent-chat-hint-item {
-  font-size: 12px;
-  color: var(--color-text-light-2);
-}
-
-.agent-chat-repo-new {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 2px 0 6px;
-}
-
-.agent-chat-repo-new .ui.dropdown {
-  width: 100%;
-  min-width: 0;
 }
 
 .agent-chat-repo {

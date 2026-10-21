@@ -4147,7 +4147,7 @@
   "agent.api_key_edit_help": "The current value can not be read. Saving replaces it with the pasted key, and every provider bound to this entry picks up the new value.",
   "agent.api_key_updated": "The key was updated.",
   "agent.api_key_search_placeholder": "Search keys…",
-  "agent.chat_scope_pod": "Pod",
-  "agent.chat_scope_server": "Server",
-  "agent.chat_scope_repository": "Repos"
+  "agent.chat_tab_pod": "Pod",
+  "agent.chat_tab_repository": "Repositories",
+  "agent.chat_search_placeholder": "Search sessions…"
 }

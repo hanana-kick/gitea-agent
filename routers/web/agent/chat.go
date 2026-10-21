@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	agent_model "gitea.dev/models/agent"
 	repo_model "gitea.dev/models/repo"
@@ -79,6 +80,11 @@ func renderChat(ctx *context.Context, session *agent_model.Conversation) {
 	ctx.Data["Title"] = ctx.Tr("agent.chat_title")
 	ctx.Data["PageIsAgentChat"] = true
 	scope, scopeBaseURL := chatScope(ctx, session, list)
+	keyword := ctx.FormTrim("q")
+	if keyword != "" {
+		list = filterConversations(list, keyword)
+	}
+	ctx.Data["Keyword"] = keyword
 	ctx.Data["Sessions"] = list
 	ctx.Data["Scope"] = scope
 	ctx.Data["ScopeBaseURL"] = scopeBaseURL
@@ -266,22 +272,48 @@ func chatScope(ctx *context.Context, session *agent_model.Conversation, list *ag
 		baseURL = chatSessionURL(session.ID)
 	}
 
-	scope := ctx.FormString("scope")
-	switch scope {
-	case "pod", "server", "repository":
-		return scope, baseURL
+	switch ctx.FormString("scope") {
+	case "pod", "server":
+		// server agents are sessions of the global agent, so they live under Pod
+		return "pod", baseURL
+	case "repository":
+		return "repository", baseURL
 	}
-	if session != nil {
-		switch session.Kind {
-		case agent_model.ConversationKindResident:
-			return "pod", baseURL
-		case agent_model.ConversationKindServer:
-			return "server", baseURL
-		case agent_model.ConversationKindRepository:
-			return "repository", baseURL
-		}
+	if session != nil && session.Kind == agent_model.ConversationKindRepository {
+		return "repository", baseURL
 	}
 	return "pod", baseURL
+}
+
+// filterConversations keeps the sessions whose title matches, and the repositories whose
+// name matches. The resident session is kept when its title matches.
+func filterConversations(list *agent_service.ConversationList, keyword string) *agent_service.ConversationList {
+	match := func(text string) bool {
+		return strings.Contains(strings.ToLower(text), strings.ToLower(keyword))
+	}
+
+	filtered := &agent_service.ConversationList{}
+	if list.Resident != nil && match(list.Resident.Title) {
+		filtered.Resident = list.Resident
+	}
+	for _, session := range list.Servers {
+		if match(session.Title) {
+			filtered.Servers = append(filtered.Servers, session)
+		}
+	}
+	for _, group := range list.Repositories {
+		repoMatches := match(group.Repo.FullName())
+		kept := &agent_service.RepositoryConversations{Repo: group.Repo}
+		for _, session := range group.Sessions {
+			if repoMatches || match(session.Title) {
+				kept.Sessions = append(kept.Sessions, session)
+			}
+		}
+		if len(kept.Sessions) > 0 {
+			filtered.Repositories = append(filtered.Repositories, kept)
+		}
+	}
+	return filtered
 }
 
 func boolInt(value bool) int {

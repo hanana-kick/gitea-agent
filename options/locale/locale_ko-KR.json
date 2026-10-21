@@ -4146,7 +4146,7 @@
   "agent.api_key_edit_help": "현재 값은 확인할 수 없습니다. 저장하면 붙여넣은 키로 교체되고, 이 키를 쓰는 모든 제공자가 새 값을 사용합니다.",
   "agent.api_key_updated": "API 키를 수정했습니다.",
   "agent.api_key_search_placeholder": "키 검색…",
-  "agent.chat_scope_pod": "Pod",
-  "agent.chat_scope_server": "서버",
-  "agent.chat_scope_repository": "저장소"
+  "agent.chat_tab_pod": "Pod",
+  "agent.chat_tab_repository": "레포지토리",
+  "agent.chat_search_placeholder": "세션 검색…"
 }
