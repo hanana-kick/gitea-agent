@@ -3,10 +3,11 @@
 .agent-chat {
   --agent-chat-offset: 167px; /* navbar + footer + page spacing, the panels fill the rest */
 
-  height: calc(100dvh - var(--agent-chat-offset));
-  min-height: 420px;
+  /* the page scrolls instead of the session list: a scrolling list would clip the
+     per-session menus, which open as dropdowns inside it */
+  align-items: flex-start;
   padding: 0 var(--page-spacing);
-  /* the page bottom padding would otherwise leave a gap above the footer */
+  min-height: 420px;
   margin-bottom: calc(-1 * var(--page-space-bottom));
 }
 
@@ -24,19 +25,21 @@
 .agent-chat-main {
   display: flex;
   flex-direction: column;
+  height: calc(100dvh - var(--agent-chat-offset));
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: var(--color-box-body);
   border: 1px solid var(--color-secondary);
   border-radius: var(--border-radius-medium);
+  position: sticky; /* the chat stays while a long session list scrolls */
+  top: 0;
 }
 
 .agent-chat-nav {
-  display: flex;
-  flex-direction: column;
   width: 280px;
   min-height: 0;
+  flex-shrink: 0;
 }
 
 .agent-chat-tabs {
@@ -62,10 +65,8 @@
 }
 
 .agent-chat-list {
-  flex: 1;
-  min-height: 0;
   padding: 8px !important;
-  overflow-y: auto;
+  border-top: 0 !important;
 }
 
 .agent-chat-group-title {
