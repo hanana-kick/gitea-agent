@@ -78,7 +78,15 @@ func renderChat(ctx *context.Context, session *agent_model.Conversation) {
 	}
 	ctx.Data["Title"] = ctx.Tr("agent.chat_title")
 	ctx.Data["PageIsAgentChat"] = true
+	scope, scopeBaseURL := chatScope(ctx, session, list)
 	ctx.Data["Sessions"] = list
+	ctx.Data["Scope"] = scope
+	ctx.Data["ScopeBaseURL"] = scopeBaseURL
+	ctx.Data["ScopeCounts"] = map[string]int{
+		"pod":        boolInt(list.Resident != nil),
+		"server":     len(list.Servers),
+		"repository": repositorySessionCount(list),
+	}
 	ctx.Data["Session"] = session
 	ctx.Data["WritableRepos"] = repos
 	ctx.Data["ModelOptions"] = options
@@ -248,6 +256,47 @@ func ChatModelSet(ctx *context.Context) {
 	}
 	ctx.Flash.Success(ctx.Tr("agent.chat_model_saved"))
 	ctx.Redirect(chatSessionURL(session.ID))
+}
+
+// chatScope returns the session group the sidebar shows: the one asked for, else the one
+// the open session belongs to, else Pod.
+func chatScope(ctx *context.Context, session *agent_model.Conversation, list *agent_service.ConversationList) (string, string) {
+	baseURL := setting.AppSubURL + chatURL
+	if session != nil {
+		baseURL = chatSessionURL(session.ID)
+	}
+
+	scope := ctx.FormString("scope")
+	switch scope {
+	case "pod", "server", "repository":
+		return scope, baseURL
+	}
+	if session != nil {
+		switch session.Kind {
+		case agent_model.ConversationKindResident:
+			return "pod", baseURL
+		case agent_model.ConversationKindServer:
+			return "server", baseURL
+		case agent_model.ConversationKindRepository:
+			return "repository", baseURL
+		}
+	}
+	return "pod", baseURL
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func repositorySessionCount(list *agent_service.ConversationList) int {
+	count := 0
+	for _, group := range list.Repositories {
+		count += len(group.Sessions)
+	}
+	return count
 }
 
 // runText renders the status strip text of a run; succeeded runs show nothing.

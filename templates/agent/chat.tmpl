@@ -4,8 +4,23 @@
 	<div class="ui container fluid padded flex-container agent-chat">
 		<div class="flex-container-nav agent-chat-nav" aria-label="{{ctx.Locale.Tr "agent.chat_sessions"}}">
 			<div class="ui fluid vertical menu agent-chat-sessions">
-				<div class="header item">{{ctx.Locale.Tr "agent.chat_sessions"}}</div>
-				{{with .Sessions.Resident}}
+				<div class="item agent-chat-tabs">
+					<div class="small-menu-items ui compact small menu">
+						{{if .SignedUser.IsAdmin}}
+							<a class="item{{if eq .Scope "pod"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=pod" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_resident"}}">
+								{{ctx.Locale.Tr "agent.chat_scope_pod"}}<span class="agent-chat-count">{{index .ScopeCounts "pod"}}</span>
+							</a>
+							<a class="item{{if eq .Scope "server"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=server" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_server"}}">
+								{{ctx.Locale.Tr "agent.chat_scope_server"}}<span class="agent-chat-count">{{index .ScopeCounts "server"}}</span>
+							</a>
+						{{end}}
+						<a class="item{{if eq .Scope "repository"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=repository" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_repository"}}">
+							{{ctx.Locale.Tr "agent.chat_scope_repository"}}<span class="agent-chat-count">{{index .ScopeCounts "repository"}}</span>
+						</a>
+					</div>
+				</div>
+
+				{{if eq .Scope "pod"}}{{with .Sessions.Resident}}
 					<div class="item agent-chat-group">
 						<div class="agent-chat-group-title">{{ctx.Locale.Tr "agent.chat_resident"}}</div>
 						<div class="menu">
@@ -15,9 +30,9 @@
 						</div>
 						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_resident_help"}}</p>
 					</div>
-				{{end}}
+				{{end}}{{end}}
 
-				{{if .SignedUser.IsAdmin}}
+				{{if eq .Scope "server"}}{{if .SignedUser.IsAdmin}}
 					<div class="item agent-chat-group">
 						<div class="agent-chat-group-title">
 							<span>{{ctx.Locale.Tr "agent.chat_server"}}</span>
@@ -43,8 +58,9 @@
 						</div>
 						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_server_help"}}</p>
 					</div>
-				{{end}}
+				{{end}}{{end}}
 
+				{{if eq .Scope "repository"}}
 				<div class="item agent-chat-group">
 					<div class="agent-chat-group-title">
 						<span>{{ctx.Locale.Tr "agent.chat_repository"}}</span>
@@ -82,6 +98,7 @@
 					</div>
 					<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_repository_help"}}</p>
 				</div>
+				{{end}}
 			</div>
 		</div>
 

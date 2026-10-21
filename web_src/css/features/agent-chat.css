@@ -46,10 +46,23 @@
   overflow-y: auto;
 }
 
-.agent-chat-sessions .header.item {
+.agent-chat-tabs {
+  padding: 8px !important;
+}
+
+.agent-chat-tabs .small-menu-items {
+  width: 100%;
+}
+
+.agent-chat-tabs .small-menu-items .item {
+  padding: 6px 7px !important;
   font-size: 12px;
+}
+
+.agent-chat-count {
+  margin-left: 4px;
+  font-size: 11px;
   color: var(--color-text-light-2);
-  text-transform: uppercase;
 }
 
 .agent-chat-group {
