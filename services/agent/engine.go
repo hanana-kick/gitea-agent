@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -221,6 +222,21 @@ func ActiveRun(ctx context.Context, conversationID int64) (*agent_model.Run, err
 		return nil, err
 	}
 	return run, nil
+}
+
+// BusyConversationIDs returns the conversations that wait for or write an answer.
+func BusyConversationIDs(ctx context.Context) (map[int64]bool, error) {
+	ids := make([]int64, 0, 8)
+	if err := db.GetEngine(ctx).Table("agent_run").
+		In("status", []string{agent_model.RunStatusQueued, agent_model.RunStatusRunning}).
+		Cols("conversation_id").Find(&ids); err != nil {
+		return nil, fmt.Errorf("find busy conversations: %w", err)
+	}
+	busy := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		busy[id] = true
+	}
+	return busy, nil
 }
 
 // LatestRun returns the most recent run of a conversation, whatever its state.

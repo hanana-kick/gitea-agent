@@ -4117,6 +4117,7 @@
   "agent.chat_status_canceled": "실행을 취소했습니다.",
   "agent.chat_pending_queued": "응답 대기 중…",
   "agent.chat_pending_running": "답변을 준비하는 중…",
+  "agent.chat_busy": "답변 중",
   "agent.chat_status_error": "메시지를 보내지 못했습니다.",
   "agent.chat_cancel": "취소",
   "agent.api_keys_title": "API 키",

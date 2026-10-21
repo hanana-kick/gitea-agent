@@ -4118,6 +4118,7 @@
   "agent.chat_status_canceled": "The run was canceled.",
   "agent.chat_pending_queued": "Waiting for an answer…",
   "agent.chat_pending_running": "Preparing an answer…",
+  "agent.chat_busy": "Answering",
   "agent.chat_status_error": "The message could not be sent.",
   "agent.chat_cancel": "Cancel",
   "agent.api_keys_title": "API keys",

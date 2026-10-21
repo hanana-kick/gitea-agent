@@ -29,11 +29,12 @@
 							{{svg "gitea-pod-outline"}}
 							<span>{{.Title}}</span>
 						</div>
-						<a class="agent-chat-card agent-chat-card-resident{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
+						<a class="agent-chat-card agent-chat-card-resident{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}" data-session-id="{{.ID}}">
 							<span class="agent-chat-card-text">
 								<span class="agent-chat-card-name gt-ellipsis">{{if .Summary}}{{.Summary}}{{else}}{{.Title}}{{end}}</span>
 								<span class="agent-chat-card-desc">{{ctx.Locale.Tr "agent.chat_resident_desc"}}</span>
 							</span>
+							{{if index $.BusySessions .ID}}<span class="agent-chat-card-busy" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_busy"}}"><i></i><i></i><i></i></span>{{end}}
 						</a>
 					{{end}}
 
@@ -60,7 +61,7 @@
 					</a>
 
 					{{range .Sessions.Servers}}
-						{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" "" "Folders" $.Sessions.Folders}}
+						{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" "" "Folders" $.Sessions.Folders "Busy" (index $.BusySessions .ID)}}
 					{{else}}
 						{{if not .Sessions.Folders}}<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_conversations"}}</p>{{end}}
 					{{end}}
@@ -90,7 +91,7 @@
 							</div>
 							<div class="agent-chat-folder-items">
 								{{range .Sessions}}
-									{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" "" "Folders" $.Sessions.Folders}}
+									{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" "" "Folders" $.Sessions.Folders "Busy" (index $.BusySessions .ID)}}
 								{{end}}
 							</div>
 						</div>
@@ -128,7 +129,7 @@
 							</div>
 							<a class="agent-chat-subtitle gt-ellipsis" href="{{$group.Repo.Link}}" title="{{$group.Repo.FullName}}">{{$group.Repo.FullName}}</a>
 							{{range $group.Sessions}}
-								{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" ""}}
+								{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" "" "Busy" (index $.BusySessions .ID)}}
 							{{end}}
 						</div>
 					{{else}}

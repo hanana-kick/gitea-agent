@@ -89,6 +89,12 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 	}
 	ctx.Data["Keyword"] = keyword
 	ctx.Data["Sessions"] = list
+	busy, err := agent_service.BusyConversationIDs(ctx)
+	if err != nil {
+		ctx.ServerError("BusyConversationIDs", err)
+		return
+	}
+	ctx.Data["BusySessions"] = busy
 	ctx.Data["Scope"] = scope
 	ctx.Data["ScopeBaseURL"] = scopeBaseURL
 	ctx.Data["ScopeCounts"] = map[string]int{
@@ -158,6 +164,7 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 			"edit":      string(ctx.Tr("agent.chat_edit")),
 			"error":     string(ctx.Tr("agent.chat_status_error")),
 			"reasoning": string(ctx.Tr("agent.chat_reasoning")),
+			"busy":      string(ctx.Tr("agent.chat_busy")),
 		}
 		labelsJSON, err := json.Marshal(labels)
 		if err != nil {
