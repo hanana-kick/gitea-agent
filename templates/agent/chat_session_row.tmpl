@@ -1,10 +1,12 @@
 {{- $session := .Session -}}
 {{- $selected := .Selected -}}
 {{- $fallbackIcon := .FallbackIcon -}}
-<div class="agent-chat-session-row">
-	<a class="agent-chat-session-link{{if and $selected (eq $selected.ID $session.ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{$session.ID}}">
-		{{if $session.Icon}}{{svg $session.Icon 18}}{{else if $fallbackIcon}}{{svg $fallbackIcon 18}}{{end}}
-		<span class="gt-ellipsis">{{$session.Title}}</span>
+<div class="agent-chat-card{{if and $selected (eq $selected.ID $session.ID)}} active{{end}}">
+	<a class="agent-chat-card-main" href="{{AppSubUrl}}/-/agent/{{$session.ID}}">
+		<span class="agent-chat-card-icon">
+			{{if $session.Icon}}{{svg $session.Icon 18}}{{else if $fallbackIcon}}{{svg $fallbackIcon 18}}{{end}}
+		</span>
+		<span class="agent-chat-card-name gt-ellipsis">{{$session.Title}}</span>
 	</a>
 	<div class="ui dropdown jump agent-chat-more" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_more"}}">
 		{{svg "octicon-kebab-horizontal"}}

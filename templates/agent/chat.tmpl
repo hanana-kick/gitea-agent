@@ -31,7 +31,7 @@
 				<div class="ui attached segment agent-chat-list">
 					{{/* the resident session is the entry to the global bot, so it always comes first */}}
 					{{with .Sessions.Resident}}
-						<a class="agent-chat-card{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
+						<a class="agent-chat-card agent-chat-card-resident{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
 							<span class="agent-chat-card-icon">{{svg "gitea-pod-outline" 24}}</span>
 							<span class="agent-chat-card-text">
 								<span class="agent-chat-card-name">{{.Title}}</span>
@@ -40,7 +40,9 @@
 						</a>
 					{{end}}
 
-					<div class="agent-chat-group-title tw-mt-3">
+					<div class="agent-chat-divider"></div>
+
+					<div class="agent-chat-group-title">
 						{{svg "octicon-comment-discussion"}}
 						<span>{{ctx.Locale.Tr "agent.chat_conversations"}}</span>
 					</div>
@@ -70,7 +72,8 @@
 				<div class="ui attached segment agent-chat-list">
 					{{range $index, $group := .Sessions.Repositories}}
 						<div class="agent-chat-repo">
-							<div class="agent-chat-group-title{{if $index}} tw-mt-4{{end}}">
+							{{if $index}}<div class="agent-chat-divider"></div>{{end}}
+							<div class="agent-chat-group-title">
 								{{svg "octicon-comment-discussion"}}
 								<span>{{ctx.Locale.Tr "agent.chat_conversations"}}</span>
 							</div>

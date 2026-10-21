@@ -102,7 +102,7 @@ export function initAgentChat() {
     const header = document.querySelector<HTMLElement>('.agent-chat-head-title');
     if (header && elConversationID === String(conversation.id)) header.textContent = conversation.title;
     const id = String(conversation.id);
-    for (const link of document.querySelectorAll<HTMLElement>('.agent-chat-session-link, .agent-chat-card')) {
+    for (const link of document.querySelectorAll<HTMLElement>('.agent-chat-card-main, .agent-chat-card')) {
       if (link.getAttribute('href')!.split('/').pop() !== id) continue;
       const label = link.querySelector<HTMLElement>('.gt-ellipsis, .agent-chat-card-name');
       if (label) label.textContent = conversation.title;
