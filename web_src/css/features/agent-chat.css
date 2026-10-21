@@ -574,6 +574,7 @@ button.agent-chat-card {
 }
 
 .agent-chat-attach {
+  position: relative; /* keeps the transparent file input inside the label */
   display: flex;
   align-items: center;
   padding: 6px;
@@ -589,9 +590,11 @@ button.agent-chat-card {
 
 .agent-chat-attach input[type="file"] {
   position: absolute;
-  width: 0;
-  height: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   opacity: 0;
+  cursor: pointer;
 }
 
 .agent-chat-attachments {
