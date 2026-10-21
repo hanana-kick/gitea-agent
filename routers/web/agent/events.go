@@ -40,7 +40,6 @@ type messageEvent struct {
 	Content     string            `json:"content"`
 	HTML        string            `json:"html"`
 	TimeHTML    string            `json:"timeHTML"`
-	EditedHTML  string            `json:"editedHTML,omitempty"`
 	Attachments []attachmentEvent `json:"attachments,omitempty"`
 }
 
@@ -239,10 +238,6 @@ func messageEventOf(ctx *context.Context, message *agent_model.Message) messageE
 		Content:     message.Content,
 		HTML:        string(templates.NewRenderUtils(ctx).MarkdownToHtml(message.Content)),
 		TimeHTML:    string(templates.TimeSince(message.CreatedUnix)),
-	}
-	// an edited message shows its edit time instead of its creation time
-	if message.EditedUnix != 0 {
-		event.EditedHTML = string(templates.TimeSince(message.EditedUnix))
 	}
 	return event
 }

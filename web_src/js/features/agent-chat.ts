@@ -7,7 +7,7 @@ import {addDelegatedEventListener, createElementFromHTML, toggleElem} from '../u
 type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string};
 type AgentChatDelta = {runId: number, content?: string, reasoning?: string, reset?: boolean};
 type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string};
-type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, editedHTML?: string, attachments?: AgentChatAttachment[]};
+type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[]};
 type AgentChatRun = {id: number, conversationId: number, status: string, error: string, cancelable: boolean};
 type AgentChatConversation = {id: number, title: string, summary: string, icon: string};
 
@@ -138,14 +138,8 @@ export function initAgentChat() {
 
     const metaEl = document.createElement('div');
     metaEl.className = 'agent-chat-message-meta';
-    metaEl.textContent = message.roleLabel;
-    if (message.editedHTML) {
-      metaEl.insertAdjacentHTML('beforeend', ` · ${svg('octicon-pencil', 12)} `);
-      metaEl.insertAdjacentHTML('beforeend', message.editedHTML);
-    } else {
-      metaEl.textContent += ' · ';
-      metaEl.insertAdjacentHTML('beforeend', message.timeHTML);
-    }
+    metaEl.textContent = `${message.roleLabel} · `;
+    metaEl.insertAdjacentHTML('beforeend', message.timeHTML);
 
     const bubbleEl = document.createElement('div');
     bubbleEl.className = 'agent-chat-bubble';
@@ -332,10 +326,8 @@ export function initAgentChat() {
     } else {
       setPendingState('reasoning', labels.reasoning); // the model thinks before it answers
     }
-    // a running answer keeps the view on it, even when the question was pinned earlier
-    if (atBottom || messagesEl.querySelector('.agent-chat-pending')) {
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
+    // follow the answer only when the reader was already at the bottom
+    if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   function applyRun(run: AgentChatRun) {

@@ -235,11 +235,7 @@
 								{{else}}
 									{{ctx.Locale.Tr "agent.chat_system"}}
 								{{end}}
-								{{if .EditedUnix}}
-									· {{svg "octicon-pencil" 12}} {{ctx.Locale.Tr "agent.chat_edited_mark"}} {{DateUtils.TimeSince .EditedUnix}}
-								{{else}}
-									· {{DateUtils.TimeSince .CreatedUnix}}
-								{{end}}
+								· {{DateUtils.TimeSince .CreatedUnix}}
 							</div>
 							<div class="agent-chat-bubble">
 								<div class="render-content markup">{{ctx.RenderUtils.MarkdownToHtml .Content}}</div>
