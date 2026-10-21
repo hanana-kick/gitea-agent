@@ -11,6 +11,21 @@
   margin-bottom: calc(-1 * var(--page-space-bottom));
 }
 
+/* the pod mark is wider than it is tall: it is drawn larger with tighter side padding,
+   so the navbar item keeps the same size as the other icon buttons */
+#navbar .agent-pod-nav {
+  padding-left: 10px !important; /* 22px icon + 2 * 10px = the 42px of the other items */
+  padding-right: 10px !important;
+}
+
+@media (max-width: 767.98px) {
+  /* on narrow screens the item height follows the icon box, which is taller here */
+  #navbar .agent-pod-nav {
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+}
+
 /* flashes float over the panel so they do not change the fixed height */
 .agent-chat-page .flash-message {
   position: fixed;

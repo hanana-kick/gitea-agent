@@ -3,8 +3,8 @@
 {{if and $data $data.IsSigned}}{{/* data may not exist, for example: rendering 503 page before the PageGlobalData middleware */}}
 	{{- $activeStopwatch := call $data.GetActiveStopwatch -}}
 	{{- $notificationUnreadCount := call $data.GetNotificationUnreadCount -}}
-	<a class="item {{$itemExtraClass}}" href="{{AppSubUrl}}/-/agent" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_title"}}">
-		<div class="flex-text-block">{{svg "gitea-pod-outline"}}</div>
+	<a class="item agent-pod-nav {{$itemExtraClass}}" href="{{AppSubUrl}}/-/agent" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_title"}}">
+		<div class="flex-text-block">{{svg "gitea-pod-outline" 22}}</div>
 	</a>
 	<a class="item {{$itemExtraClass}}" href="{{AppSubUrl}}/notifications" data-tooltip-content="{{ctx.Locale.Tr "notifications"}}">
 		<div class="tw-relative flex-text-block">
