@@ -456,11 +456,6 @@ button.agent-chat-card {
   overflow-y: auto;
 }
 
-/* the scroll spacer that pins the last question: a flex child collapses unless it grows */
-.agent-chat-scroll-pad {
-  flex: 0 0 auto;
-}
-
 .agent-chat-message {
   max-width: 80%;
 }

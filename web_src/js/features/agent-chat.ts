@@ -40,7 +40,6 @@ function initDraftComposer() {
 
 const reconnectDelay = 2000; // ms, the browser's own reconnect would replay the cursor from the first connect
 const bottomThreshold = 80; // px
-const messageBottomPad = 36; // px kept under the last question, so it sits at the top
 
 // the panel fills the space between the navbar and the footer, both of which depend on
 // the viewport and the locale, so the height is measured instead of guessed in CSS
@@ -191,12 +190,8 @@ export function initAgentChat() {
     messagesEl.append(buildMessage(message));
     mainEl!.setAttribute('data-last-message-id', String(message.id));
     if (message.role === 'user') {
-      padForLastQuestion();
-      // the pending block must stay next to the question: pad again after it lands
-      requestAnimationFrame(() => padForLastQuestion());
       // the browser keeps the caret in view, so wait for the input to settle before anchoring
       requestAnimationFrame(() => {
-        padForLastQuestion();
         const users = messagesEl.querySelectorAll<HTMLElement>('.agent-chat-message.user');
         const bubble = users[users.length - 1]?.querySelector<HTMLElement>('.agent-chat-bubble') ?? users[users.length - 1];
         // the chat input steals focus first: without it the browser pulls the caret back into view
@@ -237,27 +232,6 @@ export function initAgentChat() {
     }
   }
 
-  // the reader cares about the answer to their last message, so that is where the view starts
-  // the transcript can only show the last question at its top when it can scroll past it,
-  // so the scroll height is padded instead of forcing the question up
-  function padForLastQuestion() {
-    for (const el of messagesEl.querySelectorAll('.agent-chat-scroll-pad')) el.remove(); // stale pads would drift
-    const users = messagesEl.querySelectorAll<HTMLElement>('.agent-chat-message.user');
-    const last = users[users.length - 1];
-    if (!last) return;
-    // the bubble is what is read, so the pad counts from it, not from the meta line;
-    // while an answer streams the pad would only push it away, so none is added
-    const bubble = last.querySelector<HTMLElement>('.agent-chat-bubble') ?? last;
-    if (messagesEl.querySelector('.agent-chat-pending')) return;
-    const overflow = messagesEl.scrollHeight - (bubble.offsetTop + bubble.offsetHeight) - messagesEl.clientHeight;
-    const wanted = Math.max(0, messageBottomPad - overflow);
-    if (wanted <= 0) return;
-    const filler = document.createElement('div');
-    filler.className = 'agent-chat-scroll-pad';
-    filler.style.height = `${wanted}px`;
-    messagesEl.append(filler);
-  }
-
   function scrollToLastQuestion() {
     const users = messagesEl.querySelectorAll<HTMLElement>('.agent-chat-message.user');
     const last = users[users.length - 1];
@@ -271,7 +245,9 @@ export function initAgentChat() {
 
   // a scroll that lands before the next layout pass gets pulled back, so settle first
   function scrollToTop(target: HTMLElement, after?: () => void) {
-    const wanted = target.offsetTop - messagesEl.offsetTop - 4;
+    // offsetTop is document-relative: subtract the container, then clamp to its scroll range
+    const max = messagesEl.scrollHeight - messagesEl.clientHeight;
+    const wanted = Math.min(max, Math.max(0, target.offsetTop - messagesEl.offsetTop - 4));
     requestAnimationFrame(() => {
       messagesEl.scrollTop = wanted;
       after?.();
@@ -465,11 +441,7 @@ export function initAgentChat() {
 
   initTranscript();
   initMessageActions();
-  // two frames: the pad must land before the anchor is computed
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    padForLastQuestion();
-    scrollToLastQuestion();
-  }));
+  scrollToLastQuestion();
 
   composerEl.addEventListener('submit', async (event) => {
     event.preventDefault();
