@@ -68,11 +68,15 @@
 					</div>
 				</form>
 				<div class="ui attached segment agent-chat-list">
-					{{range .Sessions.Repositories}}
+					{{range $index, $group := .Sessions.Repositories}}
 						<div class="agent-chat-repo">
-							<a class="agent-chat-repo-name gt-ellipsis" href="{{.Repo.Link}}" title="{{.Repo.FullName}}">{{.Repo.FullName}}</a>
-							{{range .Sessions}}
-								{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" "octicon-repo"}}
+							<div class="agent-chat-group-title{{if $index}} tw-mt-4{{end}}">
+								{{svg "octicon-comment-discussion"}}
+								<span>{{ctx.Locale.Tr "agent.chat_conversations"}}</span>
+							</div>
+							<a class="agent-chat-subtitle gt-ellipsis" href="{{$group.Repo.Link}}" title="{{$group.Repo.FullName}}">{{$group.Repo.FullName}}</a>
+							{{range $group.Sessions}}
+								{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" ""}}
 							{{end}}
 						</div>
 					{{else}}

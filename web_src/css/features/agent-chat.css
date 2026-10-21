@@ -237,11 +237,16 @@
   margin-top: 6px;
 }
 
-.agent-chat-repo-name {
+/* subtitle of a group: the repository the conversations belong to */
+.agent-chat-subtitle {
   display: block;
-  padding: 2px 0;
+  margin: 2px 0 4px;
   font-size: 12px;
   color: var(--color-text-light-2);
+}
+
+.agent-chat-subtitle:hover {
+  color: var(--color-primary);
 }
 
 .agent-chat-head {
