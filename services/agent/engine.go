@@ -23,13 +23,29 @@ const (
 	engineRunTimeout   = 10 * time.Minute
 	engineHistoryLimit = 40
 	enginePromptLimit  = 100 * 1024 // cap the transcript handed to the model
+
+	engineTitleTimeout = 60 * time.Second
+	engineTitleExcerpt = 500
 )
 
 // Event names published for one conversation.
 const (
-	EventMessage = "message" // a transcript entry was appended
-	EventRun     = "run"     // a run changed state
+	EventMessage      = "message"      // a transcript entry was appended
+	EventRun          = "run"          // a run changed state
+	EventConversation = "conversation" // the session was renamed or given an icon
 )
+
+// ConversationState is the part of a session that clients show in a list.
+type ConversationState struct {
+	ID    int64  `json:"id"`
+	Title string `json:"title"`
+	Icon  string `json:"icon"`
+}
+
+// State renders a session for the clients watching it.
+func State(conversation *agent_model.Conversation) ConversationState {
+	return ConversationState{ID: conversation.ID, Title: conversation.Title, Icon: conversation.Icon}
+}
 
 // Event is one update for the clients watching a conversation.
 type Event struct {
@@ -179,6 +195,11 @@ func LatestRun(ctx context.Context, conversationID int64) (*agent_model.Run, err
 	return run, nil
 }
 
+// NotifyConversation publishes the current title and icon of a session.
+func NotifyConversation(conversation *agent_model.Conversation) {
+	engine.broker.publish(conversation.ID, Event{Name: EventConversation, Data: State(conversation)})
+}
+
 // Subscribe attaches to the updates of a conversation. The returned function detaches.
 func Subscribe(conversationID int64) (<-chan Event, func()) {
 	return engine.broker.subscribe(conversationID)
@@ -261,6 +282,81 @@ func (e *Engine) execute(runID int64) {
 
 	run.Model = model
 	e.finishRun(ctx, run, agent_model.RunStatusSucceeded, "")
+	e.nameConversation(ctx, conversation)
+}
+
+// nameConversation asks the model for a title once the first answer exists, so a session
+// stops being called "new conversation". Failures keep the placeholder title.
+func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model.Conversation) {
+	if conversation.TitleSet || conversation.ModelRef == "" {
+		return
+	}
+	history, err := ListMessages(ctx, conversation.ID)
+	if err != nil || len(history) < 2 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), engineTitleTimeout)
+	defer cancel()
+
+	prompt := []llm.Message{
+		{Role: "system", Content: "You name chat conversations. Answer with a title of at most six " +
+			"words, no quotes, no punctuation at the end, in the language the user writes in."},
+		{Role: "user", Content: "Name this conversation:\n\n" + conversationExcerpt(history)},
+	}
+	// no max token limit: models that think before answering would spend a small budget on
+	// reasoning and return no content at all
+	title, _, err := Answer(ctx, conversation.ModelRef, llm.ChatRequest{Messages: prompt})
+	if err != nil {
+		log.Warn("Agent engine: unable to name session %d: %v", conversation.ID, err)
+		return
+	}
+	title = cleanConversationTitle(title)
+	if title == "" {
+		log.Debug("Agent engine: session %d keeps its placeholder title, the model named nothing", conversation.ID)
+		return
+	}
+	if err := SetConversationTitle(ctx, conversation, title); err != nil {
+		log.Warn("Agent engine: unable to store name of session %d: %v", conversation.ID, err)
+		return
+	}
+	e.broker.publish(conversation.ID, Event{Name: EventConversation, Data: State(conversation)})
+}
+
+// conversationExcerpt renders the start of a transcript for the naming request.
+func conversationExcerpt(history []*agent_model.Message) string {
+	var builder strings.Builder
+	added := 0
+	for _, message := range history {
+		if message.Role == agent_model.MessageRoleSystem {
+			continue
+		}
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		if runes := []rune(content); len(runes) > engineTitleExcerpt {
+			content = string(runes[:engineTitleExcerpt])
+		}
+		builder.WriteString(message.Role + ": " + content + "\n")
+		added++
+		if added >= 4 {
+			break
+		}
+	}
+	return builder.String()
+}
+
+// cleanConversationTitle drops the decorations a model likes to add around a title.
+func cleanConversationTitle(title string) string {
+	title = strings.TrimSpace(title)
+	title = strings.Trim(title, "\"'`*#” “")
+	title = strings.SplitN(title, "\n", 2)[0]
+	title = strings.TrimSpace(title)
+	if runes := []rune(title); len(runes) > 80 {
+		title = strings.TrimSpace(string(runes[:80]))
+	}
+	return title
 }
 
 // answer builds the prompt from the stored transcript and asks the session model.

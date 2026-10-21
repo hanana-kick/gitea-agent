@@ -37,6 +37,11 @@ type Conversation struct {
 	// ModelRef is the model this session answers with: "group:<slug>" or
 	// "provider:<id>/<model>". Empty means the session has no model yet.
 	ModelRef string `xorm:"VARCHAR(160) NOT NULL DEFAULT ''"`
+	// Icon is an icon name of the icon set, or empty for no icon.
+	Icon string `xorm:"VARCHAR(60) NOT NULL DEFAULT ''"`
+	// TitleSet records that a human or the model named the session, so a placeholder
+	// title is never overwritten twice.
+	TitleSet bool `xorm:"NOT NULL DEFAULT FALSE"`
 
 	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
 	UpdatedUnix timeutil.TimeStamp `xorm:"updated NOT NULL"`

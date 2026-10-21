@@ -96,6 +96,7 @@ func renderChat(ctx *context.Context, session *agent_model.Conversation) {
 	ctx.Data["Session"] = session
 	ctx.Data["WritableRepos"] = repos
 	ctx.Data["ModelOptions"] = options
+	ctx.Data["ConversationIcons"] = agent_service.ConversationIcons()
 	if session != nil {
 		if session.Kind == agent_model.ConversationKindRepository {
 			repo, err := repo_model.GetRepositoryByID(ctx, session.RepoID)
@@ -148,7 +149,7 @@ func ChatSessionNew(ctx *context.Context) {
 			ctx.NotFound(nil)
 			return
 		}
-		session, err := agent_service.CreateConversation(ctx, kind, 0, chatTitle(ctx, "agent.chat_server"))
+		session, err := agent_service.CreateConversation(ctx, kind, 0, chatTitle(ctx, "agent.chat_new_conversation"))
 		if err != nil {
 			ctx.ServerError("CreateConversation", err)
 			return
@@ -174,7 +175,7 @@ func ChatSessionNew(ctx *context.Context) {
 			ctx.NotFound(nil)
 			return
 		}
-		session, err := agent_service.CreateConversation(ctx, kind, repo.ID, chatTitle(ctx, "agent.chat_repository"))
+		session, err := agent_service.CreateConversation(ctx, kind, repo.ID, chatTitle(ctx, "agent.chat_new_conversation"))
 		if err != nil {
 			ctx.ServerError("CreateConversation", err)
 			return
@@ -236,6 +237,40 @@ func ChatRunCancel(ctx *context.Context) {
 		return
 	}
 	answer(ctx, session.ID)
+}
+
+// ChatTitlePost renames a session.
+func ChatTitlePost(ctx *context.Context) {
+	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
+	if err != nil {
+		chatError(ctx, err)
+		return
+	}
+	if err := agent_service.SetConversationTitle(ctx, session, ctx.FormString("title")); err != nil {
+		ctx.Flash.Error(ctx.Tr("agent.chat_title_required"))
+		ctx.Redirect(chatSessionURL(session.ID))
+		return
+	}
+	agent_service.NotifyConversation(session)
+	ctx.Flash.Success(ctx.Tr("agent.chat_title_saved"))
+	ctx.Redirect(chatSessionURL(session.ID))
+}
+
+// ChatIconPost sets or clears the icon of a session.
+func ChatIconPost(ctx *context.Context) {
+	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
+	if err != nil {
+		chatError(ctx, err)
+		return
+	}
+	if err := agent_service.SetConversationIcon(ctx, session, ctx.FormTrim("icon")); err != nil {
+		ctx.Flash.Error(ctx.Tr("agent.chat_icon_invalid"))
+		ctx.Redirect(chatSessionURL(session.ID))
+		return
+	}
+	agent_service.NotifyConversation(session)
+	ctx.Flash.Success(ctx.Tr("agent.chat_icon_saved"))
+	ctx.Redirect(chatSessionURL(session.ID))
 }
 
 // ChatModelSet binds a session to the model it answers with.

@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
@@ -231,6 +233,68 @@ func ListMessages(ctx context.Context, conversationID int64) ([]*agent_model.Mes
 		OrderBy("id ASC").
 		Find(&messages)
 	return messages, err
+}
+
+// ConversationIcons are the icons an operator can give a session; empty means none.
+func ConversationIcons() []string {
+	return []string{
+		"octicon-comment",
+		"octicon-comment-discussion",
+		"octicon-hash",
+		"octicon-light-bulb",
+		"octicon-rocket",
+		"octicon-bug",
+		"octicon-git-pull-request",
+		"octicon-terminal",
+		"octicon-book",
+		"octicon-tools",
+		"octicon-stack",
+		"octicon-project",
+		"octicon-server",
+		"octicon-repo",
+	}
+}
+
+// ErrConversationTitleInvalid is returned when a submitted title can not be used.
+type ErrConversationTitleInvalid struct{}
+
+func (ErrConversationTitleInvalid) Error() string { return "a conversation title is required" }
+
+// Is reports whether target is an ErrConversationTitleInvalid.
+func (ErrConversationTitleInvalid) Is(target error) bool {
+	_, ok := target.(ErrConversationTitleInvalid)
+	return ok
+}
+
+// SetConversationTitle renames a session. The new title is never replaced by the model.
+func SetConversationTitle(ctx context.Context, conversation *agent_model.Conversation, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return ErrConversationTitleInvalid{}
+	}
+	if utf8.RuneCountInString(title) > 100 {
+		title = string([]rune(title)[:100])
+	}
+	conversation.Title = title
+	conversation.TitleSet = true
+	_, err := db.GetEngine(ctx).ID(conversation.ID).Cols("title", "title_set", "updated_unix").
+		Update(&agent_model.Conversation{
+			Title:       title,
+			TitleSet:    true,
+			UpdatedUnix: timeutil.TimeStampNow(),
+		})
+	return err
+}
+
+// SetConversationIcon sets the icon of a session; an empty name clears it.
+func SetConversationIcon(ctx context.Context, conversation *agent_model.Conversation, icon string) error {
+	if icon != "" && !slices.Contains(ConversationIcons(), icon) {
+		return ErrConversationTitleInvalid{}
+	}
+	conversation.Icon = icon
+	_, err := db.GetEngine(ctx).ID(conversation.ID).Cols("icon", "updated_unix").
+		Update(&agent_model.Conversation{Icon: icon, UpdatedUnix: timeutil.TimeStampNow()})
+	return err
 }
 
 // SetConversationModel binds a session to the model it answers with.

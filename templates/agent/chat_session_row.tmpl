@@ -1,0 +1,27 @@
+{{- $session := .Session -}}
+{{- $selected := .Selected -}}
+{{- $fallbackIcon := .FallbackIcon -}}
+<div class="agent-chat-session-row">
+	<a class="agent-chat-session-link{{if and $selected (eq $selected.ID $session.ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{$session.ID}}">
+		{{if $session.Icon}}{{svg $session.Icon 18}}{{else if $fallbackIcon}}{{svg $fallbackIcon 18}}{{end}}
+		<span class="gt-ellipsis">{{$session.Title}}</span>
+	</a>
+	<div class="ui dropdown jump agent-chat-more" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_more"}}">
+		{{svg "octicon-kebab-horizontal"}}
+		<div class="menu">
+			<div class="item agent-chat-more-item show-modal"
+				data-modal="#agent-chat-title-modal"
+				data-modal-form.url="{{AppSubUrl}}/-/agent/{{$session.ID}}/title"
+				data-modal-title.value="{{$session.Title}}">{{ctx.Locale.Tr "agent.chat_title_change"}}</div>
+			<div class="item agent-chat-more-item show-modal"
+				data-modal="#agent-chat-icon-modal"
+				data-modal-form.url="{{AppSubUrl}}/-/agent/{{$session.ID}}/icon"
+				data-icon="{{$session.Icon}}">{{ctx.Locale.Tr "agent.chat_icon_change"}}</div>
+			<div class="divider"></div>
+			<div class="item agent-chat-more-item tw-text-red link-action"
+				data-url="{{AppSubUrl}}/-/agent/{{$session.ID}}/delete"
+				data-modal-confirm-header="{{ctx.Locale.Tr "agent.chat_delete"}}"
+				data-modal-confirm-content="{{ctx.Locale.Tr "agent.chat_delete_confirm" $session.Title}}">{{ctx.Locale.Tr "agent.delete"}}</div>
+		</div>
+	</div>
+</div>

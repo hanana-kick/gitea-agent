@@ -78,6 +78,111 @@
   color: var(--color-text-light-2);
 }
 
+/* the resident session is a card: icon on the left, name and description on the right */
+.agent-chat-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  color: var(--color-text);
+  text-decoration: none;
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-card:hover {
+  color: var(--color-text);
+  background: var(--color-hover);
+}
+
+.agent-chat-card.active {
+  border-color: var(--color-primary);
+  background: var(--color-active);
+}
+
+.agent-chat-card-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-card-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-chat-card-name {
+  font-weight: var(--font-weight-semibold);
+}
+
+.agent-chat-card-desc {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-more {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-more:hover {
+  color: var(--color-text);
+  background: var(--color-hover);
+}
+
+.agent-chat-more-item {
+  cursor: pointer;
+}
+
+.agent-chat-icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agent-chat-icon-option {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-icon-option:hover {
+  border-color: var(--color-primary);
+}
+
+.agent-chat-icon-option input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+
+.agent-chat-icon-option:has(input:checked) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.agent-chat-icon-none {
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.agent-chat-icon-option:has(.agent-chat-icon-none) {
+  width: auto;
+}
+
 .agent-chat-session-row {
   display: flex;
   gap: 2px;

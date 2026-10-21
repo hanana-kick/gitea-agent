@@ -5,6 +5,7 @@ import {hideElem, showElem, toggleElem} from '../utils/dom.ts';
 type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, cancel: string, error: string};
 type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, timeHTML: string};
 type AgentChatRun = {id: number, status: string, error: string, cancelable: boolean};
+type AgentChatConversation = {id: number, title: string, icon: string};
 
 const reconnectDelay = 2000; // ms, the browser's own reconnect would replay the cursor from the first connect
 const bottomThreshold = 80; // px
@@ -25,6 +26,7 @@ export function initAgentChat() {
   const composerEl = mainEl.querySelector<HTMLFormElement>('.agent-chat-composer')!;
   const inputEl = mainEl.querySelector<HTMLTextAreaElement>('.agent-chat-input')!;
   const ajaxHeaders = {'X-Requested-With': 'XMLHttpRequest'};
+  const elConversationID = mainEl.getAttribute('data-conversation-id')!;
 
   statusCancelEl.textContent = labels.cancel;
   statusCancelEl.addEventListener('click', () => {
@@ -80,6 +82,33 @@ export function initAgentChat() {
     }
   }
 
+  // the icon modal is shared by every row: the global "show-modal" handler fills the form
+  // action, but the icon radio has to be checked here
+  function initMoreMenus() {
+    const iconModal = document.querySelector<HTMLFormElement>('#agent-chat-icon-form');
+    if (!iconModal) return;
+    for (const item of document.querySelectorAll<HTMLElement>('.agent-chat-more-item[data-icon]')) {
+      item.addEventListener('click', () => {
+        const icon = item.getAttribute('data-icon')!;
+        for (const input of iconModal.querySelectorAll<HTMLInputElement>('input[name="icon"]')) {
+          input.checked = input.value === icon;
+        }
+      }, {capture: true}); // run before the global handler opens the modal
+    }
+  }
+
+  // a renamed session shows its new title in the list and in the chat header
+  function applyConversation(conversation: AgentChatConversation) {
+    const header = document.querySelector<HTMLElement>('.agent-chat-head-title');
+    if (header && elConversationID === String(conversation.id)) header.textContent = conversation.title;
+    const id = String(conversation.id);
+    for (const link of document.querySelectorAll<HTMLElement>('.agent-chat-session-link, .agent-chat-card')) {
+      if (link.getAttribute('href')!.split('/').pop() !== id) continue;
+      const label = link.querySelector<HTMLElement>('.gt-ellipsis, .agent-chat-card-name');
+      if (label) label.textContent = conversation.title;
+    }
+  }
+
   function connect() {
     const source = new EventSource(`${eventsUrl}?since=${mainEl!.getAttribute('data-last-message-id')!}`);
 
@@ -89,6 +118,9 @@ export function initAgentChat() {
     source.addEventListener('run', (event: MessageEvent) => {
       applyRun(JSON.parse(event.data) as AgentChatRun);
     });
+    source.addEventListener('conversation', (event: MessageEvent) => {
+      applyConversation(JSON.parse(event.data) as AgentChatConversation);
+    });
     source.addEventListener('error', () => {
       if (source.readyState === EventSource.CLOSED) return;
       source.close();
@@ -96,6 +128,8 @@ export function initAgentChat() {
       setTimeout(connect, reconnectDelay);
     });
   }
+
+  initMoreMenus();
 
   composerEl.addEventListener('submit', async (event) => {
     event.preventDefault();

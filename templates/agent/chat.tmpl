@@ -17,7 +17,7 @@
 					{{if .SignedUser.IsAdmin}}
 						<form method="post" action="{{AppSubUrl}}/-/agent/new">
 							<input type="hidden" name="kind" value="server">
-							<button type="submit" class="muted btn agent-chat-header-action" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_new_server"}}">{{svg "octicon-plus"}}</button>
+							<button type="submit" class="muted btn agent-chat-header-action" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_new_conversation"}}">{{svg "octicon-plus"}}</button>
 						</form>
 					{{end}}
 				</h4>
@@ -31,33 +31,23 @@
 				<div class="ui attached segment agent-chat-list">
 					{{/* the resident session is the entry to the global bot, so it always comes first */}}
 					{{with .Sessions.Resident}}
-						<div class="agent-chat-session-row">
-							<a class="agent-chat-session-link{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
-								{{svg "gitea-pod-outline" 18}}
-								<span class="gt-ellipsis">{{.Title}}</span>
-							</a>
-						</div>
-						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_resident_help"}}</p>
+						<a class="agent-chat-card{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
+							<span class="agent-chat-card-icon">{{svg "gitea-pod-outline" 24}}</span>
+							<span class="agent-chat-card-text">
+								<span class="agent-chat-card-name">{{.Title}}</span>
+								<span class="agent-chat-card-desc">{{ctx.Locale.Tr "agent.chat_resident_desc"}}</span>
+							</span>
+						</a>
 					{{end}}
 
-					{{if .SignedUser.IsAdmin}}
-						<div class="agent-chat-group-title tw-mt-3">
-							<span>{{ctx.Locale.Tr "agent.chat_server"}}</span>
-						</div>
-						{{range .Sessions.Servers}}
-							<div class="agent-chat-session-row">
-								<a class="agent-chat-session-link{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
-									{{svg "octicon-server" 18}}
-									<span class="gt-ellipsis">{{.Title}}</span>
-								</a>
-								<form method="post" action="{{AppSubUrl}}/-/agent/{{.ID}}/delete">
-									<button type="submit" class="agent-chat-row-action" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_delete"}}">{{svg "octicon-trash"}}</button>
-								</form>
-							</div>
-						{{else}}
-							<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_server"}}</p>
-						{{end}}
-						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_server_help"}}</p>
+					<div class="agent-chat-group-title tw-mt-3">
+						{{svg "octicon-comment-discussion"}}
+						<span>{{ctx.Locale.Tr "agent.chat_conversations"}}</span>
+					</div>
+					{{range .Sessions.Servers}}
+						{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" ""}}
+					{{else}}
+						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_conversations"}}</p>
 					{{end}}
 				</div>
 			{{else}}
@@ -82,15 +72,7 @@
 						<div class="agent-chat-repo">
 							<a class="agent-chat-repo-name gt-ellipsis" href="{{.Repo.Link}}" title="{{.Repo.FullName}}">{{.Repo.FullName}}</a>
 							{{range .Sessions}}
-								<div class="agent-chat-session-row">
-									<a class="agent-chat-session-link{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
-										{{svg "octicon-repo" 18}}
-										<span class="gt-ellipsis">{{.Title}}</span>
-									</a>
-									<form method="post" action="{{AppSubUrl}}/-/agent/{{.ID}}/delete">
-										<button type="submit" class="agent-chat-row-action" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_delete"}}">{{svg "octicon-trash"}}</button>
-									</form>
-								</div>
+								{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" "octicon-repo"}}
 							{{end}}
 						</div>
 					{{else}}
@@ -195,6 +177,45 @@
 				</div>
 			{{end}}
 		</div>
+	</div>
+	<div class="ui modal" id="agent-chat-title-modal">
+		<form class="ui form" method="post" id="agent-chat-title-form">
+			<div class="header">{{ctx.Locale.Tr "agent.chat_title_change"}}</div>
+			<div class="content">
+				<div class="required field">
+					<label for="agent-chat-title-input">{{ctx.Locale.Tr "agent.chat_conversation_title"}}</label>
+					<input id="agent-chat-title-input" name="title" maxlength="100" required>
+				</div>
+			</div>
+			<div class="actions">
+				<button class="ui cancel button" type="button">{{ctx.Locale.Tr "cancel"}}</button>
+				<button class="ui primary button" type="submit">{{ctx.Locale.Tr "save"}}</button>
+			</div>
+		</form>
+	</div>
+
+	<div class="ui modal" id="agent-chat-icon-modal">
+		<form class="ui form" method="post" id="agent-chat-icon-form">
+			<div class="header">{{ctx.Locale.Tr "agent.chat_icon_change"}}</div>
+			<div class="content">
+				<div class="agent-chat-icon-picker">
+					<label class="agent-chat-icon-option">
+						<input type="radio" name="icon" value="">
+						<span class="agent-chat-icon-none">{{ctx.Locale.Tr "agent.chat_icon_none"}}</span>
+					</label>
+					{{range .ConversationIcons}}
+						<label class="agent-chat-icon-option" data-tooltip-content="{{.}}">
+							<input type="radio" name="icon" value="{{.}}">
+							{{svg . 20}}
+						</label>
+					{{end}}
+				</div>
+			</div>
+			<div class="actions">
+				<button class="ui cancel button" type="button">{{ctx.Locale.Tr "cancel"}}</button>
+				<button class="ui primary button" type="submit">{{ctx.Locale.Tr "save"}}</button>
+			</div>
+		</form>
 	</div>
 </div>
 {{template "base/footer" .}}

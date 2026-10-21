@@ -588,6 +588,8 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		m.Get("/{id}/events", agent_web.ChatEvents)
 		m.Post("/{id}/messages", agent_web.ChatMessageNew)
 		m.Post("/{id}/model", agent_web.ChatModelSet)
+		m.Post("/{id}/title", agent_web.ChatTitlePost)
+		m.Post("/{id}/icon", agent_web.ChatIconPost)
 		m.Post("/{id}/cancel", agent_web.ChatRunCancel)
 		m.Post("/{id}/delete", agent_web.ChatSessionDelete)
 	}, reqSignIn)
