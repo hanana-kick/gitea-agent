@@ -4184,7 +4184,8 @@
   "agent.chat_attachment_failed": "The file %s was not attached: %s",
   "agent.chat_edit": "Edit and ask again",
   "agent.chat_edit_only_user": "Only your own messages can be edited.",
-  "agent.chat_edited": "The message was edited; the agent is answering again.",
-  "agent.chat_edit_confirm": "Everything after this message is removed and the agent answers the edited message again.",
+  "agent.chat_edited": "Rewound to the edited message; the conversation continues from here.",
+  "agent.chat_edited_mark": "edited",
+  "agent.chat_edit_confirm": "The conversation rewinds to this point and continues from your edited message. The answers after it are discarded.",
   "agent.chat_message": "Message"
 }

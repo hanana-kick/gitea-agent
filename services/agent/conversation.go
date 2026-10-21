@@ -548,8 +548,11 @@ func EditUserMessage(ctx context.Context, conversation *agent_model.Conversation
 	if err := DeleteMessagesAfter(ctx, conversation.ID, messageID); err != nil {
 		return nil, err
 	}
+	// the edit rewinds the conversation to this message: the run that started after it
+	// re-answers from here, which is why the transcript before it is left untouched
 	message.Content = content
-	if _, err := db.GetEngine(ctx).ID(message.ID).Cols("content").Update(message); err != nil {
+	message.EditedUnix = timeutil.TimeStampNow()
+	if _, err := db.GetEngine(ctx).ID(message.ID).Cols("content", "edited_unix").Update(message); err != nil {
 		return nil, err
 	}
 	return message, nil

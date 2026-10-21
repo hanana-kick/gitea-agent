@@ -69,6 +69,9 @@ type Message struct {
 	Content        string `xorm:"TEXT NOT NULL"`
 
 	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
+	// EditedUnix is set when the user rewrote the message: the transcript after it was
+	// discarded and the agent answers again from here.
+	EditedUnix timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
 }
 
 func (Message) TableName() string {

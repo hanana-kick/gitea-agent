@@ -63,7 +63,7 @@
 					{{range .Sessions.Servers}}
 						{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" "" "Folders" $.Sessions.Folders "Busy" (index $.BusySessions .ID)}}
 					{{else}}
-						{{if not .Sessions.Folders}}<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_conversations"}}</p>{{end}}
+	
 					{{end}}
 
 					{{range .Sessions.Folders}}
@@ -235,7 +235,11 @@
 								{{else}}
 									{{ctx.Locale.Tr "agent.chat_system"}}
 								{{end}}
-								· {{DateUtils.TimeSince .CreatedUnix}}
+								{{if .EditedUnix}}
+									· {{svg "octicon-pencil" 12}} {{ctx.Locale.Tr "agent.chat_edited_mark"}} {{DateUtils.TimeSince .EditedUnix}}
+								{{else}}
+									· {{DateUtils.TimeSince .CreatedUnix}}
+								{{end}}
 							</div>
 							<div class="agent-chat-bubble">
 								<div class="render-content markup">{{ctx.RenderUtils.MarkdownToHtml .Content}}</div>
