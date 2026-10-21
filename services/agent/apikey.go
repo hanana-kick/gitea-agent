@@ -81,11 +81,16 @@ func CreateAPIKey(ctx context.Context, ownerID int64, name, value string) (*agen
 	return key, nil
 }
 
-// ListAPIKeys returns every stored key, newest first. The values are not included.
+// ListAPIKeys returns every stored key, by name. The values are not included.
 func ListAPIKeys(ctx context.Context) ([]*agent_model.APIKey, error) {
 	keys := make([]*agent_model.APIKey, 0, 8)
 	err := db.GetEngine(ctx).OrderBy("name ASC").Find(&keys)
 	return keys, err
+}
+
+// FindAPIKeys returns one page of keys and the total number of matches.
+func FindAPIKeys(ctx context.Context, opts agent_model.FindAPIKeysOptions) ([]*agent_model.APIKey, int64, error) {
+	return db.FindAndCount[agent_model.APIKey](ctx, opts)
 }
 
 // GetAPIKey returns one key without its value.

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"net/http"
 
+	agent_model "gitea.dev/models/agent"
+	"gitea.dev/models/db"
 	"gitea.dev/modules/setting"
 	agent_service "gitea.dev/services/agent"
 	"gitea.dev/services/context"
@@ -25,9 +27,16 @@ func redirectToAPIKeys(ctx *context.Context) {
 
 // APIKeys renders the credential store. Stored values are never rendered, only names.
 func APIKeys(ctx *context.Context) {
-	keys, err := agent_service.ListAPIKeys(ctx)
+	page := max(ctx.FormInt("page"), 1)
+	keyword := ctx.FormTrim("q")
+
+	pageSize := setting.UI.Admin.OrgPagingNum
+	keys, total, err := agent_service.FindAPIKeys(ctx, agent_model.FindAPIKeysOptions{
+		ListOptions: db.ListOptions{Page: page, PageSize: pageSize},
+		Keyword:     keyword,
+	})
 	if err != nil {
-		ctx.ServerError("ListAPIKeys", err)
+		ctx.ServerError("FindAPIKeys", err)
 		return
 	}
 	usage, err := agent_service.APIKeyUsage(ctx)
@@ -38,10 +47,22 @@ func APIKeys(ctx *context.Context) {
 
 	ctx.Data["Title"] = ctx.Tr("agent.api_keys_title")
 	ctx.Data["PageIsAgentAPIKeys"] = true
+	ctx.Data["Keyword"] = keyword
 	ctx.Data["APIKeys"] = keys
 	ctx.Data["Usage"] = usage
-	ctx.Data["Total"] = len(keys)
+	ctx.Data["Total"] = total
+	ctx.Data["Page"] = context.NewPagerBuilder(ctx).TotalCount(total).PerPageLimit(pageSize).CurPage(page).Build()
 	ctx.HTML(http.StatusOK, tplAPIKeys)
+}
+
+// APIKeyNew renders the form that stores a new key.
+func APIKeyNew(ctx *context.Context) {
+	ctx.Data["Title"] = ctx.Tr("agent.api_key_add")
+	ctx.Data["PageIsAgentAPIKeys"] = true
+	ctx.Data["IsEdit"] = false
+	ctx.Data["FormAction"] = setting.AppSubURL + apiKeysURL + "/new"
+	ctx.Data["CancelLink"] = setting.AppSubURL + apiKeysURL
+	ctx.HTML(http.StatusOK, tplAPIKey)
 }
 
 // APIKeyNewPost stores a new credential; its value is only ever accepted, never returned.
@@ -54,7 +75,7 @@ func APIKeyNewPost(ctx *context.Context) {
 		} else {
 			ctx.Flash.Error(ctx.Tr("agent.api_key_save_failed", err.Error()))
 		}
-		redirectToAPIKeys(ctx)
+		ctx.Redirect(setting.AppSubURL + apiKeysURL + "/new")
 		return
 	}
 	ctx.Flash.Success(ctx.Tr("agent.api_key_added"))
@@ -70,6 +91,7 @@ func APIKey(ctx *context.Context) {
 	}
 	ctx.Data["Title"] = ctx.Tr("agent.api_key_edit")
 	ctx.Data["PageIsAgentAPIKeys"] = true
+	ctx.Data["IsEdit"] = true
 	ctx.Data["APIKey"] = key
 	ctx.Data["FormAction"] = setting.AppSubURL + apiKeysURL + "/" + ctx.PathParam("id")
 	ctx.Data["CancelLink"] = setting.AppSubURL + apiKeysURL

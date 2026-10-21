@@ -6,6 +6,8 @@ package agent
 import (
 	"gitea.dev/models/db"
 	"gitea.dev/modules/timeutil"
+
+	"xorm.io/builder"
 )
 
 // APIKey is a named LLM credential. The value is encrypted with setting.SecretKey and is
@@ -20,6 +22,24 @@ type APIKey struct {
 	CreatedUnix  timeutil.TimeStamp `xorm:"created NOT NULL"`
 	UpdatedUnix  timeutil.TimeStamp `xorm:"updated NOT NULL"`
 	LastUsedUnix timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
+}
+
+// FindAPIKeysOptions describes filtering options for finding keys.
+type FindAPIKeysOptions struct {
+	db.ListOptions
+	Keyword string // case-insensitive match on the name
+}
+
+func (opts FindAPIKeysOptions) ToConds() builder.Cond {
+	cond := builder.NewCond()
+	if opts.Keyword != "" {
+		cond = cond.And(db.BuildCaseInsensitiveLike("name", opts.Keyword))
+	}
+	return cond
+}
+
+func (opts FindAPIKeysOptions) ToOrders() string {
+	return "name"
 }
 
 func (APIKey) TableName() string {

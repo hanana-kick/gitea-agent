@@ -935,7 +935,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			m.Post("/providers/{id}/test", agent_web.ProviderTest)
 
 			m.Get("/keys", agent_web.APIKeys)
-			m.Post("/keys/new", agent_web.APIKeyNewPost)
+			m.Combo("/keys/new").Get(agent_web.APIKeyNew).Post(agent_web.APIKeyNewPost)
 			m.Combo("/keys/{id}").Get(agent_web.APIKey).Post(agent_web.APIKeyPost)
 			m.Post("/keys/{id}/delete", agent_web.APIKeyDelete)
 
