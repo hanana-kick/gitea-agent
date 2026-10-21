@@ -1,6 +1,6 @@
 {{template "admin/layout_head" (dict "pageClass" "admin agent")}}
 	<div class="admin-setting-content">
-		<h4 class="ui top attached header">{{ctx.Locale.Tr "agent.api_key_replace"}}</h4>
+		<h4 class="ui top attached header">{{ctx.Locale.Tr "agent.api_key_edit"}}</h4>
 		<div class="ui attached segment">
 			<form class="ui form ignore-dirty" method="post" action="{{.FormAction}}">
 				<div class="field">
@@ -8,9 +8,9 @@
 					<input value="{{.APIKey.Name}}" readonly>
 				</div>
 				<div class="required field">
-					<label for="value">{{ctx.Locale.Tr "agent.api_key_value"}}</label>
-					<input id="value" name="value" type="password" autocomplete="new-password" required>
-					<p class="help">{{ctx.Locale.Tr "agent.api_key_replace_help"}}</p>
+					<label for="value">{{ctx.Locale.Tr "agent.api_key_new_value"}}</label>
+					<input id="value" name="value" type="password" autocomplete="new-password" required autofocus placeholder="{{ctx.Locale.TrString "agent.api_key_new_value_placeholder"}}">
+					<p class="help">{{ctx.Locale.Tr "agent.api_key_edit_help"}}</p>
 				</div>
 				<div class="field">
 					<button class="ui primary button" type="submit">{{ctx.Locale.Tr "save"}}</button>

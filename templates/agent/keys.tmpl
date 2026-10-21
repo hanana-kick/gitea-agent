@@ -47,7 +47,7 @@
 							<td class="tw-whitespace-nowrap">{{DateUtils.AbsoluteShort .CreatedUnix}}</td>
 							<td>
 								<div class="tw-flex tw-gap-2">
-									<a href="{{AppSubUrl}}/-/admin/agent/keys/{{.ID}}" data-tooltip-content="{{ctx.Locale.Tr "agent.api_key_replace"}}">{{svg "octicon-sync"}}</a>
+									<a href="{{AppSubUrl}}/-/admin/agent/keys/{{.ID}}" data-tooltip-content="{{ctx.Locale.Tr "agent.api_key_edit"}}">{{svg "octicon-pencil"}}</a>
 									<button type="button" class="btn interact-fg tw-text-red link-action"
 										data-url="{{AppSubUrl}}/-/admin/agent/keys/{{.ID}}/delete"
 										data-modal-confirm-header="{{ctx.Locale.Tr "agent.delete"}}"

@@ -68,7 +68,7 @@ func APIKey(ctx *context.Context) {
 		apiKeyError(ctx, err)
 		return
 	}
-	ctx.Data["Title"] = ctx.Tr("agent.api_key_replace")
+	ctx.Data["Title"] = ctx.Tr("agent.api_key_edit")
 	ctx.Data["PageIsAgentAPIKeys"] = true
 	ctx.Data["APIKey"] = key
 	ctx.Data["FormAction"] = setting.AppSubURL + apiKeysURL + "/" + ctx.PathParam("id")
@@ -92,7 +92,7 @@ func APIKeyPost(ctx *context.Context) {
 		ctx.Redirect(setting.AppSubURL + apiKeysURL + "/" + ctx.PathParam("id"))
 		return
 	}
-	ctx.Flash.Success(ctx.Tr("agent.api_key_replaced"))
+	ctx.Flash.Success(ctx.Tr("agent.api_key_updated"))
 	redirectToAPIKeys(ctx)
 }
 

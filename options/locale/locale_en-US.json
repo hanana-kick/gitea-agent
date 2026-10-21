@@ -4129,9 +4129,6 @@
   "agent.api_key_value_help": "Stored encrypted with the instance secret key. It can not be read back, only replaced.",
   "agent.api_key_add": "Add key",
   "agent.api_key_added": "The key was added.",
-  "agent.api_key_replace": "Replace key value",
-  "agent.api_key_replace_help": "Every provider bound to this key picks up the new value.",
-  "agent.api_key_replaced": "The key value was replaced.",
   "agent.api_key_deleted": "The key was deleted.",
   "agent.api_key_in_use": "A provider still uses this key. Unbind it there first.",
   "agent.api_key_save_failed": "The key could not be saved: %s",
@@ -4143,5 +4140,10 @@
   "agent.api_key_manage": "Manage keys",
   "agent.api_key_none": "Not set",
   "agent.api_key_invalid": "The selected key does not exist.",
-  "agent.api_key_created": "Created"
+  "agent.api_key_created": "Created",
+  "agent.api_key_edit": "Edit API key",
+  "agent.api_key_new_value": "New key",
+  "agent.api_key_new_value_placeholder": "paste the new key",
+  "agent.api_key_edit_help": "The current value can not be read. Saving replaces it with the pasted key, and every provider bound to this entry picks up the new value.",
+  "agent.api_key_updated": "The key was updated."
 }
