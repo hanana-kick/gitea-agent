@@ -336,7 +336,7 @@ func (e *Engine) execute(runID int64) {
 		reason := err.Error()
 		// every member the router tried is part of the reason, so the swap is visible
 		if route, ok := AsRoute(err); ok {
-			if failures := route.Failures(); len(failures) > 1 {
+			if failures := route.Failures(); len(failures) > 0 {
 				reason = strings.Join(failures, "; ")
 			}
 		}
