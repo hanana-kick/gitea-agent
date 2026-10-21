@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
@@ -161,13 +162,28 @@ func tryMember(ctx context.Context, role *agent_model.ModelGroup, member *agent_
 		return err
 	}
 
+	reply, ok := usableReply(resp)
+	if !ok {
+		// an empty answer is as good as a failure: the next member must try
+		err := errors.New("the model returned an empty answer")
+		result.Attempts = append(result.Attempts, RouteAttempt{Role: role.Name, Target: target, Error: err.Error()})
+		return err
+	}
+
 	result.Attempts = append(result.Attempts, RouteAttempt{Role: role.Name, Target: target})
 	result.Model = member.Model
 	if resp.Model != "" {
 		result.Model = resp.Model
 	}
-	if len(resp.Choices) > 0 {
-		result.Reply = resp.Choices[0].Message.Content
-	}
+	result.Reply = reply
 	return nil
+}
+
+// usableReply reports whether a response carries an answer worth showing.
+func usableReply(resp llm.ChatResponse) (string, bool) {
+	if len(resp.Choices) == 0 {
+		return "", false
+	}
+	reply := strings.TrimSpace(resp.Choices[0].Message.Content)
+	return reply, reply != ""
 }
