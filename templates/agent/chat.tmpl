@@ -72,20 +72,20 @@
 									<span class="agent-chat-card-icon">{{if .Folder.Icon}}{{svg .Folder.Icon 18}}{{else}}{{svg "octicon-file-directory" 18}}{{end}}</span>
 									<span class="agent-chat-card-name gt-ellipsis">{{.Folder.Name}}</span>
 								</span>
-								<div class="ui dropdown jump agent-chat-more" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_more"}}">
+								<button type="button" class="agent-chat-more" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_more"}}" aria-haspopup="true">
 									{{svg "octicon-kebab-horizontal"}}
-									<div class="menu">
-										<div class="item agent-chat-more-item show-modal"
-											data-modal="#agent-chat-folder-modal"
-											data-modal-form.url="{{AppSubUrl}}/-/agent/folders/{{.Folder.ID}}"
-											data-modal-name.value="{{.Folder.Name}}"
-											data-icon="{{.Folder.Icon}}">{{ctx.Locale.Tr "agent.chat_folder_edit"}}</div>
-										<div class="divider"></div>
-										<div class="item agent-chat-more-item tw-text-red link-action"
-											data-url="{{AppSubUrl}}/-/agent/folders/{{.Folder.ID}}/delete"
-											data-modal-confirm-header="{{ctx.Locale.Tr "agent.chat_folder_delete"}}"
-											data-modal-confirm-content="{{ctx.Locale.Tr "agent.chat_folder_delete_confirm" .Folder.Name}}">{{ctx.Locale.Tr "agent.delete"}}</div>
-									</div>
+								</button>
+								<div class="agent-chat-more-menu" popover="auto" role="menu">
+									<div class="item agent-chat-more-item show-modal"
+										data-modal="#agent-chat-folder-modal"
+										data-modal-form.url="{{AppSubUrl}}/-/agent/folders/{{.Folder.ID}}"
+										data-modal-name.value="{{.Folder.Name}}"
+										data-icon="{{.Folder.Icon}}">{{ctx.Locale.Tr "agent.chat_folder_edit"}}</div>
+									<div class="divider"></div>
+									<div class="item agent-chat-more-item tw-text-red link-action"
+										data-url="{{AppSubUrl}}/-/agent/folders/{{.Folder.ID}}/delete"
+										data-modal-confirm-header="{{ctx.Locale.Tr "agent.chat_folder_delete"}}"
+										data-modal-confirm-content="{{ctx.Locale.Tr "agent.chat_folder_delete_confirm" .Folder.Name}}">{{ctx.Locale.Tr "agent.delete"}}</div>
 								</div>
 							</div>
 							<div class="agent-chat-folder-items">

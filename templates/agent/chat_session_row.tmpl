@@ -12,24 +12,24 @@
 		{{end}}
 		<span class="agent-chat-card-name gt-ellipsis">{{$session.Title}}</span>
 	</a>
-	<div class="ui dropdown jump agent-chat-more" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_more"}}">
+	<button type="button" class="agent-chat-more" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_more"}}" aria-haspopup="true">
 		{{svg "octicon-kebab-horizontal"}}
-		<div class="menu">
+	</button>
+	<div class="agent-chat-more-menu" popover="auto" role="menu">
+		<div class="item agent-chat-more-item show-modal"
+			data-modal="#agent-chat-title-modal"
+			data-modal-form.url="{{AppSubUrl}}/-/agent/{{$session.ID}}/title"
+			data-modal-title.value="{{$session.Title}}">{{ctx.Locale.Tr "agent.chat_title_change"}}</div>
+		{{if $folders}}
 			<div class="item agent-chat-more-item show-modal"
-				data-modal="#agent-chat-title-modal"
-				data-modal-form.url="{{AppSubUrl}}/-/agent/{{$session.ID}}/title"
-				data-modal-title.value="{{$session.Title}}">{{ctx.Locale.Tr "agent.chat_title_change"}}</div>
-			{{if $folders}}
-				<div class="item agent-chat-more-item show-modal"
-					data-modal="#agent-chat-folder-pick-modal"
-					data-modal-form.url="{{AppSubUrl}}/-/agent/{{$session.ID}}/folder"
-					data-folder="{{$session.FolderID}}">{{ctx.Locale.Tr "agent.chat_folder_move"}}</div>
-			{{end}}
-			<div class="divider"></div>
-			<div class="item agent-chat-more-item tw-text-red link-action"
-				data-url="{{AppSubUrl}}/-/agent/{{$session.ID}}/delete"
-				data-modal-confirm-header="{{ctx.Locale.Tr "agent.chat_delete"}}"
-				data-modal-confirm-content="{{ctx.Locale.Tr "agent.chat_delete_confirm" $session.Title}}">{{ctx.Locale.Tr "agent.delete"}}</div>
-		</div>
+				data-modal="#agent-chat-folder-pick-modal"
+				data-modal-form.url="{{AppSubUrl}}/-/agent/{{$session.ID}}/folder"
+				data-folder="{{$session.FolderID}}">{{ctx.Locale.Tr "agent.chat_folder_move"}}</div>
+		{{end}}
+		<div class="divider"></div>
+		<div class="item agent-chat-more-item tw-text-red link-action"
+			data-url="{{AppSubUrl}}/-/agent/{{$session.ID}}/delete"
+			data-modal-confirm-header="{{ctx.Locale.Tr "agent.chat_delete"}}"
+			data-modal-confirm-content="{{ctx.Locale.Tr "agent.chat_delete_confirm" $session.Title}}">{{ctx.Locale.Tr "agent.delete"}}</div>
 	</div>
 </div>

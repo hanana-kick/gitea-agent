@@ -214,6 +214,28 @@ export function initAgentChat() {
   }
 
   function initMoreMenus() {
+    // the menu is a popover, so the scrolling list cannot clip it
+    for (const toggle of document.querySelectorAll<HTMLElement>('.agent-chat-more')) {
+      const menu = toggle.parentElement!.querySelector<HTMLElement>('.agent-chat-more-menu');
+      if (!menu) continue;
+      toggle.addEventListener('click', () => {
+        const box = toggle.getBoundingClientRect();
+        menu.style.top = `${box.bottom + 4}px`;
+        menu.style.right = `${innerWidth - box.right}px`;
+        menu.showPopover();
+      });
+      // an item opens a modal, so the menu must not stay behind it
+      menu.addEventListener('click', (event) => {
+        if ((event.target as HTMLElement).closest('.agent-chat-more-item')) menu.hidePopover();
+      });
+    }
+    // a fixed menu would drift away from its row while the list scrolls
+    document.addEventListener('scroll', () => {
+      for (const menu of document.querySelectorAll<HTMLElement>('.agent-chat-more-menu:popover-open')) {
+        menu.hidePopover();
+      }
+    }, {capture: true});
+
     const folderModal = document.querySelector<HTMLFormElement>('#agent-chat-folder-form');
     const pickModal = document.querySelector<HTMLFormElement>('#agent-chat-folder-pick-form');
     for (const item of document.querySelectorAll<HTMLElement>('.agent-chat-more-item[data-icon]')) {
