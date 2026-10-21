@@ -64,7 +64,8 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 			"writes in, and keep answers short unless asked for detail.",
 	})
 
-	// keep the newest history when the transcript is long
+	// keep the newest history when the transcript is long; the summary stands in for
+	// everything dropped, so older context is not lost entirely
 	recent := history
 	if len(recent) > engineHistoryLimit {
 		recent = recent[len(recent)-engineHistoryLimit:]
@@ -82,6 +83,9 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 			break
 		}
 		kept = append(kept, llm.Message{Role: message.Role, Content: content})
+	}
+	if summary := strings.TrimSpace(conversation.Summary); summary != "" {
+		messages = append(messages, llm.Message{Role: "system", Content: "Earlier in this conversation: " + summary})
 	}
 	for i := len(kept) - 1; i >= 0; i-- {
 		messages = append(messages, kept[i])
