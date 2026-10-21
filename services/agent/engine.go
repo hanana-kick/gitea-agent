@@ -34,6 +34,7 @@ const (
 	EventMessage      = "message"      // a transcript entry was appended
 	EventRun          = "run"          // a run changed state
 	EventConversation = "conversation" // the session was renamed or given an icon
+	EventDelta        = "delta"        // the answer is arriving piece by piece
 )
 
 // ConversationState is the part of a session that clients show in a list.
@@ -54,6 +55,14 @@ func State(conversation *agent_model.Conversation) ConversationState {
 type Event struct {
 	Name string
 	Data any
+}
+
+// DeltaState is one piece of the answer a run is streaming.
+type DeltaState struct {
+	RunID     int64  `json:"runId"`
+	Content   string `json:"content,omitempty"`
+	Reasoning string `json:"reasoning,omitempty"`
+	Reset     bool   `json:"reset,omitempty"` // drop what was shown: another member starts over
 }
 
 // RunState is the part of a run that clients need.
@@ -268,7 +277,7 @@ func (e *Engine) execute(runID int64) {
 	run.Status = agent_model.RunStatusRunning
 	e.publishRun(conversation.ID, run)
 
-	reply, model, err := e.answer(runCtx, conversation)
+	reply, model, err := e.answer(runCtx, conversation, run)
 	if err != nil {
 		status := agent_model.RunStatusFailed
 		reason := err.Error()
@@ -398,7 +407,7 @@ func cleanConversationTitle(title string) string {
 }
 
 // answer builds the prompt from the stored transcript and asks the session model.
-func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversation) (string, string, error) {
+func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run) (string, string, error) {
 	role := ModelRoleForKind(conversation.Kind)
 	ref, err := ModelRoleRef(ctx, role)
 	if err != nil {
@@ -415,9 +424,22 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 	if err != nil {
 		return "", "", err
 	}
-	return Answer(ctx, ref, llm.ChatRequest{
+	// every piece goes out at once, so the browser can show the answer while it is written
+	onDelta := func(delta llm.Delta) error {
+		if err := ctx.Err(); err != nil {
+			return err // stop reading when the run was cancelled
+		}
+		e.broker.publish(conversation.ID, Event{Name: EventDelta, Data: DeltaState{
+			RunID:     run.ID,
+			Content:   delta.Content,
+			Reasoning: delta.Reasoning,
+			Reset:     delta.Reset,
+		}})
+		return nil
+	}
+	return AnswerStream(ctx, ref, llm.ChatRequest{
 		Messages: buildPrompt(ctx, conversation, history, attachments),
-	})
+	}, onDelta)
 }
 
 func (e *Engine) finishRun(ctx context.Context, run *agent_model.Run, status, reason string) {

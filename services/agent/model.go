@@ -108,6 +108,15 @@ func CanUseModelRef(ctx context.Context, ref string) (bool, error) {
 // Answer sends a request through the session model reference and returns the reply and the
 // model that produced it.
 func Answer(ctx context.Context, ref string, req llm.ChatRequest) (reply, model string, err error) {
+	return answer(ctx, ref, req, nil)
+}
+
+// AnswerStream does the same but reports the answer as it arrives.
+func AnswerStream(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.OnDelta) (reply, model string, err error) {
+	return answer(ctx, ref, req, onDelta)
+}
+
+func answer(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.OnDelta) (reply, model string, err error) {
 	kind, rest, ok := strings.Cut(ref, ":")
 	if !ok {
 		return "", "", ErrModelRefInvalid{}
@@ -121,7 +130,7 @@ func Answer(ctx context.Context, ref string, req llm.ChatRequest) (reply, model 
 		if group == nil {
 			return "", "", ErrModelRefInvalid{}
 		}
-		result, err := ChatThroughGroup(ctx, group, req)
+		result, err := chatThroughGroup(ctx, group, req, onDelta)
 		if err != nil {
 			return "", "", err
 		}
@@ -151,7 +160,12 @@ func Answer(ctx context.Context, ref string, req llm.ChatRequest) (reply, model 
 			return "", "", err
 		}
 		req.Model = modelName
-		resp, err := client.Chat(ctx, req)
+		var resp llm.ChatResponse
+		if onDelta != nil {
+			resp, err = client.ChatStream(ctx, req, onDelta)
+		} else {
+			resp, err = client.Chat(ctx, req)
+		}
 		if err != nil {
 			return "", "", err
 		}

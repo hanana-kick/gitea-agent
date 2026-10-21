@@ -4106,6 +4106,7 @@
   "agent.chat_select_session_help": "Agents differ by scope: Pod, server-wide, or one repository.",
   "agent.chat_no_messages": "No messages yet.",
   "agent.chat_message_empty": "A message needs text.",
+  "agent.chat_reasoning": "Reasoning…",
   "agent.chat_placeholder": "Message the agent…",
   "agent.chat_send": "Send",
   "agent.chat_you": "You",

@@ -4105,6 +4105,7 @@
   "agent.chat_select_session_help": "에이전트는 Pod, 서버 전체, 레포지토리 단위로 나뉩니다.",
   "agent.chat_no_messages": "아직 메시지가 없습니다.",
   "agent.chat_message_empty": "메시지 내용을 입력하세요.",
+  "agent.chat_reasoning": "생각 중…",
   "agent.chat_placeholder": "에이전트에게 메시지 보내기…",
   "agent.chat_send": "보내기",
   "agent.chat_you": "나",

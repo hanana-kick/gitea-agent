@@ -4,6 +4,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -74,10 +75,25 @@ func (m ModelInfo) InputModalities() []string {
 	return modalities
 }
 
+// Delta is one piece of a streamed answer. Reasoning carries what the model thought
+// before answering, which only some models send.
+type Delta struct {
+	Content   string
+	Reasoning string
+	// Reset tells the receiver to drop what it has shown so far; a fallback member
+	// starts over after the one before it failed.
+	Reset bool
+}
+
+// OnDelta receives the pieces of a streamed answer.
+type OnDelta func(Delta) error
+
 // Client is the interface for LLM providers.
 type Client interface {
 	// Chat sends a chat completion request and returns the assistant's reply.
 	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
+	// ChatStream sends the same request but reports the answer as it arrives.
+	ChatStream(ctx context.Context, req ChatRequest, onDelta OnDelta) (ChatResponse, error)
 	// ListModels returns the models the provider exposes.
 	ListModels(ctx context.Context) ([]ModelInfo, error)
 }
@@ -132,6 +148,120 @@ func cleanModels(models []ModelInfo) []ModelInfo {
 		out = append(out, ModelInfo{ID: id, Name: strings.TrimSpace(m.Name), Architecture: m.Architecture})
 	}
 	return out
+}
+
+// DoChatStream sends a streaming chat request and calls onDelta for every piece it reads.
+// The returned response carries the assembled answer.
+func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header http.Header, req ChatRequest, onDelta OnDelta) (ChatResponse, error) {
+	req.Stream = true
+	body, err := json.Marshal(req)
+	if err != nil {
+		return ChatResponse{}, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return ChatResponse{}, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+	for k, v := range header {
+		httpReq.Header[k] = v
+	}
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return ChatResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return ChatResponse{}, errors.New("LLM API error: " + string(respBody))
+	}
+
+	// some gateways ignore stream:true and answer with a whole completion
+	if contentType := resp.Header.Get("Content-Type"); !strings.Contains(contentType, "text/event-stream") {
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return ChatResponse{}, err
+		}
+		var whole ChatResponse
+		if err := json.Unmarshal(respBody, &whole); err != nil {
+			return ChatResponse{}, err
+		}
+		if onDelta != nil && len(whole.Choices) > 0 {
+			if err := onDelta(Delta{Content: whole.Choices[0].Message.Content}); err != nil {
+				return ChatResponse{}, err
+			}
+		}
+		return whole, nil
+	}
+
+	var answer, reasoning strings.Builder
+	var id, model string
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 32*1024), 1024*1024)
+	for scanner.Scan() {
+		payload, ok := strings.CutPrefix(strings.TrimSpace(scanner.Text()), "data:")
+		if !ok {
+			continue // blank separators, comments and "event:" lines
+		}
+		if payload = strings.TrimSpace(payload); payload == "[DONE]" {
+			break
+		}
+		var chunk struct {
+			ID    string `json:"id"`
+			Model string `json:"model"`
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+			Choices []struct {
+				Delta struct {
+					Content          string `json:"content"`
+					Reasoning        string `json:"reasoning"`
+					ReasoningContent string `json:"reasoning_content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			continue // a malformed keep-alive must not kill the answer
+		}
+		if chunk.Error != nil && chunk.Error.Message != "" {
+			return ChatResponse{}, errors.New("LLM API error: " + chunk.Error.Message)
+		}
+		if chunk.ID != "" {
+			id = chunk.ID
+		}
+		if chunk.Model != "" {
+			model = chunk.Model
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		delta := chunk.Choices[0].Delta
+		thought := delta.Reasoning + delta.ReasoningContent
+		if delta.Content == "" && thought == "" {
+			continue
+		}
+		answer.WriteString(delta.Content)
+		reasoning.WriteString(thought)
+		if onDelta != nil {
+			if err := onDelta(Delta{Content: delta.Content, Reasoning: thought}); err != nil {
+				return ChatResponse{}, err
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return ChatResponse{}, err
+	}
+
+	return ChatResponse{
+		ID:      id,
+		Object:  "chat.completion",
+		Model:   model,
+		Choices: []Choice{{Index: 0, Message: Message{Role: "assistant", Content: answer.String()}}},
+	}, nil
 }
 
 // HTTPClient is an interface for making HTTP requests (wraps *http.Client).

@@ -4,7 +4,8 @@ import {svg} from '../svg.ts';
 import {errorMessage} from '../modules/errors.ts';
 import {addDelegatedEventListener, createElementFromHTML, hideElem, showElem, toggleElem} from '../utils/dom.ts';
 
-type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, cancel: string, error: string, copy: string, edit: string};
+type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, cancel: string, error: string, copy: string, edit: string, reasoning: string};
+type AgentChatDelta = {runId: number, content?: string, reasoning?: string, reset?: boolean};
 type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string};
 type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[]};
 type AgentChatRun = {id: number, status: string, error: string, cancelable: boolean};
@@ -149,6 +150,7 @@ export function initAgentChat() {
 
   function appendMessage(message: AgentChatMessage) {
     if (messagesEl.querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`)) return;
+    dropLive();
 
     const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= bottomThreshold;
     for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
@@ -204,7 +206,58 @@ export function initAgentChat() {
     messagesEl.querySelector('.agent-chat-load-older')?.addEventListener('click', loadOlder);
   }
 
+  // the answer is shown while it arrives and replaced by the stored message at the end
+  let liveEl: HTMLElement | null = null;
+  let liveRunID = 0;
+
+  function dropLive() {
+    liveEl?.remove();
+    liveEl = null;
+  }
+
+  function ensureLive(): HTMLElement {
+    if (liveEl) return liveEl;
+    for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
+    const el = document.createElement('div');
+    el.className = 'agent-chat-message assistant agent-chat-live';
+    el.innerHTML = `<div class="agent-chat-bubble">
+      <div class="agent-chat-reasoning tw-hidden"><span class="agent-chat-reasoning-dots"><i></i><i></i><i></i></span><span class="agent-chat-reasoning-label"></span></div>
+      <div class="agent-chat-live-text"></div>
+    </div>`;
+    el.querySelector('.agent-chat-reasoning-label')!.textContent = labels.reasoning;
+    messagesEl.append(el);
+    liveEl = el;
+    return el;
+  }
+
+  function applyDelta(delta: AgentChatDelta) {
+    if (delta.reset) {
+      dropLive();
+      liveRunID = 0;
+      return; // another role member starts over
+    }
+    if (!delta.content && !delta.reasoning) return;
+    if (delta.runId !== liveRunID) {
+      dropLive();
+      liveRunID = delta.runId;
+    }
+
+    const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= bottomThreshold;
+    const el = ensureLive();
+    const reasoningEl = el.querySelector<HTMLElement>('.agent-chat-reasoning')!;
+    const textEl = el.querySelector<HTMLElement>('.agent-chat-live-text')!;
+    if (delta.content) {
+      textEl.textContent += delta.content;
+      hideElem(reasoningEl); // the answer started, the thinking is over
+    } else if (!textEl.textContent) {
+      showElem(reasoningEl); // the model is still reasoning
+    }
+    if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
   function applyRun(run: AgentChatRun) {
+    // a finished run either appended its message or failed: the live bubble has served its purpose
+    if (run.status !== 'queued' && run.status !== 'running') dropLive();
     if (run.status === 'queued' || run.status === 'running') {
       showStatus(run.status, run.status === 'queued' ? labels.queued : labels.running, run.cancelable);
     } else if (run.status === 'failed') {
@@ -289,6 +342,9 @@ export function initAgentChat() {
 
     source.addEventListener('message', (event: MessageEvent) => {
       appendMessage(JSON.parse(event.data) as AgentChatMessage);
+    });
+    source.addEventListener('delta', (event: MessageEvent) => {
+      applyDelta(JSON.parse(event.data) as AgentChatDelta);
     });
     source.addEventListener('run', (event: MessageEvent) => {
       applyRun(JSON.parse(event.data) as AgentChatRun);

@@ -67,3 +67,11 @@ func (c *OpenCodeClient) Chat(ctx context.Context, req ChatRequest) (ChatRespons
 	}
 	return DoChat(ctx, c.HTTPClient, http.MethodPost, c.BaseURL+"/chat/completions", c.authHeader(), req)
 }
+
+// ChatStream sends a chat completion request and reports the answer as it arrives.
+func (c *OpenCodeClient) ChatStream(ctx context.Context, req ChatRequest, onDelta OnDelta) (ChatResponse, error) {
+	if req.Model == "" {
+		req.Model = c.Model
+	}
+	return DoChatStream(ctx, c.HTTPClient, c.BaseURL+"/chat/completions", c.authHeader(), req, onDelta)
+}

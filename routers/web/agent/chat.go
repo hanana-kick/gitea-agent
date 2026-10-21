@@ -150,14 +150,15 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 			return
 		}
 		labels := map[string]string{
-			"queued":   string(ctx.Tr("agent.chat_status_queued")),
-			"running":  string(ctx.Tr("agent.chat_status_running")),
-			"failed":   string(ctx.Tr("agent.chat_status_failed")),
-			"canceled": string(ctx.Tr("agent.chat_status_canceled")),
-			"cancel":   string(ctx.Tr("agent.chat_cancel")),
-			"copy":     string(ctx.Tr("agent.chat_copy")),
-			"edit":     string(ctx.Tr("agent.chat_edit")),
-			"error":    string(ctx.Tr("agent.chat_status_error")),
+			"queued":    string(ctx.Tr("agent.chat_status_queued")),
+			"running":   string(ctx.Tr("agent.chat_status_running")),
+			"failed":    string(ctx.Tr("agent.chat_status_failed")),
+			"canceled":  string(ctx.Tr("agent.chat_status_canceled")),
+			"cancel":    string(ctx.Tr("agent.chat_cancel")),
+			"copy":      string(ctx.Tr("agent.chat_copy")),
+			"edit":      string(ctx.Tr("agent.chat_edit")),
+			"error":     string(ctx.Tr("agent.chat_status_error")),
+			"reasoning": string(ctx.Tr("agent.chat_reasoning")),
 		}
 		labelsJSON, err := json.Marshal(labels)
 		if err != nil {

@@ -45,15 +45,24 @@ func TestGroup(ctx context.Context, roleID int64) (*RouteResult, error) {
 
 // ChatThroughGroup sends a request to one of the group's members, honouring its call mode.
 func ChatThroughGroup(ctx context.Context, role *agent_model.ModelGroup, req llm.ChatRequest) (*RouteResult, error) {
+	return chatThroughGroup(ctx, role, req, nil)
+}
+
+// ChatThroughGroupStream does the same but reports the answer as it arrives.
+func ChatThroughGroupStream(ctx context.Context, role *agent_model.ModelGroup, req llm.ChatRequest, onDelta llm.OnDelta) (*RouteResult, error) {
+	return chatThroughGroup(ctx, role, req, onDelta)
+}
+
+func chatThroughGroup(ctx context.Context, role *agent_model.ModelGroup, req llm.ChatRequest, onDelta llm.OnDelta) (*RouteResult, error) {
 	result := &RouteResult{Role: role.Name}
-	if err := routeRequest(ctx, role, req, result, 0); err != nil {
+	if err := routeRequest(ctx, role, req, result, 0, onDelta); err != nil {
 		return result, err
 	}
 	return result, nil
 }
 
 // routeRequest tries the members of a group; the first answer wins.
-func routeRequest(ctx context.Context, role *agent_model.ModelGroup, req llm.ChatRequest, result *RouteResult, depth int) error {
+func routeRequest(ctx context.Context, role *agent_model.ModelGroup, req llm.ChatRequest, result *RouteResult, depth int, onDelta llm.OnDelta) error {
 	if depth > maxRoleDepth {
 		return errors.New("role nesting is too deep")
 	}
@@ -74,7 +83,16 @@ func routeRequest(ctx context.Context, role *agent_model.ModelGroup, req llm.Cha
 	var lastErr error
 	for offset := range members {
 		member := members[(start+offset)%len(members)]
-		lastErr = tryMember(ctx, role, member, req, result, depth)
+		// a member that fails mid answer leaves streamed text behind, so the next one starts clean
+		produced := false
+		var memberDelta llm.OnDelta
+		if onDelta != nil {
+			memberDelta = func(delta llm.Delta) error {
+				produced = true
+				return onDelta(delta)
+			}
+		}
+		lastErr = tryMember(ctx, role, member, req, result, depth, memberDelta)
 		if lastErr == nil {
 			if role.ModeOrDefault() == agent_model.GroupModeRoundRobin {
 				// the next call starts at the following member
@@ -85,12 +103,17 @@ func routeRequest(ctx context.Context, role *agent_model.ModelGroup, req llm.Cha
 			}
 			return nil
 		}
+		if produced {
+			if err := onDelta(llm.Delta{Reset: true}); err != nil {
+				return err
+			}
+		}
 	}
 	return lastErr
 }
 
 // tryMember calls a single member, recursing when the member is another group.
-func tryMember(ctx context.Context, role *agent_model.ModelGroup, member *agent_model.ModelGroupMember, req llm.ChatRequest, result *RouteResult, depth int) error {
+func tryMember(ctx context.Context, role *agent_model.ModelGroup, member *agent_model.ModelGroupMember, req llm.ChatRequest, result *RouteResult, depth int, onDelta llm.OnDelta) error {
 	if member.MemberGroupID != 0 {
 		nested, err := GetModelGroupByID(ctx, member.MemberGroupID)
 		if err != nil {
@@ -98,7 +121,7 @@ func tryMember(ctx context.Context, role *agent_model.ModelGroup, member *agent_
 			return err
 		}
 		target := nested.Name
-		if err := routeRequest(ctx, nested, req, result, depth+1); err != nil {
+		if err := routeRequest(ctx, nested, req, result, depth+1, onDelta); err != nil {
 			result.Attempts = append(result.Attempts, RouteAttempt{Role: role.Name, Target: target, Error: err.Error()})
 			return err
 		}
@@ -127,7 +150,12 @@ func tryMember(ctx context.Context, role *agent_model.ModelGroup, member *agent_
 
 	chatReq := req
 	chatReq.Model = member.Model
-	resp, err := client.Chat(ctx, chatReq)
+	var resp llm.ChatResponse
+	if onDelta != nil {
+		resp, err = client.ChatStream(ctx, chatReq, onDelta)
+	} else {
+		resp, err = client.Chat(ctx, chatReq)
+	}
 	if err != nil {
 		result.Attempts = append(result.Attempts, RouteAttempt{Role: role.Name, Target: target, Error: err.Error()})
 		return err

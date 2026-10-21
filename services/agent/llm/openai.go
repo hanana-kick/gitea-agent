@@ -61,3 +61,11 @@ func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (ChatResponse,
 	}
 	return DoChat(ctx, c.HTTPClient, http.MethodPost, c.BaseURL+"/chat/completions", c.authHeader(), req)
 }
+
+// ChatStream sends a chat completion request and reports the answer as it arrives.
+func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, onDelta OnDelta) (ChatResponse, error) {
+	if req.Model == "" {
+		req.Model = c.Model
+	}
+	return DoChatStream(ctx, c.HTTPClient, c.BaseURL+"/chat/completions", c.authHeader(), req, onDelta)
+}
