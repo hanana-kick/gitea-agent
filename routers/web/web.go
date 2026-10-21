@@ -583,15 +583,19 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	// ***** START: Agent *****
 	m.Group("/-/agent", func() {
 		m.Get("", agent_web.Chat)
-		m.Post("/new", agent_web.ChatSessionNew)
+		m.Combo("/new").Get(agent_web.ChatDraft).Post(agent_web.ChatDraftCreate)
 		m.Get("/{id}", agent_web.ChatSession)
 		m.Get("/{id}/events", agent_web.ChatEvents)
 		m.Post("/{id}/messages", agent_web.ChatMessageNew)
 		m.Post("/{id}/model", agent_web.ChatModelSet)
 		m.Post("/{id}/title", agent_web.ChatTitlePost)
-		m.Post("/{id}/icon", agent_web.ChatIconPost)
+		m.Post("/{id}/folder", agent_web.ChatSessionFolder)
 		m.Post("/{id}/cancel", agent_web.ChatRunCancel)
 		m.Post("/{id}/delete", agent_web.ChatSessionDelete)
+
+		m.Post("/folders/new", agent_web.ChatFolderCreate)
+		m.Post("/folders/{id}", agent_web.ChatFolderUpdate)
+		m.Post("/folders/{id}/delete", agent_web.ChatFolderDelete)
 	}, reqSignIn)
 	// ***** END: Agent *****
 

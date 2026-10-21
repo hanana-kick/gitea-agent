@@ -7,10 +7,40 @@ type AgentChatMessage = {id: number, role: string, roleLabel: string, content: s
 type AgentChatRun = {id: number, status: string, error: string, cancelable: boolean};
 type AgentChatConversation = {id: number, title: string, icon: string};
 
+// a conversation does not exist until its first message, so the draft posts the message and
+// then follows the created conversation
+function initDraftComposer() {
+  const form = document.querySelector<HTMLFormElement>('.agent-chat-composer[data-draft-url]');
+  if (!form) return;
+  const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    button.classList.add('disabled');
+    try {
+      const resp = await POST(form.getAttribute('data-draft-url')!, {
+        data: new FormData(form),
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+      });
+      const location = resp.headers.get('location');
+      if (resp.ok && location) {
+        window.location.assign(location);
+        return;
+      }
+    } catch {
+      // fall through to re-enable the button
+    }
+    button.classList.remove('disabled');
+  });
+}
+
 const reconnectDelay = 2000; // ms, the browser's own reconnect would replay the cursor from the first connect
 const bottomThreshold = 80; // px
 
 export function initAgentChat() {
+  initDraftComposer();
+  initMoreMenus();
+
   // `data-conversation-id` marks the page as a live chat, all URLs and labels are rendered by the server
   const mainEl = document.querySelector<HTMLElement>('.agent-chat-main[data-conversation-id]');
   if (!mainEl) return;
@@ -82,18 +112,24 @@ export function initAgentChat() {
     }
   }
 
-  // the icon modal is shared by every row: the global "show-modal" handler fills the form
-  // action, but the icon radio has to be checked here
+  // the folder modals are shared by every row: the global "show-modal" handler fills the
+  // form action, the icon radio and the folder select are set here
   function initMoreMenus() {
-    const iconModal = document.querySelector<HTMLFormElement>('#agent-chat-icon-form');
-    if (!iconModal) return;
+    const folderModal = document.querySelector<HTMLFormElement>('#agent-chat-folder-form');
+    const pickModal = document.querySelector<HTMLFormElement>('#agent-chat-folder-pick-form');
     for (const item of document.querySelectorAll<HTMLElement>('.agent-chat-more-item[data-icon]')) {
       item.addEventListener('click', () => {
         const icon = item.getAttribute('data-icon')!;
-        for (const input of iconModal.querySelectorAll<HTMLInputElement>('input[name="icon"]')) {
+        for (const input of folderModal!.querySelectorAll<HTMLInputElement>('input[name="icon"]')) {
           input.checked = input.value === icon;
         }
       }, {capture: true}); // run before the global handler opens the modal
+    }
+    for (const item of document.querySelectorAll<HTMLElement>('.agent-chat-more-item[data-folder]')) {
+      item.addEventListener('click', () => {
+        const folder = item.getAttribute('data-folder')!;
+        pickModal!.querySelector<HTMLSelectElement>('select[name="folder_id"]')!.value = folder;
+      }, {capture: true});
     }
   }
 
@@ -128,8 +164,6 @@ export function initAgentChat() {
       setTimeout(connect, reconnectDelay);
     });
   }
-
-  initMoreMenus();
 
   composerEl.addEventListener('submit', async (event) => {
     event.preventDefault();

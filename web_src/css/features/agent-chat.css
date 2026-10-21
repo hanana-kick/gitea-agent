@@ -233,6 +233,39 @@
   margin-top: 2px;
 }
 
+/* a folder card is a button, and its conversations are indented below it */
+button.agent-chat-card {
+  width: 100%;
+  font-size: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+}
+
+.agent-chat-folder {
+  margin-top: 6px;
+}
+
+.agent-chat-card-folder {
+  cursor: default;
+}
+
+.agent-chat-folder-items {
+  padding-left: 12px;
+}
+
+.agent-chat-draft-model {
+  padding-bottom: 6px;
+}
+
+.agent-chat-draft {
+  flex-wrap: wrap;
+}
+
+.agent-chat-draft .agent-chat-input {
+  width: 100%;
+}
+
 .agent-chat-row-action {
   padding: 4px;
   color: var(--color-text-light-2);

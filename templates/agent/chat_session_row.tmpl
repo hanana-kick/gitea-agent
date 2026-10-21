@@ -1,6 +1,7 @@
 {{- $session := .Session -}}
 {{- $selected := .Selected -}}
 {{- $fallbackIcon := .FallbackIcon -}}
+{{- $folders := .Folders -}}
 <div class="agent-chat-card{{if and $selected (eq $selected.ID $session.ID)}} active{{end}}">
 	<a class="agent-chat-card-main" href="{{AppSubUrl}}/-/agent/{{$session.ID}}">
 		<span class="agent-chat-card-icon">
@@ -15,10 +16,12 @@
 				data-modal="#agent-chat-title-modal"
 				data-modal-form.url="{{AppSubUrl}}/-/agent/{{$session.ID}}/title"
 				data-modal-title.value="{{$session.Title}}">{{ctx.Locale.Tr "agent.chat_title_change"}}</div>
-			<div class="item agent-chat-more-item show-modal"
-				data-modal="#agent-chat-icon-modal"
-				data-modal-form.url="{{AppSubUrl}}/-/agent/{{$session.ID}}/icon"
-				data-icon="{{$session.Icon}}">{{ctx.Locale.Tr "agent.chat_icon_change"}}</div>
+			{{if $folders}}
+				<div class="item agent-chat-more-item show-modal"
+					data-modal="#agent-chat-folder-pick-modal"
+					data-modal-form.url="{{AppSubUrl}}/-/agent/{{$session.ID}}/folder"
+					data-folder="{{$session.FolderID}}">{{ctx.Locale.Tr "agent.chat_folder_move"}}</div>
+			{{end}}
 			<div class="divider"></div>
 			<div class="item agent-chat-more-item tw-text-red link-action"
 				data-url="{{AppSubUrl}}/-/agent/{{$session.ID}}/delete"

@@ -59,11 +59,18 @@ type RepositoryConversations struct {
 	Sessions []*agent_model.Conversation
 }
 
-// ConversationList is the sidebar content: the resident session, the server sessions and
-// the repository sessions grouped by repository.
+// FolderConversations groups the conversations filed under one folder.
+type FolderConversations struct {
+	Folder   *agent_model.ConversationFolder
+	Sessions []*agent_model.Conversation
+}
+
+// ConversationList is the sidebar content: the resident session, the conversations (at the
+// root and per folder) and the repository sessions grouped by repository.
 type ConversationList struct {
 	Resident     *agent_model.Conversation
 	Servers      []*agent_model.Conversation
+	Folders      []*FolderConversations
 	Repositories []*RepositoryConversations
 }
 
@@ -80,6 +87,26 @@ func ListConversations(ctx context.Context, doer *user_model.User) (*Conversatio
 			return nil, err
 		}
 	}
+
+	folders, err := ListConversationFolders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byFolder := make(map[int64]*FolderConversations, len(folders))
+	for _, folder := range folders {
+		group := &FolderConversations{Folder: folder}
+		byFolder[folder.ID] = group
+		list.Folders = append(list.Folders, group)
+	}
+	root := make([]*agent_model.Conversation, 0, len(list.Servers))
+	for _, session := range list.Servers {
+		if group := byFolder[session.FolderID]; group != nil {
+			group.Sessions = append(group.Sessions, session)
+			continue
+		}
+		root = append(root, session)
+	}
+	list.Servers = root
 
 	sessions, err := findConversations(ctx, agent_model.ConversationKindRepository)
 	if err != nil {
@@ -294,6 +321,123 @@ func SetConversationIcon(ctx context.Context, conversation *agent_model.Conversa
 	conversation.Icon = icon
 	_, err := db.GetEngine(ctx).ID(conversation.ID).Cols("icon", "updated_unix").
 		Update(&agent_model.Conversation{Icon: icon, UpdatedUnix: timeutil.TimeStampNow()})
+	return err
+}
+
+// ErrConversationFolderInvalid is returned when a folder can not be stored as requested.
+type ErrConversationFolderInvalid struct{}
+
+func (ErrConversationFolderInvalid) Error() string { return "a folder name is required" }
+
+// Is reports whether target is an ErrConversationFolderInvalid.
+func (ErrConversationFolderInvalid) Is(target error) bool {
+	_, ok := target.(ErrConversationFolderInvalid)
+	return ok
+}
+
+// ErrConversationFolderNotFound is returned when the folder does not exist.
+type ErrConversationFolderNotFound struct{}
+
+func (ErrConversationFolderNotFound) Error() string { return "conversation folder not found" }
+
+// Is reports whether target is an ErrConversationFolderNotFound.
+func (ErrConversationFolderNotFound) Is(target error) bool {
+	_, ok := target.(ErrConversationFolderNotFound)
+	return ok
+}
+
+// ConversationFolderIcons are the icons a folder can use; empty means none.
+func ConversationFolderIcons() []string {
+	return ConversationIcons()
+}
+
+// ListConversationFolders returns the folders in display order.
+func ListConversationFolders(ctx context.Context) ([]*agent_model.ConversationFolder, error) {
+	folders := make([]*agent_model.ConversationFolder, 0, 8)
+	err := db.GetEngine(ctx).OrderBy("position ASC, name ASC").Find(&folders)
+	return folders, err
+}
+
+// GetConversationFolder returns one folder.
+func GetConversationFolder(ctx context.Context, id int64) (*agent_model.ConversationFolder, error) {
+	folder, exist, err := db.GetByID[agent_model.ConversationFolder](ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !exist {
+		return nil, ErrConversationFolderNotFound{}
+	}
+	return folder, nil
+}
+
+// CreateConversationFolder stores a folder.
+func CreateConversationFolder(ctx context.Context, name, icon string) (*agent_model.ConversationFolder, error) {
+	name, icon, err := normalizeFolder(name, icon)
+	if err != nil {
+		return nil, err
+	}
+	folder := &agent_model.ConversationFolder{Name: name, Icon: icon}
+	if err := db.Insert(ctx, folder); err != nil {
+		return nil, fmt.Errorf("insert folder: %w", err)
+	}
+	return folder, nil
+}
+
+// UpdateConversationFolder renames a folder and sets its icon.
+func UpdateConversationFolder(ctx context.Context, id int64, name, icon string) (*agent_model.ConversationFolder, error) {
+	folder, err := GetConversationFolder(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	name, icon, err = normalizeFolder(name, icon)
+	if err != nil {
+		return nil, err
+	}
+	folder.Name, folder.Icon = name, icon
+	if _, err := db.GetEngine(ctx).ID(id).Cols("name", "icon", "updated_unix").
+		Update(&agent_model.ConversationFolder{Name: name, Icon: icon, UpdatedUnix: timeutil.TimeStampNow()}); err != nil {
+		return nil, err
+	}
+	return folder, nil
+}
+
+func normalizeFolder(name, icon string) (string, string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", "", ErrConversationFolderInvalid{}
+	}
+	if utf8.RuneCountInString(name) > 100 {
+		name = string([]rune(name)[:100])
+	}
+	if icon != "" && !slices.Contains(ConversationFolderIcons(), icon) {
+		return "", "", ErrConversationFolderInvalid{}
+	}
+	return name, icon, nil
+}
+
+// DeleteConversationFolder removes a folder; its conversations move back to the root.
+func DeleteConversationFolder(ctx context.Context, id int64) error {
+	if _, err := GetConversationFolder(ctx, id); err != nil {
+		return err
+	}
+	if _, err := db.GetEngine(ctx).Where("folder_id = ?", id).Cols("folder_id").
+		Update(&agent_model.Conversation{FolderID: 0}); err != nil {
+		return err
+	}
+	_, err := db.DeleteByID[agent_model.ConversationFolder](ctx, id)
+	return err
+}
+
+// SetConversationFolder files a conversation under a folder; 0 moves it back to the root.
+func SetConversationFolder(ctx context.Context, conversation *agent_model.Conversation, folderID int64) error {
+	if folderID != 0 {
+		if _, err := GetConversationFolder(ctx, folderID); err != nil {
+			return err
+		}
+	}
+	conversation.FolderID = folderID
+	_, err := db.GetEngine(ctx).ID(conversation.ID).Cols("folder_id", "updated_unix").
+		Update(&agent_model.Conversation{FolderID: folderID, UpdatedUnix: timeutil.TimeStampNow()})
 	return err
 }
 

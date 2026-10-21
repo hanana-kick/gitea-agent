@@ -39,6 +39,8 @@ type Conversation struct {
 	ModelRef string `xorm:"VARCHAR(160) NOT NULL DEFAULT ''"`
 	// Icon is an icon name of the icon set, or empty for no icon.
 	Icon string `xorm:"VARCHAR(60) NOT NULL DEFAULT ''"`
+	// FolderID is the folder shown in the sidebar; 0 means the conversation is at the root.
+	FolderID int64 `xorm:"INDEX NOT NULL DEFAULT 0"`
 	// TitleSet records that a human or the model named the session, so a placeholder
 	// title is never overwritten twice.
 	TitleSet bool `xorm:"NOT NULL DEFAULT FALSE"`

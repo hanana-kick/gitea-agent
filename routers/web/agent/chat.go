@@ -140,30 +140,20 @@ func renderChat(ctx *context.Context, session *agent_model.Conversation) {
 	ctx.HTML(http.StatusOK, tplChat)
 }
 
-// ChatSessionNew starts a server or repository session and opens it.
-func ChatSessionNew(ctx *context.Context) {
-	kind := ctx.FormString("kind")
-	switch kind {
-	case agent_model.ConversationKindServer:
-		if !ctx.Doer.IsAdmin {
-			ctx.NotFound(nil)
-			return
-		}
-		session, err := agent_service.CreateConversation(ctx, kind, 0, chatTitle(ctx, "agent.chat_new_conversation"))
-		if err != nil {
-			ctx.ServerError("CreateConversation", err)
-			return
-		}
-		ctx.Redirect(chatSessionURL(session.ID))
-	case agent_model.ConversationKindRepository:
-		repo, err := repo_model.GetRepositoryByID(ctx, ctx.FormInt64("repo_id"))
-		if err != nil {
+// ChatDraft renders the chat screen for a conversation that does not exist yet: the first
+// message creates it.
+func ChatDraft(ctx *context.Context) {
+	kind := agent_model.ConversationKindServer
+	var repo *repo_model.Repository
+	if repoID := ctx.FormInt64("repo_id"); repoID != 0 && ctx.Doer.IsAdmin {
+		kind = agent_model.ConversationKindRepository
+		var err error
+		if repo, err = repo_model.GetRepositoryByID(ctx, repoID); err != nil {
 			ctx.ServerError("GetRepositoryByID", err)
 			return
 		}
 		if repo == nil {
-			ctx.Flash.Error(ctx.Tr("agent.chat_repo_required"))
-			ctx.Redirect(setting.AppSubURL + chatURL)
+			ctx.NotFound(nil)
 			return
 		}
 		allowed, err := agent_service.CanUseRepository(ctx, ctx.Doer, repo)
@@ -175,15 +165,168 @@ func ChatSessionNew(ctx *context.Context) {
 			ctx.NotFound(nil)
 			return
 		}
-		session, err := agent_service.CreateConversation(ctx, kind, repo.ID, chatTitle(ctx, "agent.chat_new_conversation"))
-		if err != nil {
-			ctx.ServerError("CreateConversation", err)
+	}
+	renderChat(ctx, nil)
+	ctx.Data["IsDraft"] = true
+	ctx.Data["DraftKind"] = kind
+	ctx.Data["Repo"] = repo
+	ctx.Data["DraftModelRef"] = draftModelRef(ctx)
+	ctx.HTML(http.StatusOK, tplChat)
+}
+
+// draftModelRef preselects the model of the resident session, so a new conversation usually
+// needs no extra choice.
+func draftModelRef(ctx *context.Context) string {
+	resident, err := agent_service.EnsureResidentConversation(ctx)
+	if err != nil {
+		return ""
+	}
+	return resident.ModelRef
+}
+
+// ChatDraftCreate stores the conversation of a draft along with its first message.
+func ChatDraftCreate(ctx *context.Context) {
+	kind := ctx.FormString("kind")
+	repoID := ctx.FormInt64("repo_id")
+	var repo *repo_model.Repository
+	switch kind {
+	case agent_model.ConversationKindRepository:
+		if !ctx.Doer.IsAdmin {
+			ctx.NotFound(nil)
 			return
 		}
-		ctx.Redirect(chatSessionURL(session.ID))
+		var err error
+		if repo, err = repo_model.GetRepositoryByID(ctx, repoID); err != nil {
+			ctx.ServerError("GetRepositoryByID", err)
+			return
+		}
+		if repo == nil {
+			ctx.NotFound(nil)
+			return
+		}
+		allowed, err := agent_service.CanUseRepository(ctx, ctx.Doer, repo)
+		if err != nil {
+			ctx.ServerError("CanUseRepository", err)
+			return
+		}
+		if !allowed {
+			ctx.NotFound(nil)
+			return
+		}
+	case agent_model.ConversationKindServer:
+		if !ctx.Doer.IsAdmin {
+			ctx.NotFound(nil)
+			return
+		}
 	default:
 		ctx.NotFound(nil)
+		return
 	}
+
+	modelRef := ctx.FormTrim("model_ref")
+	if modelRef == "" {
+		ctx.Flash.Error(ctx.Tr("agent.chat_model_required"))
+		ctx.Redirect(setting.AppSubURL + chatURL + "/new")
+		return
+	}
+	allowed, err := agent_service.CanUseModelRef(ctx, modelRef)
+	if err != nil {
+		ctx.ServerError("CanUseModelRef", err)
+		return
+	}
+	if !allowed {
+		ctx.Flash.Error(ctx.Tr("agent.chat_model_invalid"))
+		ctx.Redirect(setting.AppSubURL + chatURL + "/new")
+		return
+	}
+
+	session, err := agent_service.CreateConversation(ctx, kind, repoID, chatTitle(ctx, "agent.chat_new_conversation"))
+	if err != nil {
+		ctx.ServerError("CreateConversation", err)
+		return
+	}
+	if err := agent_service.SetConversationModel(ctx, session, modelRef); err != nil {
+		ctx.ServerError("SetConversationModel", err)
+		return
+	}
+	if _, err := agent_service.SubmitUserMessage(ctx, session, ctx.FormString("content")); err != nil {
+		if isXMLHTTP(ctx) {
+			ctx.Resp.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		ctx.Flash.Error(ctx.Tr("agent.chat_message_empty"))
+		ctx.Redirect(chatSessionURL(session.ID))
+		return
+	}
+	if isXMLHTTP(ctx) {
+		ctx.Resp.Header().Set("Location", chatSessionURL(session.ID))
+		ctx.Resp.WriteHeader(http.StatusNoContent)
+		return
+	}
+	ctx.Redirect(chatSessionURL(session.ID))
+}
+
+// ChatFolderCreate stores a folder for the conversation list.
+func ChatFolderCreate(ctx *context.Context) {
+	if _, err := agent_service.CreateConversationFolder(ctx, ctx.FormTrim("name"), ctx.FormTrim("icon")); err != nil {
+		ctx.Flash.Error(folderErrorText(ctx, err))
+	} else {
+		ctx.Flash.Success(ctx.Tr("agent.chat_folder_added"))
+	}
+	redirectToChatList(ctx)
+}
+
+// ChatFolderUpdate renames a folder or changes its icon.
+func ChatFolderUpdate(ctx *context.Context) {
+	if _, err := agent_service.UpdateConversationFolder(ctx, ctx.PathParamInt64("id"), ctx.FormTrim("name"), ctx.FormTrim("icon")); err != nil {
+		ctx.Flash.Error(folderErrorText(ctx, err))
+	} else {
+		ctx.Flash.Success(ctx.Tr("agent.chat_folder_saved"))
+	}
+	redirectToChatList(ctx)
+}
+
+// ChatFolderDelete removes a folder; its conversations go back to the root list.
+func ChatFolderDelete(ctx *context.Context) {
+	if err := agent_service.DeleteConversationFolder(ctx, ctx.PathParamInt64("id")); err != nil {
+		if errors.Is(err, agent_service.ErrConversationFolderNotFound{}) {
+			ctx.NotFound(nil)
+			return
+		}
+		ctx.ServerError("DeleteConversationFolder", err)
+		return
+	}
+	ctx.Flash.Success(ctx.Tr("agent.chat_folder_deleted"))
+	redirectToChatList(ctx)
+}
+
+// ChatSessionFolder files a conversation under a folder, or moves it back to the root.
+func ChatSessionFolder(ctx *context.Context) {
+	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
+	if err != nil {
+		chatError(ctx, err)
+		return
+	}
+	if err := agent_service.SetConversationFolder(ctx, session, ctx.FormInt64("folder_id")); err != nil {
+		ctx.Flash.Error(folderErrorText(ctx, err))
+	} else {
+		ctx.Flash.Success(ctx.Tr("agent.chat_folder_moved"))
+	}
+	redirectToChatList(ctx)
+}
+
+func folderErrorText(ctx *context.Context, err error) string {
+	if errors.Is(err, agent_service.ErrConversationFolderInvalid{}) {
+		return string(ctx.Tr("agent.chat_folder_name_required"))
+	}
+	if errors.Is(err, agent_service.ErrConversationFolderNotFound{}) {
+		return string(ctx.Tr("agent.chat_folder_missing"))
+	}
+	return err.Error()
+}
+
+func redirectToChatList(ctx *context.Context) {
+	ctx.Redirect(setting.AppSubURL + chatURL)
 }
 
 // ChatSessionDelete removes a session and returns to the session list.
@@ -253,23 +396,6 @@ func ChatTitlePost(ctx *context.Context) {
 	}
 	agent_service.NotifyConversation(session)
 	ctx.Flash.Success(ctx.Tr("agent.chat_title_saved"))
-	ctx.Redirect(chatSessionURL(session.ID))
-}
-
-// ChatIconPost sets or clears the icon of a session.
-func ChatIconPost(ctx *context.Context) {
-	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
-	if err != nil {
-		chatError(ctx, err)
-		return
-	}
-	if err := agent_service.SetConversationIcon(ctx, session, ctx.FormTrim("icon")); err != nil {
-		ctx.Flash.Error(ctx.Tr("agent.chat_icon_invalid"))
-		ctx.Redirect(chatSessionURL(session.ID))
-		return
-	}
-	agent_service.NotifyConversation(session)
-	ctx.Flash.Success(ctx.Tr("agent.chat_icon_saved"))
 	ctx.Redirect(chatSessionURL(session.ID))
 }
 
