@@ -7,7 +7,7 @@ import {addDelegatedEventListener, createElementFromHTML, toggleElem} from '../u
 type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string};
 type AgentChatDelta = {runId: number, content?: string, reasoning?: string, reset?: boolean};
 type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string};
-type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[]};
+type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, editedHTML?: string, attachments?: AgentChatAttachment[]};
 type AgentChatRun = {id: number, conversationId: number, status: string, error: string, cancelable: boolean};
 type AgentChatConversation = {id: number, title: string, summary: string, icon: string};
 
@@ -114,6 +114,7 @@ export function initAgentChat() {
   const ajaxHeaders = {'X-Requested-With': 'XMLHttpRequest'};
   const elConversationID = mainEl.getAttribute('data-conversation-id')!;
   const editURL = `${mainEl.getAttribute('data-messages-url')}/`;
+  // (editURL keeps the trailing slash: the per-message URL appends the message id)
   const idleLabel = sendEl.getAttribute('data-idle-label')!;
   const busyLabel = sendEl.getAttribute('data-busy-label')!;
   let busy = sendEl.hasAttribute('data-busy');
@@ -137,8 +138,14 @@ export function initAgentChat() {
 
     const metaEl = document.createElement('div');
     metaEl.className = 'agent-chat-message-meta';
-    metaEl.textContent = `${message.roleLabel} · `;
-    metaEl.insertAdjacentHTML('beforeend', message.timeHTML);
+    metaEl.textContent = message.roleLabel;
+    if (message.editedHTML) {
+      metaEl.insertAdjacentHTML('beforeend', ` · ${svg('octicon-pencil', 12)} `);
+      metaEl.insertAdjacentHTML('beforeend', message.editedHTML);
+    } else {
+      metaEl.textContent += ' · ';
+      metaEl.insertAdjacentHTML('beforeend', message.timeHTML);
+    }
 
     const bubbleEl = document.createElement('div');
     bubbleEl.className = 'agent-chat-bubble';
@@ -170,7 +177,7 @@ export function initAgentChat() {
     actionsEl.className = 'agent-chat-message-actions';
     actionsEl.insertAdjacentHTML('beforeend', `<button type="button" class="agent-chat-copy-message" data-tooltip-content="${labels.copy}">${svg('octicon-copy', 14)}</button>`);
     if (message.role === 'user') {
-      actionsEl.insertAdjacentHTML('beforeend', `<button type="button" class="agent-chat-edit-message show-modal" data-modal="#agent-chat-edit-modal" data-modal-form.url="${editURL}" data-tooltip-content="${labels.edit}">${svg('octicon-pencil', 14)}</button>`);
+      actionsEl.insertAdjacentHTML('beforeend', `<button type="button" class="agent-chat-edit-message show-modal" data-modal="#agent-chat-edit-modal" data-modal-form.url="${editURL}${message.id}" data-tooltip-content="${labels.edit}">${svg('octicon-pencil', 14)}</button>`);
     }
 
     const sourceEl = document.createElement('div');

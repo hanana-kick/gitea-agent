@@ -40,6 +40,7 @@ type messageEvent struct {
 	Content     string            `json:"content"`
 	HTML        string            `json:"html"`
 	TimeHTML    string            `json:"timeHTML"`
+	EditedHTML  string            `json:"editedHTML,omitempty"`
 	Attachments []attachmentEvent `json:"attachments,omitempty"`
 }
 
@@ -230,7 +231,7 @@ func messageEventOf(ctx *context.Context, message *agent_model.Message) messageE
 		ctx.ServerError("ListMessageAttachments", err)
 		return messageEvent{}
 	}
-	return messageEvent{
+	event := messageEvent{
 		Attachments: attachmentPayloads(attachments[message.ID]),
 		ID:          message.ID,
 		Role:        message.Role,
@@ -239,6 +240,11 @@ func messageEventOf(ctx *context.Context, message *agent_model.Message) messageE
 		HTML:        string(templates.NewRenderUtils(ctx).MarkdownToHtml(message.Content)),
 		TimeHTML:    string(templates.TimeSince(message.CreatedUnix)),
 	}
+	// an edited message shows its edit time instead of its creation time
+	if message.EditedUnix != 0 {
+		event.EditedHTML = string(templates.TimeSince(message.EditedUnix))
+	}
+	return event
 }
 
 func messageRoleLabel(ctx *context.Context, role string) string {
