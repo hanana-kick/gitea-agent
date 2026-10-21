@@ -116,6 +116,25 @@ func AnswerStream(ctx context.Context, ref string, req llm.ChatRequest, onDelta 
 	return answer(ctx, ref, req, onDelta)
 }
 
+// RouteError carries the per-member attempts of a failed group call.
+type RouteError struct {
+	Result *RouteResult
+	Err    error
+}
+
+func (e RouteError) Error() string { return e.Err.Error() }
+
+func (e RouteError) Unwrap() error { return e.Err }
+
+// AsRoute reports whether the failure came from routing through a group.
+func AsRoute(err error) (*RouteResult, bool) {
+	var routeErr RouteError
+	if errors.As(err, &routeErr) && routeErr.Result != nil {
+		return routeErr.Result, true
+	}
+	return nil, false
+}
+
 func answer(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.OnDelta) (reply, model string, err error) {
 	kind, rest, ok := strings.Cut(ref, ":")
 	if !ok {
@@ -132,7 +151,7 @@ func answer(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.On
 		}
 		result, err := chatThroughGroup(ctx, group, req, onDelta)
 		if err != nil {
-			return "", "", err
+			return "", "", RouteError{Result: result, Err: err}
 		}
 		return result.Reply, result.Model, nil
 	case modelRefProvider:

@@ -232,6 +232,8 @@ export function initAgentChat() {
     }
   }
 
+  // the reader cares about the answer to their last message: show the question and the
+  // answer block together when they fit, the newest content when they do not
   function scrollToLastQuestion() {
     const users = messagesEl.querySelectorAll<HTMLElement>('.agent-chat-message.user');
     const last = users[users.length - 1];
@@ -240,7 +242,12 @@ export function initAgentChat() {
       return;
     }
     const bubble = last.querySelector<HTMLElement>('.agent-chat-bubble') ?? last;
-    scrollToTop(bubble);
+    const pending = messagesEl.querySelector<HTMLElement>('.agent-chat-pending');
+    if (pending && (pending.offsetTop + pending.offsetHeight - bubble.offsetTop) <= messagesEl.clientHeight) {
+      scrollToTop(bubble); // question and answer fit: the question opens the view
+      return;
+    }
+    messagesEl.scrollTop = messagesEl.scrollHeight; // they do not fit: follow the newest
   }
 
   // a scroll that lands before the next layout pass gets pulled back, so settle first
@@ -318,7 +325,10 @@ export function initAgentChat() {
     } else {
       setPendingState('reasoning', labels.reasoning); // the model thinks before it answers
     }
-    if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+    // a running answer keeps the view on it, even when the question was pinned earlier
+    if (atBottom || messagesEl.querySelector('.agent-chat-pending')) {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
   }
 
   function applyRun(run: AgentChatRun) {

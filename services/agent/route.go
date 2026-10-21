@@ -62,6 +62,17 @@ func chatThroughGroup(ctx context.Context, role *agent_model.ModelGroup, req llm
 	return result, nil
 }
 
+// Failures renders the attempts that did not answer, in try order.
+func (r *RouteResult) Failures() []string {
+	failures := make([]string, 0, len(r.Attempts))
+	for _, attempt := range r.Attempts {
+		if attempt.Error != "" {
+			failures = append(failures, attempt.Target+": "+attempt.Error)
+		}
+	}
+	return failures
+}
+
 // routeRequest tries the members of a group; the first answer wins.
 func routeRequest(ctx context.Context, role *agent_model.ModelGroup, req llm.ChatRequest, result *RouteResult, depth int, onDelta llm.OnDelta) error {
 	if depth > maxRoleDepth {

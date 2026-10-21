@@ -334,6 +334,12 @@ func (e *Engine) execute(runID int64) {
 	if err != nil {
 		status := agent_model.RunStatusFailed
 		reason := err.Error()
+		// every member the router tried is part of the reason, so the swap is visible
+		if route, ok := AsRoute(err); ok {
+			if failures := route.Failures(); len(failures) > 1 {
+				reason = strings.Join(failures, "; ")
+			}
+		}
 		if errors.Is(runCtx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
 			status = agent_model.RunStatusCanceled
 			reason = ""
