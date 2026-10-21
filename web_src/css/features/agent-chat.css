@@ -88,6 +88,8 @@
   display: flex;
   gap: 6px;
   align-items: center;
+  /* the side padding of a card, so the icon lines up with the card content */
+  padding: 0 10px;
   margin-bottom: 4px;
   font-size: 12px;
   font-weight: var(--font-weight-semibold);
@@ -135,6 +137,11 @@
   padding: 10px;
 }
 
+/* the new conversation icon is a row action, so it shares the right edge of the menus */
+.agent-chat-card-new .agent-chat-card-icon {
+  padding-right: 4px;
+}
+
 .agent-chat-card-icon {
   display: flex;
   flex-shrink: 0;
@@ -166,7 +173,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  padding: 0 2px;
+  padding: 0 4px; /* matches the row menu, so the icons share a right edge */
   margin-left: auto;
   color: var(--color-text-light-2);
   cursor: pointer;
@@ -180,7 +187,7 @@
 
 .agent-chat-group-action-plus {
   position: absolute;
-  right: -2px;
+  right: 0;
   bottom: -2px;
   display: flex;
   padding: 1px;
