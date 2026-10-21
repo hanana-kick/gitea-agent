@@ -28,7 +28,7 @@
 						<a class="agent-chat-card agent-chat-card-resident{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}">
 							<span class="agent-chat-card-icon">{{svg "gitea-pod-outline" 24}}</span>
 							<span class="agent-chat-card-text">
-								<span class="agent-chat-card-name">{{.Title}}</span>
+								<span class="agent-chat-card-name gt-ellipsis">{{.Title}}</span>
 								<span class="agent-chat-card-desc">{{ctx.Locale.Tr "agent.chat_resident_desc"}}</span>
 							</span>
 						</a>

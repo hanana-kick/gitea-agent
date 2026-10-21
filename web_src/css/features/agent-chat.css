@@ -113,8 +113,13 @@
 }
 
 .agent-chat-card.active {
-  font-weight: var(--font-weight-semibold);
   background: var(--color-active);
+}
+
+/* only the name gets heavier when selected: a heavier description would wrap
+   differently and change the height of the card */
+.agent-chat-card.active .agent-chat-card-name {
+  font-weight: var(--font-weight-semibold);
 }
 
 .agent-chat-card-main {
