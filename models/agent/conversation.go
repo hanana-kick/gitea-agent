@@ -37,9 +37,6 @@ type Conversation struct {
 	// Summary describes the recent work of the session. The resident session keeps the name
 	// Pod, so its generated name is shown as this summary instead.
 	Summary string `xorm:"VARCHAR(200) NOT NULL DEFAULT ''"`
-	// ModelRef is the model this session answers with: "group:<slug>" or
-	// "provider:<id>/<model>". Empty means the session has no model yet.
-	ModelRef string `xorm:"VARCHAR(160) NOT NULL DEFAULT ''"`
 	// Icon is an icon name of the icon set, or empty for no icon.
 	Icon string `xorm:"VARCHAR(60) NOT NULL DEFAULT ''"`
 	// FolderID is the folder shown in the sidebar; 0 means the conversation is at the root.

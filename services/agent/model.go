@@ -48,7 +48,22 @@ func (ErrModelRefInvalid) Is(target error) bool {
 	return ok
 }
 
-// ModelOptions lists what a session may answer with: groups first, then provider models.
+// ErrModelRoleNotSet is returned when the admin has assigned no model to a role.
+type ErrModelRoleNotSet struct {
+	Role string
+}
+
+func (err ErrModelRoleNotSet) Error() string {
+	return fmt.Sprintf("no model is assigned to the %s agent role, an admin can assign one in the admin panel", err.Role)
+}
+
+// Is reports whether target is an ErrModelRoleNotSet.
+func (err ErrModelRoleNotSet) Is(target error) bool {
+	_, ok := target.(ErrModelRoleNotSet)
+	return ok
+}
+
+// ModelOptions lists what a role may answer with: groups first, then provider models.
 func ModelOptions(ctx context.Context, limit int) ([]ModelOption, error) {
 	groups, _, err := FindModelGroups(ctx, agent_model.FindModelGroupsOptions{
 		ListOptions: db.ListOptions{Page: 1, PageSize: limit},

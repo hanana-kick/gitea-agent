@@ -591,7 +591,6 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		m.Get("/{id}/messages", agent_web.ChatMessagesBefore)
 		m.Post("/{id}/messages", agent_web.ChatMessageNew)
 		m.Post("/{id}/messages/{mid}", agent_web.ChatMessageEdit)
-		m.Post("/{id}/model", agent_web.ChatModelSet)
 		m.Post("/{id}/title", agent_web.ChatTitlePost)
 		m.Post("/{id}/folder", agent_web.ChatSessionFolder)
 		m.Post("/{id}/cancel", agent_web.ChatRunCancel)
@@ -954,6 +953,8 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			m.Combo("/groups/{id}/edit").Get(agent_web.ModelGroupEdit).Post(agent_web.ModelGroupEditPost)
 			m.Post("/groups/{id}/delete", agent_web.ModelGroupDelete)
 			m.Post("/groups/{id}/test", agent_web.ModelGroupTest)
+
+			m.Combo("/roles").Get(agent_web.ModelRoles).Post(agent_web.ModelRolesPost)
 		})
 	}, adminReq, ctxDataSet(reqctx.ContextData{"EnableOAuth2": setting.OAuth2.Enabled, "EnablePackages": setting.Packages.Enabled}))
 	// ***** END: Admin *****

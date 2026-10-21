@@ -80,11 +80,6 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 		return
 	}
 
-	options, err := agent_service.ModelOptions(ctx, 200)
-	if err != nil {
-		ctx.ServerError("ModelOptions", err)
-		return
-	}
 	ctx.Data["Title"] = ctx.Tr("agent.chat_title")
 	ctx.Data["PageIsAgentChat"] = true
 	scope, scopeBaseURL := chatScope(ctx, session, list)
@@ -103,7 +98,6 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 	}
 	ctx.Data["Session"] = session
 	ctx.Data["WritableRepos"] = repos
-	ctx.Data["ModelOptions"] = options
 	ctx.Data["ConversationIcons"] = agent_service.ConversationIcons()
 	if session != nil {
 		if session.Kind == agent_model.ConversationKindRepository {
@@ -142,7 +136,14 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 		ctx.Data["OldestMessageID"] = oldestID
 		ctx.Data["HasOlderMessages"] = hasOlder
 		ctx.Data["LastMessageID"] = lastMessageID(messages)
-		ctx.Data["ModelRefLabel"] = agent_service.ModelRefLabel(ctx, session.ModelRef)
+		role := agent_service.ModelRoleForKind(session.Kind)
+		ref, err := agent_service.ModelRoleRef(ctx, role)
+		if err != nil {
+			ctx.ServerError("ModelRoleRef", err)
+			return
+		}
+		ctx.Data["RoleModelLabel"] = agent_service.ModelRefLabel(ctx, ref)
+		ctx.Data["CanAnswer"] = ref != ""
 		run, err := agent_service.LatestRun(ctx, session.ID)
 		if err != nil {
 			ctx.ServerError("LatestRun", err)
@@ -200,18 +201,15 @@ func ChatDraft(ctx *context.Context) {
 	ctx.Data["IsDraft"] = true
 	ctx.Data["DraftKind"] = kind
 	ctx.Data["Repo"] = repo
-	ctx.Data["DraftModelRef"] = draftModelRef(ctx)
-	ctx.HTML(http.StatusOK, tplChat)
-}
-
-// draftModelRef preselects the model of the resident session, so a new conversation usually
-// needs no extra choice.
-func draftModelRef(ctx *context.Context) string {
-	resident, err := agent_service.EnsureResidentConversation(ctx)
+	role := agent_service.ModelRoleForKind(kind)
+	ref, err := agent_service.ModelRoleRef(ctx, role)
 	if err != nil {
-		return ""
+		ctx.ServerError("ModelRoleRef", err)
+		return
 	}
-	return resident.ModelRef
+	ctx.Data["RoleModelLabel"] = agent_service.ModelRefLabel(ctx, ref)
+	ctx.Data["CanAnswer"] = ref != ""
+	ctx.HTML(http.StatusOK, tplChat)
 }
 
 // ChatDraftCreate stores the conversation of a draft along with its first message.
@@ -253,30 +251,9 @@ func ChatDraftCreate(ctx *context.Context) {
 		return
 	}
 
-	modelRef := ctx.FormTrim("model_ref")
-	if modelRef == "" {
-		ctx.Flash.Error(ctx.Tr("agent.chat_model_required"))
-		ctx.Redirect(setting.AppSubURL + chatURL + "/new")
-		return
-	}
-	allowed, err := agent_service.CanUseModelRef(ctx, modelRef)
-	if err != nil {
-		ctx.ServerError("CanUseModelRef", err)
-		return
-	}
-	if !allowed {
-		ctx.Flash.Error(ctx.Tr("agent.chat_model_invalid"))
-		ctx.Redirect(setting.AppSubURL + chatURL + "/new")
-		return
-	}
-
 	session, err := agent_service.CreateConversation(ctx, kind, repoID, chatTitle(ctx, "agent.chat_new_conversation"))
 	if err != nil {
 		ctx.ServerError("CreateConversation", err)
-		return
-	}
-	if err := agent_service.SetConversationModel(ctx, session, modelRef); err != nil {
-		ctx.ServerError("SetConversationModel", err)
 		return
 	}
 	message, _, err := agent_service.SubmitUserMessage(ctx, session, ctx.FormString("content"))
@@ -578,32 +555,6 @@ func ChatTitlePost(ctx *context.Context) {
 	}
 	agent_service.NotifyConversation(session)
 	ctx.Flash.Success(ctx.Tr("agent.chat_title_saved"))
-	ctx.Redirect(chatSessionURL(session.ID))
-}
-
-// ChatModelSet binds a session to the model it answers with.
-func ChatModelSet(ctx *context.Context) {
-	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
-	if err != nil {
-		chatError(ctx, err)
-		return
-	}
-	ref := ctx.FormTrim("model_ref")
-	allowed, err := agent_service.CanUseModelRef(ctx, ref)
-	if err != nil {
-		ctx.ServerError("CanUseModelRef", err)
-		return
-	}
-	if !allowed {
-		ctx.Flash.Error(ctx.Tr("agent.chat_model_invalid"))
-		ctx.Redirect(chatSessionURL(session.ID))
-		return
-	}
-	if err := agent_service.SetConversationModel(ctx, session, ref); err != nil {
-		ctx.ServerError("SetConversationModel", err)
-		return
-	}
-	ctx.Flash.Success(ctx.Tr("agent.chat_model_saved"))
 	ctx.Redirect(chatSessionURL(session.ID))
 }
 

@@ -186,21 +186,16 @@
 				<form class="agent-chat-composer agent-chat-draft" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/new" data-draft-url="{{AppSubUrl}}/-/agent/new">
 					<input type="hidden" name="kind" value="{{.DraftKind}}">
 					{{if .Repo}}<input type="hidden" name="repo_id" value="{{.Repo.ID}}">{{end}}
-					<div class="agent-chat-draft-model">
-						<select name="model_ref" class="ui dropdown" aria-label="{{ctx.Locale.Tr "agent.chat_model"}}" required>
-							<option value="">{{ctx.Locale.Tr "agent.chat_model_none"}}</option>
-							{{range .ModelOptions}}
-								<option value="{{.Ref}}"{{if eq .Ref $.DraftModelRef}} selected{{end}}>{{.Label}}</option>
-							{{end}}
-						</select>
-					</div>
-					<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"></textarea>
+					<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"{{if not .CanAnswer}} disabled{{end}}></textarea>
 					<label class="agent-chat-attach" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_attach"}}">
 						{{svg "octicon-paperclip" 16}}
 						<input type="file" name="files" multiple>
 					</label>
-					<button type="submit" class="ui primary button">{{ctx.Locale.Tr "agent.chat_send"}}</button>
+					<button type="submit" class="ui primary button"{{if not .CanAnswer}} disabled{{end}}>{{ctx.Locale.Tr "agent.chat_send"}}</button>
 				</form>
+				{{if not .CanAnswer}}
+					<p class="agent-chat-hint agent-chat-hint-block">{{ctx.Locale.Tr "agent.chat_model_required"}}</p>
+				{{end}}
 			{{else if .Session}}
 				<header class="agent-chat-head">
 					<a class="agent-chat-back" href="{{AppSubUrl}}/-/agent" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_sessions"}}">{{svg "octicon-chevron-left"}}</a>
@@ -209,19 +204,11 @@
 					</div>
 					<div class="agent-chat-head-text">
 						<div class="agent-chat-head-title gt-ellipsis">{{.Session.Title}}</div>
-						{{if .Repo}}
-							<div class="agent-chat-meta"><a href="{{.Repo.Link}}">{{.Repo.FullName}}</a></div>
-						{{end}}
+						<div class="agent-chat-meta">
+							{{if .Repo}}<a href="{{.Repo.Link}}">{{.Repo.FullName}}</a>{{end}}
+							{{if .RoleModelLabel}}<span class="agent-chat-model-label">{{.RoleModelLabel}}</span>{{end}}
+						</div>
 					</div>
-					<form class="agent-chat-model" method="post" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/model">
-						<select name="model_ref" class="ui dropdown" aria-label="{{ctx.Locale.Tr "agent.chat_model"}}">
-							<option value="">{{ctx.Locale.Tr "agent.chat_model_none"}}</option>
-							{{range .ModelOptions}}
-								<option value="{{.Ref}}"{{if eq .Ref $.Session.ModelRef}} selected{{end}}>{{.Label}}</option>
-							{{end}}
-						</select>
-						<button type="submit" class="ui mini button">{{ctx.Locale.Tr "agent.chat_model_apply"}}</button>
-					</form>
 					<a class="ui basic icon button" href="{{AppSubUrl}}/-/agent/{{.Session.ID}}/export" download="conversation.md"
 						data-tooltip-content="{{ctx.Locale.Tr "agent.chat_download"}}">{{svg "octicon-download"}}</a>
 					{{if ne .Session.Kind "resident"}}
@@ -286,14 +273,14 @@
 				</div>
 
 				<form class="agent-chat-composer" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages">
-					<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"{{if not .Session.ModelRef}} disabled{{end}}></textarea>
+					<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"{{if not .CanAnswer}} disabled{{end}}></textarea>
 					<label class="agent-chat-attach" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_attach"}}">
 						{{svg "octicon-paperclip" 16}}
 						<input type="file" name="files" multiple>
 					</label>
-					<button type="submit" class="ui primary button"{{if not .Session.ModelRef}} disabled{{end}}>{{ctx.Locale.Tr "agent.chat_send"}}</button>
+					<button type="submit" class="ui primary button"{{if not .CanAnswer}} disabled{{end}}>{{ctx.Locale.Tr "agent.chat_send"}}</button>
 				</form>
-				{{if not .Session.ModelRef}}
+				{{if not .CanAnswer}}
 					<p class="agent-chat-hint agent-chat-hint-block">{{ctx.Locale.Tr "agent.chat_model_required"}}</p>
 				{{end}}
 			{{else}}

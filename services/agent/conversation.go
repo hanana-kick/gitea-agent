@@ -582,13 +582,6 @@ func DeleteMessagesAfter(ctx context.Context, conversationID, messageID int64) e
 	return err
 }
 
-// SetConversationModel binds a session to the model it answers with.
-func SetConversationModel(ctx context.Context, conversation *agent_model.Conversation, ref string) error {
-	conversation.ModelRef = ref
-	_, err := db.GetEngine(ctx).ID(conversation.ID).Cols("model_ref").Update(conversation)
-	return err
-}
-
 // GetMessage returns one transcript entry.
 func GetMessage(ctx context.Context, id int64) (*agent_model.Message, error) {
 	message, exist, err := db.GetByID[agent_model.Message](ctx, id)

@@ -439,6 +439,7 @@ func prepareMigrationTasks() []*migration {
 		newMigration(363, "Add agent conversation folders", v28.AddAgentConversationFolders),
 		newMigration(364, "Add agent attachments", v28.AddAgentAttachments),
 		newMigration(365, "Add agent session summary", v28.AddAgentConversationSummary),
+		newMigration(366, "Add agent model roles", v28.AddAgentModelRole),
 	}
 	return preparedMigrations
 }

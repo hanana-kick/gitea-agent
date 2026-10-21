@@ -41,7 +41,24 @@ const reconnectDelay = 2000; // ms, the browser's own reconnect would replay the
 const bottomThreshold = 80; // px
 const messageTopMargin = 8; // px above the last question when the transcript opens
 
+// the panel fills the space between the navbar and the footer, both of which depend on
+// the viewport and the locale, so the height is measured instead of guessed in CSS
+function fitLayout() {
+  const chat = document.querySelector<HTMLElement>('.agent-chat');
+  const footer = document.querySelector<HTMLElement>('footer');
+  if (!chat || !footer) return;
+  const top = chat.getBoundingClientRect().top + window.scrollY;
+  // the page owns the viewport, so the footer sits at its bottom and the panel fills the rest
+  chat.style.height = `${Math.max(240, Math.round(innerHeight - top - footer.offsetHeight - 8))}px`;
+}
+
 export function initAgentChat() {
+  fitLayout();
+  // the viewport and the footer both drive the panel height
+  const observer = new ResizeObserver(fitLayout);
+  observer.observe(document.documentElement);
+  const footer = document.querySelector<HTMLElement>('footer');
+  if (footer) observer.observe(footer);
   initDraftComposer();
   initMoreMenus();
 

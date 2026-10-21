@@ -311,8 +311,12 @@ func messageIDs(messages []*agent_model.Message) []int64 {
 // nameConversation names a new session, or refreshes what the resident has been working on.
 func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model.Conversation) {
 	resident := conversation.Kind == agent_model.ConversationKindResident
-	if conversation.ModelRef == "" || (!resident && conversation.TitleSet) {
+	if !resident && conversation.TitleSet {
 		return // the resident keeps its name, so it is summarized on every exchange
+	}
+	ref, err := ModelRoleRef(ctx, agent_model.ModelRoleSummary)
+	if err != nil || ref == "" {
+		return // naming is a convenience, the session keeps its placeholder without it
 	}
 	history, err := ListMessages(ctx, conversation.ID, engineNameHistoryLimit)
 	if err != nil || len(history) < 2 {
@@ -336,7 +340,7 @@ func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model
 	}
 	// no max token limit: models that think before answering would spend a small budget on
 	// reasoning and return no content at all
-	title, _, err := Answer(ctx, conversation.ModelRef, llm.ChatRequest{Messages: prompt})
+	title, _, err := Answer(ctx, ref, llm.ChatRequest{Messages: prompt})
 	if err != nil {
 		log.Warn("Agent engine: unable to name session %d: %v", conversation.ID, err)
 		return
@@ -395,8 +399,13 @@ func cleanConversationTitle(title string) string {
 
 // answer builds the prompt from the stored transcript and asks the session model.
 func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversation) (string, string, error) {
-	if conversation.ModelRef == "" {
-		return "", "", ErrModelRefInvalid{}
+	role := ModelRoleForKind(conversation.Kind)
+	ref, err := ModelRoleRef(ctx, role)
+	if err != nil {
+		return "", "", err
+	}
+	if ref == "" {
+		return "", "", ErrModelRoleNotSet{Role: role}
 	}
 	history, err := ListMessages(ctx, conversation.ID, engineHistoryLimit)
 	if err != nil {
@@ -406,7 +415,7 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 	if err != nil {
 		return "", "", err
 	}
-	return Answer(ctx, conversation.ModelRef, llm.ChatRequest{
+	return Answer(ctx, ref, llm.ChatRequest{
 		Messages: buildPrompt(ctx, conversation, history, attachments),
 	})
 }
