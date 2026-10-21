@@ -178,7 +178,7 @@
 					<div class="agent-chat-empty">{{ctx.Locale.Tr "agent.chat_draft_help"}}</div>
 				</div>
 
-				<form class="agent-chat-composer agent-chat-draft" method="post" action="{{AppSubUrl}}/-/agent/new" data-draft-url="{{AppSubUrl}}/-/agent/new">
+				<form class="agent-chat-composer agent-chat-draft" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/new" data-draft-url="{{AppSubUrl}}/-/agent/new">
 					<input type="hidden" name="kind" value="{{.DraftKind}}">
 					{{if .Repo}}<input type="hidden" name="repo_id" value="{{.Repo.ID}}">{{end}}
 					<div class="agent-chat-draft-model">
@@ -190,6 +190,10 @@
 						</select>
 					</div>
 					<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"></textarea>
+					<label class="agent-chat-attach" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_attach"}}">
+						{{svg "octicon-paperclip" 16}}
+						<input type="file" name="files" multiple>
+					</label>
 					<button type="submit" class="ui primary button">{{ctx.Locale.Tr "agent.chat_send"}}</button>
 				</form>
 			{{else if .Session}}
@@ -213,6 +217,11 @@
 						</select>
 						<button type="submit" class="ui mini button">{{ctx.Locale.Tr "agent.chat_model_apply"}}</button>
 					</form>
+					<button type="button" class="ui basic icon button agent-chat-copy-conversation"
+						data-export-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/export"
+						data-tooltip-content="{{ctx.Locale.Tr "agent.chat_copy_conversation"}}">{{svg "octicon-copy"}}</button>
+					<a class="ui basic icon button" href="{{AppSubUrl}}/-/agent/{{.Session.ID}}/export" download="conversation.md"
+						data-tooltip-content="{{ctx.Locale.Tr "agent.chat_download"}}">{{svg "octicon-download"}}</a>
 					{{if ne .Session.Kind "resident"}}
 						<form method="post" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/delete">
 							<button type="submit" class="ui basic icon button" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_delete"}}">{{svg "octicon-trash"}}</button>
@@ -226,8 +235,13 @@
 				</div>
 
 				<div class="agent-chat-messages">
+					{{if .HasOlderMessages}}
+						<button type="button" class="ui basic button agent-chat-load-older"
+							data-messages-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages"
+							data-oldest="{{.OldestMessageID}}">{{ctx.Locale.Tr "agent.chat_load_older"}}</button>
+					{{end}}
 					{{range .Messages}}
-						<div class="agent-chat-message {{.Role}}">
+						<div class="agent-chat-message {{.Role}}" data-message-id="{{.ID}}">
 							<div class="agent-chat-message-meta">
 								{{if eq .Role "user"}}
 									{{ctx.Locale.Tr "agent.chat_you"}}
@@ -237,16 +251,36 @@
 									{{ctx.Locale.Tr "agent.chat_system"}}
 								{{end}}
 								· {{DateUtils.TimeSince .CreatedUnix}}
+								<button type="button" class="agent-chat-copy-message" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_copy"}}">{{svg "octicon-copy" 14}}</button>
 							</div>
-							<div class="agent-chat-bubble">{{.Content}}</div>
+							<div class="agent-chat-bubble">
+								<div class="render-content markup">{{ctx.RenderUtils.MarkdownToHtml .Content}}</div>
+								{{$attachments := index $.MessageAttachments .ID}}
+								{{if $attachments}}
+									<div class="agent-chat-attachments">
+										{{range $attachments}}
+											<a class="agent-chat-attachment" href="{{AppSubUrl}}{{.URL}}">
+												{{svg "octicon-paperclip" 14}}
+												<span class="gt-ellipsis">{{.Name}}</span>
+												<span class="agent-chat-attachment-size">{{.SizeText}}</span>
+											</a>
+										{{end}}
+									</div>
+								{{end}}
+							</div>
+							<div class="agent-chat-source tw-hidden">{{.Content}}</div>
 						</div>
 					{{else}}
 						<div class="agent-chat-empty">{{ctx.Locale.Tr "agent.chat_no_messages"}}</div>
 					{{end}}
 				</div>
 
-				<form class="agent-chat-composer" method="post" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages">
+				<form class="agent-chat-composer" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages">
 					<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"{{if not .Session.ModelRef}} disabled{{end}}></textarea>
+					<label class="agent-chat-attach" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_attach"}}">
+						{{svg "octicon-paperclip" 16}}
+						<input type="file" name="files" multiple>
+					</label>
 					<button type="submit" class="ui primary button"{{if not .Session.ModelRef}} disabled{{end}}>{{ctx.Locale.Tr "agent.chat_send"}}</button>
 				</form>
 				{{if not .Session.ModelRef}}

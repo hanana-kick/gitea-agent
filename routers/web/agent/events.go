@@ -23,13 +23,24 @@ const (
 	eventsReplay = 200
 )
 
-// messageEvent is one transcript entry as the browser receives it.
+// attachmentEvent is one file sent with a message.
+type attachmentEvent struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	SizeText string `json:"sizeText"`
+	URL      string `json:"url"`
+}
+
+// messageEvent is one transcript entry as the browser receives it. The raw content is kept
+// for copying, the rendered html is what the transcript shows.
 type messageEvent struct {
-	ID        int64  `json:"id"`
-	Role      string `json:"role"`
-	RoleLabel string `json:"roleLabel"`
-	Content   string `json:"content"`
-	TimeHTML  string `json:"timeHTML"`
+	ID          int64             `json:"id"`
+	Role        string            `json:"role"`
+	RoleLabel   string            `json:"roleLabel"`
+	Content     string            `json:"content"`
+	HTML        string            `json:"html"`
+	TimeHTML    string            `json:"timeHTML"`
+	Attachments []attachmentEvent `json:"attachments,omitempty"`
 }
 
 // ChatEvents streams the updates of one session: transcript entries and run state. A client
@@ -105,7 +116,7 @@ func eventsSince(ctx *context.Context) int64 {
 
 // replayEvents sends the messages newer than the client's cursor.
 func replayEvents(ctx *context.Context, conversation *agent_model.Conversation, since int64) {
-	messages, err := agent_service.ListMessages(ctx, conversation.ID)
+	messages, err := agent_service.ListMessages(ctx, conversation.ID, eventsReplay)
 	if err != nil {
 		ctx.ServerError("ListMessages", err)
 		return
@@ -159,12 +170,19 @@ func formatEvent(ctx *context.Context, name string, data any, eventID int64) str
 }
 
 func messageEventOf(ctx *context.Context, message *agent_model.Message) messageEvent {
+	attachments, err := agent_service.ListMessageAttachments(ctx, []int64{message.ID})
+	if err != nil {
+		ctx.ServerError("ListMessageAttachments", err)
+		return messageEvent{}
+	}
 	return messageEvent{
-		ID:        message.ID,
-		Role:      message.Role,
-		RoleLabel: messageRoleLabel(ctx, message.Role),
-		Content:   message.Content,
-		TimeHTML:  string(templates.TimeSince(message.CreatedUnix)),
+		Attachments: attachmentPayloads(attachments[message.ID]),
+		ID:          message.ID,
+		Role:        message.Role,
+		RoleLabel:   messageRoleLabel(ctx, message.Role),
+		Content:     message.Content,
+		HTML:        string(templates.NewRenderUtils(ctx).MarkdownToHtml(message.Content)),
+		TimeHTML:    string(templates.TimeSince(message.CreatedUnix)),
 	}
 }
 

@@ -4169,5 +4169,12 @@
   "agent.chat_folder_name_required": "A folder name is required.",
   "agent.chat_folder_missing": "The folder does not exist.",
   "agent.chat_icon": "Icon",
-  "agent.chat_draft_help": "Sending a message starts this conversation."
+  "agent.chat_draft_help": "Sending a message starts this conversation.",
+  "agent.chat_resident_immutable": "The resident session always keeps the name Pod.",
+  "agent.chat_copy": "Copy markdown",
+  "agent.chat_copy_conversation": "Copy the whole conversation",
+  "agent.chat_download": "Download as markdown",
+  "agent.chat_load_older": "Load earlier messages",
+  "agent.chat_attach": "Attach files",
+  "agent.chat_attachment_failed": "The file %s was not attached: %s"
 }

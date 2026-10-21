@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	agent_model "gitea.dev/models/agent"
 	repo_model "gitea.dev/models/repo"
+	"gitea.dev/modules/httplib"
 	"gitea.dev/modules/setting"
 	agent_service "gitea.dev/services/agent"
 	"gitea.dev/services/context"
@@ -20,6 +22,9 @@ import (
 const (
 	tplChat = "agent/chat"
 	chatURL = "/-/agent"
+
+	// chatMessagePageSize is how much of a transcript the chat screen loads at once.
+	chatMessagePageSize = 50
 )
 
 // chatTitle uses the submitted title, falling back to the localized name of the kind.
@@ -106,12 +111,33 @@ func renderChat(ctx *context.Context, session *agent_model.Conversation) {
 			}
 			ctx.Data["Repo"] = repo
 		}
-		messages, err := agent_service.ListMessages(ctx, session.ID)
+		messages, err := agent_service.ListMessages(ctx, session.ID, chatMessagePageSize)
 		if err != nil {
 			ctx.ServerError("ListMessages", err)
 			return
 		}
+		oldestID := int64(0)
+		if len(messages) > 0 {
+			oldestID = messages[0].ID
+		}
+		hasOlder, err := agent_service.HasMessagesBefore(ctx, session.ID, oldestID)
+		if err != nil {
+			ctx.ServerError("HasMessagesBefore", err)
+			return
+		}
+		messageIDs := make([]int64, 0, len(messages))
+		for _, message := range messages {
+			messageIDs = append(messageIDs, message.ID)
+		}
+		attachments, err := agent_service.ListMessageAttachments(ctx, messageIDs)
+		if err != nil {
+			ctx.ServerError("ListMessageAttachments", err)
+			return
+		}
 		ctx.Data["Messages"] = messages
+		ctx.Data["MessageAttachments"] = attachments
+		ctx.Data["OldestMessageID"] = oldestID
+		ctx.Data["HasOlderMessages"] = hasOlder
 		ctx.Data["LastMessageID"] = lastMessageID(messages)
 		ctx.Data["ModelRefLabel"] = agent_service.ModelRefLabel(ctx, session.ModelRef)
 		run, err := agent_service.LatestRun(ctx, session.ID)
@@ -125,6 +151,7 @@ func renderChat(ctx *context.Context, session *agent_model.Conversation) {
 			"failed":   string(ctx.Tr("agent.chat_status_failed")),
 			"canceled": string(ctx.Tr("agent.chat_status_canceled")),
 			"cancel":   string(ctx.Tr("agent.chat_cancel")),
+			"copy":     string(ctx.Tr("agent.chat_copy")),
 			"error":    string(ctx.Tr("agent.chat_status_error")),
 		}
 		labelsJSON, err := json.Marshal(labels)
@@ -249,7 +276,8 @@ func ChatDraftCreate(ctx *context.Context) {
 		ctx.ServerError("SetConversationModel", err)
 		return
 	}
-	if _, err := agent_service.SubmitUserMessage(ctx, session, ctx.FormString("content")); err != nil {
+	message, _, err := agent_service.SubmitUserMessage(ctx, session, ctx.FormString("content"))
+	if err != nil {
 		if isXMLHTTP(ctx) {
 			ctx.Resp.WriteHeader(http.StatusBadRequest)
 			return
@@ -258,12 +286,125 @@ func ChatDraftCreate(ctx *context.Context) {
 		ctx.Redirect(chatSessionURL(session.ID))
 		return
 	}
+	storeUploads(ctx, session, message)
 	if isXMLHTTP(ctx) {
 		ctx.Resp.Header().Set("Location", chatSessionURL(session.ID))
 		ctx.Resp.WriteHeader(http.StatusNoContent)
 		return
 	}
 	ctx.Redirect(chatSessionURL(session.ID))
+}
+
+// storeUploads saves the files sent with a message. A rejected file only fails itself.
+func storeUploads(ctx *context.Context, conversation *agent_model.Conversation, message *agent_model.Message) {
+	if !agent_service.AttachmentAllowed() || ctx.Req.MultipartForm == nil {
+		return
+	}
+	for _, header := range ctx.Req.MultipartForm.File["files"] {
+		file, err := header.Open()
+		if err != nil {
+			ctx.Flash.Error(ctx.Tr("agent.chat_attachment_failed", header.Filename, err.Error()))
+			continue
+		}
+		_, err = agent_service.StoreAttachment(ctx, conversation.ID, message.ID, header.Filename, file, header.Size)
+		_ = file.Close()
+		if err != nil {
+			ctx.Flash.Error(ctx.Tr("agent.chat_attachment_failed", header.Filename, err.Error()))
+		}
+	}
+}
+
+// ChatAttachment serves a file sent with a message.
+func ChatAttachment(ctx *context.Context) {
+	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
+	if err != nil {
+		chatError(ctx, err)
+		return
+	}
+	attachment, err := agent_service.GetAttachment(ctx, session.ID, ctx.PathParamInt64("aid"))
+	if err != nil {
+		if errors.Is(err, agent_service.ErrAttachmentNotFound{}) {
+			ctx.NotFound(nil)
+			return
+		}
+		ctx.ServerError("GetAttachment", err)
+		return
+	}
+	file, err := os.Open(agent_service.AttachmentPath(attachment))
+	if err != nil {
+		ctx.NotFound(nil)
+		return
+	}
+	defer file.Close()
+	ctx.ServeContent(file, context.ServeHeaderOptions{
+		Filename:           attachment.Name,
+		ContentDisposition: httplib.ContentDispositionAttachment,
+		LastModified:       attachment.CreatedUnix.AsLocalTime(),
+	})
+}
+
+// attachmentPayloads renders the files of a message for the clients.
+func attachmentPayloads(attachments []*agent_model.Attachment) []attachmentEvent {
+	payloads := make([]attachmentEvent, 0, len(attachments))
+	for _, attachment := range attachments {
+		payloads = append(payloads, attachmentEvent{
+			ID:       attachment.ID,
+			Name:     attachment.Name,
+			SizeText: attachment.SizeText(),
+			URL:      setting.AppSubURL + attachment.URL(),
+		})
+	}
+	return payloads
+}
+
+// ChatMessagesBefore returns one page of older messages as JSON, in the same shape the
+// event stream uses, so the client renders both the same way.
+func ChatMessagesBefore(ctx *context.Context) {
+	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
+	if err != nil {
+		chatError(ctx, err)
+		return
+	}
+	before := ctx.FormInt64("before")
+	if before == 0 {
+		ctx.JSON(http.StatusOK, []messageEvent{})
+		return
+	}
+	messages, err := agent_service.ListMessagesBefore(ctx, session.ID, before, chatMessagePageSize)
+	if err != nil {
+		ctx.ServerError("ListMessagesBefore", err)
+		return
+	}
+	response := make([]messageEvent, 0, len(messages))
+	for _, message := range messages {
+		response = append(response, messageEventOf(ctx, message))
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+// ChatExport returns the whole transcript as markdown: it is what "copy the conversation"
+// and "download" hand to the browser.
+func ChatExport(ctx *context.Context) {
+	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
+	if err != nil {
+		chatError(ctx, err)
+		return
+	}
+	messages, err := agent_service.ListAllMessages(ctx, session.ID)
+	if err != nil {
+		ctx.ServerError("ListAllMessages", err)
+		return
+	}
+
+	var builder strings.Builder
+	builder.WriteString("# " + session.Title + "\n\n")
+	for _, message := range messages {
+		builder.WriteString("## " + messageRoleLabel(ctx, message.Role) + "\n\n")
+		builder.WriteString(strings.TrimSpace(message.Content) + "\n\n")
+	}
+	ctx.Resp.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	ctx.Resp.Header().Set("Content-Disposition", "attachment; filename=\"conversation.md\"")
+	_, _ = ctx.Resp.Write([]byte(builder.String()))
 }
 
 // ChatFolderCreate stores a folder for the conversation list.
@@ -336,6 +477,10 @@ func ChatSessionDelete(ctx *context.Context) {
 		chatError(ctx, err)
 		return
 	}
+	if err := agent_service.DeleteConversationAttachments(ctx, session.ID); err != nil {
+		ctx.ServerError("DeleteConversationAttachments", err)
+		return
+	}
 	if err := agent_service.DeleteConversation(ctx, session); err != nil {
 		if errors.Is(err, agent_service.ErrResidentUndeletable{}) {
 			ctx.Flash.Error(ctx.Tr("agent.chat_resident_undeletable"))
@@ -356,7 +501,8 @@ func ChatMessageNew(ctx *context.Context) {
 		chatError(ctx, err)
 		return
 	}
-	if _, err := agent_service.SubmitUserMessage(ctx, session, ctx.FormString("content")); err != nil {
+	message, _, err := agent_service.SubmitUserMessage(ctx, session, ctx.FormString("content"))
+	if err != nil {
 		if isXMLHTTP(ctx) {
 			ctx.Resp.WriteHeader(http.StatusBadRequest)
 			return
@@ -365,6 +511,7 @@ func ChatMessageNew(ctx *context.Context) {
 		ctx.Redirect(chatSessionURL(session.ID))
 		return
 	}
+	storeUploads(ctx, session, message)
 	answer(ctx, session.ID)
 }
 
@@ -390,7 +537,11 @@ func ChatTitlePost(ctx *context.Context) {
 		return
 	}
 	if err := agent_service.SetConversationTitle(ctx, session, ctx.FormString("title")); err != nil {
-		ctx.Flash.Error(ctx.Tr("agent.chat_title_required"))
+		if errors.Is(err, agent_service.ErrConversationImmutable{}) {
+			ctx.Flash.Error(ctx.Tr("agent.chat_resident_immutable"))
+		} else {
+			ctx.Flash.Error(ctx.Tr("agent.chat_title_required"))
+		}
 		ctx.Redirect(chatSessionURL(session.ID))
 		return
 	}

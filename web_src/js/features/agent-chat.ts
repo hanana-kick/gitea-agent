@@ -1,9 +1,12 @@
-import {POST} from '../modules/fetch.ts';
+import {GET, POST} from '../modules/fetch.ts';
+import {copyToClipboardWithFeedback} from '../modules/clipboard.ts';
+import {svg} from '../svg.ts';
 import {errorMessage} from '../modules/errors.ts';
-import {hideElem, showElem, toggleElem} from '../utils/dom.ts';
+import {addDelegatedEventListener, createElementFromHTML, hideElem, showElem, toggleElem} from '../utils/dom.ts';
 
-type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, cancel: string, error: string};
-type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, timeHTML: string};
+type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, cancel: string, error: string, copy: string};
+type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string};
+type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[]};
 type AgentChatRun = {id: number, status: string, error: string, cancelable: boolean};
 type AgentChatConversation = {id: number, title: string, icon: string};
 
@@ -36,6 +39,7 @@ function initDraftComposer() {
 
 const reconnectDelay = 2000; // ms, the browser's own reconnect would replay the cursor from the first connect
 const bottomThreshold = 80; // px
+const messageTopMargin = 8; // px above the last question when the transcript opens
 
 export function initAgentChat() {
   initDraftComposer();
@@ -74,12 +78,7 @@ export function initAgentChat() {
     showElem(statusEl);
   }
 
-  function appendMessage(message: AgentChatMessage) {
-    if (messagesEl.querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`)) return;
-
-    const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= bottomThreshold;
-    for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
-
+  function buildMessage(message: AgentChatMessage): HTMLElement {
     const messageEl = document.createElement('div');
     messageEl.className = `agent-chat-message ${message.role}`;
     messageEl.setAttribute('data-message-id', String(message.id));
@@ -88,15 +87,112 @@ export function initAgentChat() {
     metaEl.className = 'agent-chat-message-meta';
     metaEl.textContent = `${message.roleLabel} · `;
     metaEl.insertAdjacentHTML('beforeend', message.timeHTML);
+    metaEl.insertAdjacentHTML('beforeend', copyButton());
 
     const bubbleEl = document.createElement('div');
     bubbleEl.className = 'agent-chat-bubble';
-    bubbleEl.textContent = message.content;
+    const renderedEl = document.createElement('div');
+    renderedEl.className = 'render-content markup';
+    renderedEl.innerHTML = message.html;
+    bubbleEl.append(renderedEl);
 
-    messageEl.append(metaEl, bubbleEl);
-    messagesEl.append(messageEl);
+    if (message.attachments && message.attachments.length > 0) {
+      const listEl = document.createElement('div');
+      listEl.className = 'agent-chat-attachments';
+      for (const attachment of message.attachments) {
+        const linkEl = document.createElement('a');
+        linkEl.className = 'agent-chat-attachment';
+        linkEl.setAttribute('href', attachment.url);
+        const nameEl = document.createElement('span');
+        nameEl.className = 'gt-ellipsis';
+        nameEl.textContent = attachment.name;
+        const sizeEl = document.createElement('span');
+        sizeEl.className = 'agent-chat-attachment-size';
+        sizeEl.textContent = attachment.sizeText;
+        linkEl.append(createElementFromHTML(svg('octicon-paperclip', 14)), nameEl, sizeEl);
+        listEl.append(linkEl);
+      }
+      bubbleEl.append(listEl);
+    }
+
+    const sourceEl = document.createElement('div');
+    sourceEl.className = 'agent-chat-source tw-hidden';
+    sourceEl.textContent = message.content;
+
+    messageEl.append(metaEl, bubbleEl, sourceEl);
+    return messageEl;
+  }
+
+  function copyButton(): string {
+    return `<button type="button" class="agent-chat-copy-message" data-tooltip-content="${labels.copy}">${svg('octicon-copy', 14)}</button>`;
+  }
+
+  function appendMessage(message: AgentChatMessage) {
+    if (messagesEl.querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`)) return;
+
+    const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= bottomThreshold;
+    for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
+
+    messagesEl.append(buildMessage(message));
     mainEl!.setAttribute('data-last-message-id', String(message.id));
     if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  // the transcript loads its tail first; older messages arrive on demand
+  async function loadOlder() {
+    const button = messagesEl.querySelector<HTMLElement>('.agent-chat-load-older');
+    if (!button || button.classList.contains('disabled')) return;
+    button.classList.add('disabled', 'is-loading');
+    const url = `${button.getAttribute('data-messages-url')}?before=${button.getAttribute('data-oldest')}`;
+    try {
+      const resp = await GET(url);
+      const older = await resp.json() as AgentChatMessage[];
+      const anchor = messagesEl.scrollHeight - messagesEl.scrollTop;
+      const first = messagesEl.querySelector('.agent-chat-message');
+      for (const message of older) {
+        messagesEl.insertBefore(buildMessage(message), first);
+      }
+      if (older.length > 0) {
+        button.setAttribute('data-oldest', String(older[0].id));
+        mainEl!.setAttribute('data-oldest-message-id', String(older[0].id));
+      }
+      if (older.length < 50) button.remove();
+      else button.classList.remove('disabled', 'is-loading');
+      messagesEl.scrollTop = messagesEl.scrollHeight - anchor; // keep the reading position
+    } catch {
+      button.classList.remove('disabled', 'is-loading');
+    }
+  }
+
+  // the reader cares about the answer to their last message, so that is where the view starts
+  function scrollToLastQuestion() {
+    const users = messagesEl.querySelectorAll<HTMLElement>('.agent-chat-message.user');
+    const last = users[users.length - 1];
+    if (!last) {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return;
+    }
+    const delta = last.getBoundingClientRect().top - messagesEl.getBoundingClientRect().top;
+    messagesEl.scrollTop += delta - messageTopMargin;
+  }
+
+  function initTranscript() {
+    addDelegatedEventListener(messagesEl, 'click', '.agent-chat-copy-message', (button) => {
+      const source = button.closest('.agent-chat-message')!.querySelector('.agent-chat-source');
+      copyToClipboardWithFeedback(button, source!.textContent);
+    });
+    messagesEl.querySelector('.agent-chat-load-older')?.addEventListener('click', loadOlder);
+  }
+
+  function initCopyConversation() {
+    const button = document.querySelector<HTMLElement>('.agent-chat-copy-conversation');
+    if (!button) return;
+    button.addEventListener('click', () => {
+      copyToClipboardWithFeedback(button, async () => {
+        const resp = await GET(button.getAttribute('data-export-url')!);
+        return await resp.text();
+      });
+    });
   }
 
   function applyRun(run: AgentChatRun) {
@@ -164,6 +260,10 @@ export function initAgentChat() {
       setTimeout(connect, reconnectDelay);
     });
   }
+
+  initTranscript();
+  initCopyConversation();
+  scrollToLastQuestion();
 
   composerEl.addEventListener('submit', async (event) => {
     event.preventDefault();

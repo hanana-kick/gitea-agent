@@ -437,6 +437,7 @@ func prepareMigrationTasks() []*migration {
 		newMigration(361, "Move provider credentials into agent_api_key", v28.AddAgentAPIKeyTable),
 		newMigration(362, "Add agent session icon and title state", v28.AddAgentConversationTitleAndIcon),
 		newMigration(363, "Add agent conversation folders", v28.AddAgentConversationFolders),
+		newMigration(364, "Add agent attachments", v28.AddAgentAttachments),
 	}
 	return preparedMigrations
 }

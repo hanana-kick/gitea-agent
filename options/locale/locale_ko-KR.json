@@ -4168,5 +4168,12 @@
   "agent.chat_folder_name_required": "폴더 이름을 입력하세요.",
   "agent.chat_folder_missing": "폴더를 찾을 수 없습니다.",
   "agent.chat_icon": "아이콘",
-  "agent.chat_draft_help": "메시지를 보내면 이 대화가 시작됩니다."
+  "agent.chat_draft_help": "메시지를 보내면 이 대화가 시작됩니다.",
+  "agent.chat_resident_immutable": "상주 세션은 항상 Pod 이름을 유지합니다.",
+  "agent.chat_copy": "마크다운 복사",
+  "agent.chat_copy_conversation": "대화 전체 복사",
+  "agent.chat_download": "마크다운으로 내려받기",
+  "agent.chat_load_older": "이전 메시지 불러오기",
+  "agent.chat_attach": "파일 첨부",
+  "agent.chat_attachment_failed": "%s 파일을 첨부하지 못했습니다: %s"
 }

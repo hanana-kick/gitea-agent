@@ -5,11 +5,30 @@ package agent
 
 import (
 	"context"
+	"strings"
 
 	agent_model "gitea.dev/models/agent"
 	repo_model "gitea.dev/models/repo"
 	llm "gitea.dev/services/agent/llm"
 )
+
+// messageWithAttachments appends the readable files of a message to its text.
+func messageWithAttachments(message *agent_model.Message, attachments []*agent_model.Attachment) string {
+	if len(attachments) == 0 {
+		return message.Content
+	}
+	builder := strings.Builder{}
+	builder.WriteString(message.Content)
+	for _, attachment := range attachments {
+		text := AttachmentText(attachment)
+		if text == "" {
+			builder.WriteString("\n\n[attached file: " + attachment.Name + " (" + attachment.SizeText() + ")]")
+			continue
+		}
+		builder.WriteString("\n\n[attached file: " + attachment.Name + "]\n```\n" + text + "\n```")
+	}
+	return builder.String()
+}
 
 // scopePrompt describes what the session is allowed to look after. It is written for the
 // model, not for the UI, so it stays in English.
@@ -34,7 +53,8 @@ func scopePrompt(ctx context.Context, conversation *agent_model.Conversation) st
 }
 
 // buildPrompt renders the messages handed to the model: the scope prompt, then the transcript.
-func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, history []*agent_model.Message) []llm.Message {
+// Files sent with a message are inlined when they are text, so the model can read them.
+func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, history []*agent_model.Message, attachments map[int64][]*agent_model.Attachment) []llm.Message {
 	messages := make([]llm.Message, 0, len(history)+1)
 	messages = append(messages, llm.Message{
 		Role: "system",
@@ -56,11 +76,12 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 		if message.Role == agent_model.MessageRoleSystem {
 			continue
 		}
-		total += len(message.Content)
+		content := messageWithAttachments(message, attachments[message.ID])
+		total += len(content)
 		if total > enginePromptLimit && len(kept) > 0 {
 			break
 		}
-		kept = append(kept, llm.Message{Role: message.Role, Content: message.Content})
+		kept = append(kept, llm.Message{Role: message.Role, Content: content})
 	}
 	for i := len(kept) - 1; i >= 0; i-- {
 		messages = append(messages, kept[i])

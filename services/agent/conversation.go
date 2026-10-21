@@ -159,7 +159,12 @@ func EnsureResidentConversation(ctx context.Context) (*agent_model.Conversation,
 	if len(sessions) > 0 {
 		return sessions[0], nil
 	}
-	session := &agent_model.Conversation{Kind: agent_model.ConversationKindResident, Title: "Pod"}
+	session := &agent_model.Conversation{
+		Kind: agent_model.ConversationKindResident,
+		// the resident session keeps this name, so it is never renamed by the model
+		Title:    "Pod",
+		TitleSet: true,
+	}
 	if err := db.Insert(ctx, session); err != nil {
 		return nil, fmt.Errorf("create resident session: %w", err)
 	}
@@ -252,9 +257,50 @@ func DeleteConversation(ctx context.Context, session *agent_model.Conversation) 
 	return err
 }
 
-// ListMessages returns the transcript of a session, oldest first.
-func ListMessages(ctx context.Context, conversationID int64) ([]*agent_model.Message, error) {
-	messages := make([]*agent_model.Message, 0, 16)
+// ListMessages returns the newest messages of a session, oldest first. The transcript is
+// paginated: the chat screen loads the tail and asks for older messages on demand.
+func ListMessages(ctx context.Context, conversationID int64, limit int) ([]*agent_model.Message, error) {
+	messages := make([]*agent_model.Message, 0, limit)
+	query := db.GetEngine(ctx).
+		Where("conversation_id = ?", conversationID).
+		OrderBy("id DESC").
+		Limit(limit)
+	if err := query.Find(&messages); err != nil {
+		return nil, err
+	}
+	slices.Reverse(messages)
+	return messages, nil
+}
+
+// ListMessagesBefore returns one page of older messages, oldest first.
+func ListMessagesBefore(ctx context.Context, conversationID, beforeID int64, limit int) ([]*agent_model.Message, error) {
+	messages := make([]*agent_model.Message, 0, limit)
+	query := db.GetEngine(ctx).
+		Where("conversation_id = ?", conversationID).
+		And("id < ?", beforeID).
+		OrderBy("id DESC").
+		Limit(limit)
+	if err := query.Find(&messages); err != nil {
+		return nil, err
+	}
+	slices.Reverse(messages)
+	return messages, nil
+}
+
+// HasMessagesBefore reports whether the session has messages older than the given one.
+func HasMessagesBefore(ctx context.Context, conversationID, beforeID int64) (bool, error) {
+	if beforeID == 0 {
+		return false, nil
+	}
+	return db.GetEngine(ctx).
+		Where("conversation_id = ?", conversationID).
+		And("id < ?", beforeID).
+		Exist(&agent_model.Message{})
+}
+
+// ListAllMessages returns the whole transcript, oldest first; the export uses it.
+func ListAllMessages(ctx context.Context, conversationID int64) ([]*agent_model.Message, error) {
+	messages := make([]*agent_model.Message, 0, 64)
 	err := db.GetEngine(ctx).
 		Where("conversation_id = ?", conversationID).
 		OrderBy("id ASC").
@@ -293,8 +339,23 @@ func (ErrConversationTitleInvalid) Is(target error) bool {
 	return ok
 }
 
-// SetConversationTitle renames a session. The new title is never replaced by the model.
+// ErrConversationImmutable is returned when a session keeps its name whatever happens.
+type ErrConversationImmutable struct{}
+
+func (ErrConversationImmutable) Error() string { return "the resident session keeps its name" }
+
+// Is reports whether target is an ErrConversationImmutable.
+func (ErrConversationImmutable) Is(target error) bool {
+	_, ok := target.(ErrConversationImmutable)
+	return ok
+}
+
+// SetConversationTitle renames a session. The resident session is not renamed: it is the
+// instance-wide agent and is always called Pod.
 func SetConversationTitle(ctx context.Context, conversation *agent_model.Conversation, title string) error {
+	if conversation.Kind == agent_model.ConversationKindResident {
+		return ErrConversationImmutable{}
+	}
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return ErrConversationTitleInvalid{}

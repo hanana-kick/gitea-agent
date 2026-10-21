@@ -24,8 +24,9 @@ const (
 	engineHistoryLimit = 40
 	enginePromptLimit  = 100 * 1024 // cap the transcript handed to the model
 
-	engineTitleTimeout = 60 * time.Second
-	engineTitleExcerpt = 500
+	engineNameHistoryLimit = 8
+	engineTitleTimeout     = 60 * time.Second
+	engineTitleExcerpt     = 500
 )
 
 // Event names published for one conversation.
@@ -139,21 +140,21 @@ func recoverRuns(ctx context.Context) error {
 }
 
 // SubmitUserMessage stores a user message and starts a run for it. The caller does not
-// wait for the answer.
-func SubmitUserMessage(ctx context.Context, conversation *agent_model.Conversation, content string) (*agent_model.Run, error) {
+// wait for the answer. The stored message is returned so files can be attached to it.
+func SubmitUserMessage(ctx context.Context, conversation *agent_model.Conversation, content string) (*agent_model.Message, *agent_model.Run, error) {
 	message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleUser, content)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	engine.broker.publish(conversation.ID, Event{Name: EventMessage, Data: message.ID})
 
 	run := &agent_model.Run{ConversationID: conversation.ID, Status: agent_model.RunStatusQueued}
 	if err := db.Insert(ctx, run); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	engine.enqueue(run.ID)
 	engine.publishRun(conversation.ID, run)
-	return run, nil
+	return message, run, nil
 }
 
 // CancelRun stops the run of a conversation, if one is active.
@@ -285,13 +286,24 @@ func (e *Engine) execute(runID int64) {
 	e.nameConversation(ctx, conversation)
 }
 
+func messageIDs(messages []*agent_model.Message) []int64 {
+	ids := make([]int64, 0, len(messages))
+	for _, message := range messages {
+		ids = append(ids, message.ID)
+	}
+	return ids
+}
+
 // nameConversation asks the model for a title once the first answer exists, so a session
 // stops being called "new conversation". Failures keep the placeholder title.
 func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model.Conversation) {
 	if conversation.TitleSet || conversation.ModelRef == "" {
 		return
 	}
-	history, err := ListMessages(ctx, conversation.ID)
+	if conversation.Kind == agent_model.ConversationKindResident {
+		return // the resident session is always called Pod
+	}
+	history, err := ListMessages(ctx, conversation.ID, engineNameHistoryLimit)
 	if err != nil || len(history) < 2 {
 		return
 	}
@@ -364,12 +376,16 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 	if conversation.ModelRef == "" {
 		return "", "", ErrModelRefInvalid{}
 	}
-	history, err := ListMessages(ctx, conversation.ID)
+	history, err := ListMessages(ctx, conversation.ID, engineHistoryLimit)
+	if err != nil {
+		return "", "", err
+	}
+	attachments, err := ListMessageAttachments(ctx, messageIDs(history))
 	if err != nil {
 		return "", "", err
 	}
 	return Answer(ctx, conversation.ModelRef, llm.ChatRequest{
-		Messages: buildPrompt(ctx, conversation, history),
+		Messages: buildPrompt(ctx, conversation, history, attachments),
 	})
 }
 
