@@ -81,25 +81,46 @@ export function initAgentChat() {
   }
 
   // without an open conversation the list still follows the runs of every conversation
+  let listStream: EventSource | null = null;
   function followAllRuns() {
     const url = chatEl?.getAttribute('data-runs-url');
     if (!url || !window.EventSource || !document.querySelector('.agent-chat-card[data-session-id]')) return;
+    listStream?.close();
     const source = new EventSource(url);
+    listStream = source;
     source.addEventListener('run', (event: MessageEvent) => {
       const run = JSON.parse(event.data) as AgentChatRun;
       setSessionBusy(String(run.conversationId), run.status === 'queued' || run.status === 'running');
     });
     source.addEventListener('error', () => {
+      if (listStream === source) listStream = null;
       if (source.readyState === EventSource.CLOSED) return;
       source.close();
+      if (document.visibilityState === 'hidden') return;
       setTimeout(followAllRuns, reconnectDelay);
     });
+  }
+
+  function stopListStream() {
+    listStream?.close();
+    listStream = null;
   }
 
   // `data-conversation-id` marks the page as a live chat, all URLs and labels are rendered by the server
   const mainEl = document.querySelector<HTMLElement>('.agent-chat-main[data-conversation-id]');
   if (!mainEl) {
     followAllRuns();
+    // a stream holds one of the few connections a browser opens per origin, and a page that is
+    // left behind keeps holding it, so a reader who switches tabs a few times starves the page
+    // that comes next. The stream is handed back on the way out and picked up when shown again.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        stopListStream();
+      } else if (!listStream) {
+        followAllRuns();
+      }
+    });
+    window.addEventListener('pagehide', stopListStream);
     return;
   }
 
@@ -511,8 +532,12 @@ export function initAgentChat() {
     }
   }
 
+  let stream: EventSource | null = null;
+
   function connect() {
+    stream?.close();
     const source = new EventSource(`${eventsUrl}?since=${mainEl!.getAttribute('data-last-message-id')!}`);
+    stream = source;
 
     source.addEventListener('message', (event: MessageEvent) => {
       appendMessage(JSON.parse(event.data) as AgentChatMessage);
@@ -535,12 +560,30 @@ export function initAgentChat() {
       applyConversation(JSON.parse(event.data) as AgentChatConversation);
     });
     source.addEventListener('error', () => {
+      if (stream === source) stream = null;
       if (source.readyState === EventSource.CLOSED) return;
       source.close();
+      if (document.visibilityState === 'hidden') return;
       // reconnect ourself with the latest cursor instead of letting the browser replay the stale one
       setTimeout(connect, reconnectDelay);
     });
   }
+
+  // the stream is handed back while the page is hidden, and the cursor it reconnects with
+  // brings back whatever arrived in the meantime
+  function stopStream() {
+    stream?.close();
+    stream = null;
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      stopStream();
+    } else if (!stream) {
+      connect();
+    }
+  });
+  window.addEventListener('pagehide', stopStream);
 
   initTranscript();
   initMessageActions();
