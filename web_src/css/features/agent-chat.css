@@ -780,8 +780,14 @@ button.agent-chat-card {
 /* a picture is shown as itself, not as a name */
 .agent-chat-attachment-image {
   display: block;
-  max-width: min(320px, 100%);
+  max-width: 260px;
   border-radius: var(--border-radius);
+}
+
+/* a picture inside the user bubble keeps a margin, so it does not touch the bubble edge */
+.agent-chat-message.user .agent-chat-attachment-image {
+  margin-top: 6px;
+  border-radius: calc(var(--border-radius-medium) - 2px);
 }
 
 .agent-chat-attachment-image img {
