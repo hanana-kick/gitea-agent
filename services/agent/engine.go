@@ -37,6 +37,9 @@ const (
 	engineNameHistoryLimit = 8
 	engineTitleTimeout     = 60 * time.Second
 	engineTitleExcerpt     = 500
+	// generous for six words, because a model that reasons first spends the budget before
+	// it names anything; a gateway that insists on a limit still gets a valid one
+	engineTitleTokens = 512
 
 	// the resident summarises recent work, so it reads further back and spends its
 	// excerpt budget from the newest exchange backwards
@@ -421,9 +424,7 @@ func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model
 		{Role: "system", Content: system},
 		{Role: "user", Content: ask + conversationExcerpt(history, resident)},
 	}
-	// no max token limit: models that think before answering would spend a small budget on
-	// reasoning and return no content at all
-	title, _, err := Answer(ctx, ref, llm.ChatRequest{Messages: prompt})
+	title, _, err := Answer(ctx, ref, llm.ChatRequest{Messages: prompt, MaxTokens: engineTitleTokens})
 	if err != nil {
 		log.Warn("Agent engine: unable to name session %d: %v", conversation.ID, err)
 		return
