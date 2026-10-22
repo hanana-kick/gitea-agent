@@ -4215,6 +4215,7 @@
   "agent.chat_download": "Download as markdown",
   "agent.chat_load_older": "Load earlier messages",
   "agent.chat_attach": "Attach files",
+  "agent.chat_attach_remove": "Remove this file",
   "agent.chat_attachment_failed": "The file %s was not attached: %s",
   "agent.chat_edit": "Edit and ask again",
   "agent.chat_edit_only_user": "Only your own messages can be edited.",

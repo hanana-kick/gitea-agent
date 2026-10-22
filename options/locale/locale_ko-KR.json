@@ -4214,6 +4214,7 @@
   "agent.chat_download": "마크다운으로 내려받기",
   "agent.chat_load_older": "이전 메시지 불러오기",
   "agent.chat_attach": "파일 첨부",
+  "agent.chat_attach_remove": "이 파일 빼기",
   "agent.chat_attachment_failed": "%s 파일을 첨부하지 못했습니다: %s",
   "agent.chat_edit": "수정하고 다시 묻기",
   "agent.chat_edit_only_user": "내 메시지만 수정할 수 있습니다.",

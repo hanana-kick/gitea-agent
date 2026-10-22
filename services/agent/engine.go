@@ -41,6 +41,10 @@ const (
 	// generous for six words, because a model that reasons first spends the budget before
 	// it names anything; a gateway that insists on a limit still gets a valid one
 	engineTitleTokens = 512
+	// room for an answer and the reasoning ahead of it; an answer that needs more is long
+	// past what a chat reply should be. Gateways that insist on a limit reject a request
+	// without one, so every answer carries it.
+	engineAnswerTokens = 4096
 
 	// the skill list in the prompt is capped by count and by size, so skills cost the
 	// prompt a few lines however many the instance stores
@@ -601,7 +605,7 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 		if round == engineToolRounds-1 {
 			askedFor = nil
 		}
-		message, answered, err := AnswerMessage(ctx, ref, llm.ChatRequest{Messages: messages, Tools: askedFor}, onDelta)
+		message, answered, err := AnswerMessage(ctx, ref, llm.ChatRequest{Messages: messages, Tools: askedFor, MaxTokens: engineAnswerTokens}, onDelta)
 		if err != nil {
 			return "", model, err
 		}

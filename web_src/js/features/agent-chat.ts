@@ -12,12 +12,68 @@ type AgentChatRun = {id: number, conversationId: number, status: string, error: 
 type AgentChatConversation = {id: number, title: string, summary: string, icon: string};
 type AgentChatApproval = {id: number, runID: number, tool: string, arguments: string};
 
+function formatFileSize(bytes: number): string {
+  const units = ['B', 'KB', 'MB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`;
+}
+
+// The browser gives no sign that a file is chosen, so the composer lists what will go with
+// the message and lets the reader take one back. The list is cleared once the files are sent.
+function initAttachmentList(form: HTMLFormElement): () => void {
+  const input = form.querySelector<HTMLInputElement>('input[type="file"][name="files"]');
+  const list = form.querySelector<HTMLElement>('.agent-chat-attach-list');
+  const removeLabel = document.querySelector<HTMLElement>('.agent-chat')?.getAttribute('data-attach-remove-label') ?? '';
+  if (!input || !list) return () => {};
+
+  const removeAt = (index: number) => {
+    const kept = new DataTransfer();
+    for (const [i, file] of Array.from(input.files ?? []).entries()) {
+      if (i !== index) kept.items.add(file);
+    }
+    input.files = kept.files;
+    input.dispatchEvent(new Event('change', {bubbles: false})); // the list draws itself again
+  };
+
+  const chip = (file: File, index: number): HTMLElement => {
+    const el = createElementFromHTML<HTMLElement>(
+      `<div class="agent-chat-attachment">${svg('octicon-paperclip', 14)}<span class="gt-ellipsis"></span>` +
+      `<span class="agent-chat-attachment-size"></span>` +
+      `<button type="button" class="agent-chat-attach-remove" data-tooltip-content="${removeLabel}" aria-label="${removeLabel}">${svg('octicon-x', 14)}</button></div>`,
+    );
+    el.querySelector('span')!.textContent = file.name;
+    el.querySelector('.agent-chat-attachment-size')!.textContent = formatFileSize(file.size);
+    el.querySelector('button')!.addEventListener('click', () => removeAt(index));
+    return el;
+  };
+
+  const render = () => {
+    const files = Array.from(input.files ?? []);
+    toggleElem(list, files.length > 0);
+    list.replaceChildren(...files.map((file, index) => chip(file, index)));
+  };
+
+  const clear = () => {
+    input.value = '';
+    render();
+  };
+
+  input.addEventListener('change', render);
+  return clear;
+}
+
 // a conversation does not exist until its first message, so the draft posts the message and
 // then follows the created conversation
 function initDraftComposer() {
   const form = document.querySelector<HTMLFormElement>('.agent-chat-composer[data-draft-url]');
   if (!form) return;
   const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+  initAttachmentList(form);
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -596,6 +652,7 @@ export function initAgentChat() {
   initTranscript();
   initMessageActions();
   scrollToLastQuestion();
+  const clearAttachments = initAttachmentList(composerEl);
 
   composerEl.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -610,6 +667,7 @@ export function initAgentChat() {
         return;
       }
       inputEl.value = '';
+      clearAttachments(); // the files are sent, so the next message starts without them
       if (!pendingEl) setPendingState('queued', labels.queued); // the run event follows, this avoids a gap
     } catch (error) {
       setBusy(false, `${labels.error} (${errorMessage(error)})`);

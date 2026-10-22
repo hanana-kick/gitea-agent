@@ -730,11 +730,32 @@ button.agent-chat-card {
 
 .agent-chat-composer {
   display: flex;
+  flex-wrap: wrap; /* the list of chosen files takes its own line above the row */
   gap: 8px;
   align-items: flex-end;
   margin: 0; /* the form component adds its own margin */
   padding: 10px 12px;
   border-top: 1px solid var(--color-secondary);
+}
+
+/* what the message about to be sent will carry */
+.agent-chat-attach-list {
+  order: -2; /* above the paperclip, which keeps order -1 */
+  flex: 0 1 100%;
+}
+
+.agent-chat-attach-remove {
+  display: flex;
+  align-items: center;
+  padding: 0 2px;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.agent-chat-attach-remove:hover {
+  color: var(--color-red);
 }
 
 /* what the last finished run has to say; running answers are reported by the send button */
