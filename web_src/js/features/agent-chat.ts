@@ -121,6 +121,9 @@ export function initAgentChat() {
       }
     });
     window.addEventListener('pagehide', stopListStream);
+    window.addEventListener('pageshow', () => {
+      if (!listStream) followAllRuns();
+    });
     return;
   }
 
@@ -576,14 +579,19 @@ export function initAgentChat() {
     stream = null;
   }
 
+  function resumeStream() {
+    if (!stream && document.visibilityState !== 'hidden') connect();
+  }
+
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       stopStream();
-    } else if (!stream) {
-      connect();
+    } else {
+      resumeStream(); // the page may come back from the back/forward cache, not just from being shown
     }
   });
   window.addEventListener('pagehide', stopStream);
+  window.addEventListener('pageshow', resumeStream);
 
   initTranscript();
   initMessageActions();
