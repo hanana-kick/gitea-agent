@@ -10,7 +10,10 @@
 		{{else if $fallbackIcon}}
 			<span class="agent-chat-card-icon">{{svg $fallbackIcon 18}}</span>
 		{{end}}
-		<span class="agent-chat-card-name gt-ellipsis">{{$session.Title}}</span>
+		<span class="agent-chat-card-text">
+			<span class="agent-chat-card-name gt-ellipsis">{{$session.Title}}</span>
+			{{if .Subtitle}}<span class="agent-chat-card-desc gt-ellipsis">{{.Subtitle}}</span>{{end}}
+		</span>
 		{{if .Busy}}<span class="agent-chat-card-busy" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_busy"}}"><i></i><i></i><i></i></span>{{end}}
 	</a>
 	<button type="button" class="agent-chat-more" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_more"}}" aria-haspopup="true">

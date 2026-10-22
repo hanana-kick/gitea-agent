@@ -55,10 +55,11 @@ func (ErrResidentUndeletable) Is(target error) bool {
 	return ok
 }
 
-// RepositoryConversations groups the sessions of one repository.
-type RepositoryConversations struct {
-	Repo     *repo_model.Repository
-	Sessions []*agent_model.Conversation
+// RepositoryConversation is one session of a repository, with the repository it belongs to
+// so the list can name it without a group header.
+type RepositoryConversation struct {
+	Session *agent_model.Conversation
+	Repo    *repo_model.Repository
 }
 
 // FolderConversations groups the conversations filed under one folder.
@@ -68,12 +69,12 @@ type FolderConversations struct {
 }
 
 // ConversationList is the sidebar content: the resident session, the conversations (at the
-// root and per folder) and the repository sessions grouped by repository.
+// root and per folder) and the repository sessions.
 type ConversationList struct {
 	Resident     *agent_model.Conversation
 	Servers      []*agent_model.Conversation
 	Folders      []*FolderConversations
-	Repositories []*RepositoryConversations
+	Repositories []*RepositoryConversation
 }
 
 // ListConversations returns every session the doer may open. The resident session is
@@ -122,7 +123,6 @@ func ListConversations(ctx context.Context, doer *user_model.User) (*Conversatio
 	if err != nil {
 		return nil, err
 	}
-	byRepo := make(map[int64]*RepositoryConversations, len(list.Repositories))
 	for _, session := range sessions {
 		repo := repos[session.RepoID]
 		if repo == nil {
@@ -132,13 +132,8 @@ func ListConversations(ctx context.Context, doer *user_model.User) (*Conversatio
 		if err != nil || !allowed {
 			continue
 		}
-		group := byRepo[repo.ID]
-		if group == nil {
-			group = &RepositoryConversations{Repo: repo}
-			byRepo[repo.ID] = group
-			list.Repositories = append(list.Repositories, group)
-		}
-		group.Sessions = append(group.Sessions, session)
+		// the sessions arrive newest first, and the list keeps that order across repositories
+		list.Repositories = append(list.Repositories, &RepositoryConversation{Session: session, Repo: repo})
 	}
 	return list, nil
 }

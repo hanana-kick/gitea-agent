@@ -112,6 +112,10 @@
 					</div>
 				</form>
 				<div class="ui attached segment agent-chat-list">
+					<div class="agent-chat-group-title">
+						{{svg "octicon-comment-discussion"}}
+						<span>{{ctx.Locale.Tr "agent.chat_conversations"}}</span>
+					</div>
 					{{if .WritableRepos}}
 						<button type="button" class="agent-chat-card show-modal" data-modal="#agent-chat-repository-modal">
 							<span class="agent-chat-card-main">
@@ -120,18 +124,8 @@
 							</span>
 						</button>
 					{{end}}
-					{{range $index, $group := .Sessions.Repositories}}
-						<div class="agent-chat-repo">
-							{{if $index}}<div class="agent-chat-divider"></div>{{end}}
-							<div class="agent-chat-group-title">
-								{{svg "octicon-comment-discussion"}}
-								<span>{{ctx.Locale.Tr "agent.chat_conversations"}}</span>
-							</div>
-							<a class="agent-chat-subtitle gt-ellipsis" href="{{$group.Repo.Link}}" title="{{$group.Repo.FullName}}">{{$group.Repo.FullName}}</a>
-							{{range $group.Sessions}}
-								{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" "" "Busy" (index $.BusySessions .ID)}}
-							{{end}}
-						</div>
+					{{range .Sessions.Repositories}}
+						{{template "agent/chat_session_row" dict "Session" .Session "Subtitle" .Repo.FullName "Selected" $.Session "FallbackIcon" "" "Busy" (index $.BusySessions .Session.ID)}}
 					{{else}}
 						<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_repository"}}</p>
 					{{end}}

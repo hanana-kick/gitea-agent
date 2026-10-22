@@ -645,16 +645,9 @@ func filterConversations(list *agent_service.ConversationList, keyword string) *
 			filtered.Servers = append(filtered.Servers, session)
 		}
 	}
-	for _, group := range list.Repositories {
-		repoMatches := match(group.Repo.FullName())
-		kept := &agent_service.RepositoryConversations{Repo: group.Repo}
-		for _, session := range group.Sessions {
-			if repoMatches || match(session.Title) {
-				kept.Sessions = append(kept.Sessions, session)
-			}
-		}
-		if len(kept.Sessions) > 0 {
-			filtered.Repositories = append(filtered.Repositories, kept)
+	for _, entry := range list.Repositories {
+		if match(entry.Repo.FullName()) || match(entry.Session.Title) {
+			filtered.Repositories = append(filtered.Repositories, entry)
 		}
 	}
 	return filtered
@@ -668,11 +661,7 @@ func boolInt(value bool) int {
 }
 
 func repositorySessionCount(list *agent_service.ConversationList) int {
-	count := 0
-	for _, group := range list.Repositories {
-		count += len(group.Sessions)
-	}
-	return count
+	return len(list.Repositories)
 }
 
 // pendingState describes what the answer to the last message is doing, so a reloaded
