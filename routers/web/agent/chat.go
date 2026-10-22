@@ -52,7 +52,7 @@ func chatError(ctx *context.Context, err error) {
 // Chat renders the chat screen with the session list and no session open. Small screens
 // use this as the session list page.
 func Chat(ctx *context.Context) {
-	prepareChat(ctx, nil)
+	prepareChat(ctx, nil, nil)
 	ctx.HTML(http.StatusOK, tplChat)
 }
 
@@ -63,12 +63,12 @@ func ChatSession(ctx *context.Context) {
 		chatError(ctx, err)
 		return
 	}
-	prepareChat(ctx, session)
+	prepareChat(ctx, session, nil)
 	ctx.HTML(http.StatusOK, tplChat)
 }
 
 // prepareChat fills the page data of the chat screen. The caller renders once.
-func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
+func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *repo_model.Repository) {
 	list, err := agent_service.ListConversations(ctx, ctx.Doer)
 	if err != nil {
 		ctx.ServerError("ListConversations", err)
@@ -82,7 +82,7 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 
 	ctx.Data["Title"] = ctx.Tr("agent.chat_title")
 	ctx.Data["PageIsAgentChat"] = true
-	scope, scopeBaseURL := chatScope(ctx, session)
+	scope, scopeBaseURL := chatScope(ctx, session, repo)
 	keyword := ctx.FormTrim("q")
 	if keyword != "" {
 		list = filterConversations(list, keyword)
@@ -105,14 +105,18 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 	ctx.Data["Session"] = session
 	ctx.Data["WritableRepos"] = repos
 	ctx.Data["ConversationIcons"] = agent_service.ConversationIcons()
+	if repo != nil {
+		// a draft belongs to the repository it was started from, so the sidebar stays there
+		ctx.Data["Repo"] = repo
+	}
 	if session != nil {
 		if session.Kind == agent_model.ConversationKindRepository {
-			repo, err := repo_model.GetRepositoryByID(ctx, session.RepoID)
+			sessionRepo, err := repo_model.GetRepositoryByID(ctx, session.RepoID)
 			if err != nil {
 				ctx.ServerError("GetRepositoryByID", err)
 				return
 			}
-			ctx.Data["Repo"] = repo
+			ctx.Data["Repo"] = sessionRepo
 		}
 		messages, err := agent_service.ListMessages(ctx, session.ID, chatMessagePageSize)
 		if err != nil {
@@ -213,10 +217,9 @@ func ChatDraft(ctx *context.Context) {
 			return
 		}
 	}
-	prepareChat(ctx, nil)
+	prepareChat(ctx, nil, repo)
 	ctx.Data["IsDraft"] = true
 	ctx.Data["DraftKind"] = kind
-	ctx.Data["Repo"] = repo
 	role := agent_service.ModelRoleForKind(kind)
 	ref, err := agent_service.ModelRoleRef(ctx, role)
 	if err != nil {
@@ -606,8 +609,8 @@ func ChatTitlePost(ctx *context.Context) {
 }
 
 // chatScope returns the session group the sidebar shows: the one asked for, else the one
-// the open session belongs to, else Pod.
-func chatScope(ctx *context.Context, session *agent_model.Conversation) (string, string) {
+// the open session or the draft belongs to, else Pod.
+func chatScope(ctx *context.Context, session *agent_model.Conversation, repo *repo_model.Repository) (string, string) {
 	baseURL := setting.AppSubURL + chatURL
 	if session != nil {
 		baseURL = chatSessionURL(session.ID)
@@ -620,7 +623,7 @@ func chatScope(ctx *context.Context, session *agent_model.Conversation) (string,
 	case "repository":
 		return "repository", baseURL
 	}
-	if session != nil && session.Kind == agent_model.ConversationKindRepository {
+	if repo != nil || (session != nil && session.Kind == agent_model.ConversationKindRepository) {
 		return "repository", baseURL
 	}
 	return "pod", baseURL
