@@ -381,6 +381,9 @@ export function initAgentChat() {
       }
       if (older.length < 50) button.remove();
       else button.classList.remove('disabled', 'is-loading');
+      for (const image of messagesEl.querySelectorAll('.agent-chat-attachment-image img[loading="lazy"]')) {
+        image.removeAttribute('loading');
+      }
       messagesEl.scrollTop = messagesEl.scrollHeight - anchor; // keep the reading position
     } catch {
       button.classList.remove('disabled', 'is-loading');
@@ -703,6 +706,10 @@ export function initAgentChat() {
   initTranscript();
   initMessageActions();
   scrollToLastQuestion();
+  // older messages can carry pictures; ask for them now, before anything scrolls
+  for (const image of messagesEl.querySelectorAll('.agent-chat-attachment-image img[loading="lazy"]')) {
+    image.removeAttribute('loading');
+  }
   const clearAttachments = initAttachmentList(composerEl);
   initComposerKeys(composerEl, inputEl);
 
