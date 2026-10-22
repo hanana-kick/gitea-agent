@@ -18,6 +18,7 @@ import (
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/timeutil"
 	llm "gitea.dev/services/agent/llm"
+	agent_skills "gitea.dev/services/agent/skills"
 	agent_tools "gitea.dev/services/agent/tools"
 )
 
@@ -40,6 +41,12 @@ const (
 	// generous for six words, because a model that reasons first spends the budget before
 	// it names anything; a gateway that insists on a limit still gets a valid one
 	engineTitleTokens = 512
+
+	// the skill list in the prompt is capped by count and by size, so skills cost the
+	// prompt a few lines however many the instance stores
+	skillCatalogLimit = 24 // skills, not lines
+	skillCatalogBytes = 2 * 1024
+	skillLineLimit    = 140
 
 	// the resident summarises recent work, so it reads further back and spends its
 	// excerpt budget from the newest exchange backwards
@@ -575,7 +582,17 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 		return nil
 	}
 
-	messages := buildPrompt(ctx, conversation, history, attachments, offerings)
+	// the skills of this session reach the prompt as a catalog; their steps arrive only
+	// when the model opens one. Without the tool that opens them the list would be a
+	// promise the session cannot keep, so it stays out too.
+	catalog, err := agent_skills.List(ctx, conversation.Kind)
+	if err != nil {
+		return "", "", err
+	}
+	if !slices.ContainsFunc(offerings, func(tool agent_tools.Tool) bool { return tool.Name() == agent_tools.SkillToolName }) {
+		catalog = nil
+	}
+	messages := buildPrompt(ctx, conversation, history, attachments, offerings, catalog)
 	defs := agent_tools.Definitions(offerings)
 	model := ""
 	for round := range engineToolRounds {
@@ -644,7 +661,7 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 			return e.recordTool(ctx, conversation, call, reason)
 		}
 	}
-	output, err := tool.Run(ctx, doer, call.Function.Arguments)
+	output, err := tool.Run(ctx, doer, agent_tools.Session{Kind: conversation.Kind}, call.Function.Arguments)
 	if err != nil {
 		log.Error("Agent engine: tool %s of run %d failed: %v", call.Function.Name, run.ID, err)
 		return e.recordTool(ctx, conversation, call, "The tool could not run: "+err.Error())

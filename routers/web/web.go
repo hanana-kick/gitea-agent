@@ -959,6 +959,8 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 
 			m.Combo("/roles").Get(agent_web.ModelRoles).Post(agent_web.ModelRolesPost)
 			m.Combo("/tools").Get(agent_web.Tools).Post(agent_web.ToolsPost)
+			m.Combo("/skills").Get(agent_web.Skills).Post(agent_web.SkillsPost)
+			m.Post("/skills/delete", agent_web.SkillsDelete)
 		})
 	}, adminReq, ctxDataSet(reqctx.ContextData{"EnableOAuth2": setting.OAuth2.Enabled, "EnablePackages": setting.Packages.Enabled}))
 	// ***** END: Admin *****

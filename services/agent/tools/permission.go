@@ -24,12 +24,21 @@ const (
 )
 
 // Available returns the tools a session of this kind may use, sorted by name: the
-// registry narrowed by scope and by what the admin left enabled.
+// registry narrowed by scope, by what the admin left enabled, and by whether the tool has
+// anything to offer this session.
 func Available(ctx context.Context, sessionKind string) ([]Tool, error) {
+	session := Session{Kind: sessionKind}
 	list := Registry()
 	usable := make([]Tool, 0, len(list))
 	for _, tool := range list {
 		if !tool.Scope().AllowedFor(sessionKind) {
+			continue
+		}
+		offered, err := offeredTo(ctx, tool, session)
+		if err != nil {
+			return nil, err
+		}
+		if !offered {
 			continue
 		}
 		_, enabled, err := ModeOf(ctx, tool.Name())
@@ -43,6 +52,16 @@ func Available(ctx context.Context, sessionKind string) ([]Tool, error) {
 	return usable, nil
 }
 
+// offeredTo reports whether a tool has anything to offer this session; a tool without a
+// condition is always offered.
+func offeredTo(ctx context.Context, tool Tool, session Session) (bool, error) {
+	conditional, ok := tool.(Conditional)
+	if !ok {
+		return true, nil
+	}
+	return conditional.Offered(ctx, session)
+}
+
 // Check reports how one call may proceed: run, ask its user, or not at all.
 func Check(ctx context.Context, sessionKind, name string) (Tool, Decision, error) {
 	tool, ok := Find(name)
@@ -50,6 +69,14 @@ func Check(ctx context.Context, sessionKind, name string) (Tool, Decision, error
 		return nil, DecisionDenied, fmt.Errorf("unknown tool %q", name)
 	}
 	if !tool.Scope().AllowedFor(sessionKind) {
+		return tool, DecisionDenied, nil
+	}
+	// a tool that is not offered here is not callable here either, whatever the model asks
+	offered, err := offeredTo(ctx, tool, Session{Kind: sessionKind})
+	if err != nil {
+		return tool, DecisionDenied, err
+	}
+	if !offered {
 		return tool, DecisionDenied, nil
 	}
 	mode, enabled, err := ModeOf(ctx, name)

@@ -63,6 +63,12 @@ type Arg struct {
 	Type string
 }
 
+// Session is what a tool may know about the session it runs in. Most tools only read what
+// the calling user may see, but a tool that reaches further needs the session it is in.
+type Session struct {
+	Kind string
+}
+
 // Tool is one capability the agent may call.
 type Tool interface {
 	Name() string
@@ -73,7 +79,13 @@ type Tool interface {
 	Args() []Arg
 	// Run executes the call as the calling user, so every read stays inside what that
 	// user may see.
-	Run(ctx context.Context, doer *user_model.User, args string) (string, error)
+	Run(ctx context.Context, doer *user_model.User, session Session, args string) (string, error)
+}
+
+// Conditional is a tool that is offered only when the session can use it, so a tool with
+// nothing behind it costs the prompt nothing.
+type Conditional interface {
+	Offered(ctx context.Context, session Session) (bool, error)
 }
 
 // Permission modes of a tool.

@@ -29,7 +29,7 @@ func (stubTool) Scope() agent_tools.Scope {
 	return agent_tools.ScopeUser
 }
 func (stubTool) Args() []agent_tools.Arg { return nil }
-func (stubTool) Run(context.Context, *user_model.User, string) (string, error) {
+func (stubTool) Run(context.Context, *user_model.User, agent_tools.Session, string) (string, error) {
 	return "", nil
 }
 
@@ -67,7 +67,7 @@ func TestBuildPromptKeepsTheConversationOnly(t *testing.T) {
 		{ID: 5, Role: agent_model.MessageRoleUser, Content: "and now"},
 	}
 
-	prompt := buildPrompt(context.Background(), conversation, history, nil, nil)
+	prompt := buildPrompt(context.Background(), conversation, history, nil, nil, nil)
 	// the scope prompt, then the summary standing in for the older transcript, then the exchange
 	require.Len(t, prompt, 5)
 	assert.Equal(t, []string{"system", "system", "user", "assistant", "user"}, rolesOf(prompt))
@@ -84,7 +84,7 @@ func TestBuildPromptKeepsTheConversationOnly(t *testing.T) {
 func TestBuildPromptNamesTheToolsTheModelMayCall(t *testing.T) {
 	conversation := &agent_model.Conversation{ID: 1, Kind: agent_model.ConversationKindServer}
 
-	prompt := buildPrompt(context.Background(), conversation, nil, nil, []agent_tools.Tool{stubTool{}})
+	prompt := buildPrompt(context.Background(), conversation, nil, nil, []agent_tools.Tool{stubTool{}}, nil)
 	require.NotEmpty(t, prompt)
 	assert.Contains(t, prompt[0].Content, "call the tools below")
 	assert.Contains(t, prompt[0].Content, "gitea_list_repos: List the repositories you can see")
@@ -102,7 +102,7 @@ func TestBuildPromptHandsTheFilesOver(t *testing.T) {
 	history := []*agent_model.Message{{ID: 1, Role: agent_model.MessageRoleUser, Content: "take a look"}}
 	attachments := map[int64][]*agent_model.Attachment{1: {note, picture, tooBig}}
 
-	prompt := buildPrompt(context.Background(), conversation, history, attachments, nil)
+	prompt := buildPrompt(context.Background(), conversation, history, attachments, nil, nil)
 	require.Len(t, prompt, 2)
 	asked := prompt[1]
 	assert.Contains(t, asked.Content, "take a look")
@@ -115,6 +115,30 @@ func TestBuildPromptHandsTheFilesOver(t *testing.T) {
 	assert.True(t, strings.HasPrefix(asked.Images[0], "data:image/png;base64,"), asked.Images[0])
 	// a picture too big to send stays a download for the reader
 	assert.Contains(t, asked.Content, "[attached file: huge.png (4.0 MB)]")
+}
+
+// skillCatalogPrompt is what a session pays for its skills: a line each, and the steps only
+// when the model opens one.
+func TestSkillCatalogStaysSmall(t *testing.T) {
+	assert.Empty(t, skillCatalogPrompt(nil), "no skills, nothing in the prompt")
+
+	one := skillCatalogPrompt([]*agent_model.Skill{{Name: "issue-triage", Description: "Sort  incoming\nissues"}})
+	assert.Contains(t, one, "gitea_read_skill")
+	assert.Contains(t, one, "- issue-triage: Sort incoming issues", "the description is one line")
+	assert.NotContains(t, one, "steps", "the body is not in the catalog")
+
+	long := strings.Repeat("x", skillLineLimit*2)
+	clipped := skillCatalogPrompt([]*agent_model.Skill{{Name: "long", Description: long}})
+	assert.Contains(t, clipped, "…")
+	assert.Less(t, len(clipped), skillLineLimit+200)
+
+	many := make([]*agent_model.Skill, 0, skillCatalogLimit+5)
+	for range skillCatalogLimit + 5 {
+		many = append(many, &agent_model.Skill{Name: "skill", Description: "does something"})
+	}
+	capped := skillCatalogPrompt(many)
+	assert.Contains(t, capped, "(more skills are not listed here)")
+	assert.LessOrEqual(t, len(capped), skillCatalogBytes+200, "the catalog never grows past its budget")
 }
 
 func TestImageDataURLOnlyForPictures(t *testing.T) {

@@ -35,6 +35,7 @@ func (GiteaTools) Registry() []Tool {
 		searchIssuesTool{},
 		readIssueTool{},
 		listReposTool{},
+		readSkillTool{},
 	}
 }
 
@@ -54,7 +55,7 @@ func (searchIssuesTool) Args() []Arg {
 	return []Arg{{Name: "keyword", Description: "Text to look for in issue titles and bodies"}}
 }
 
-func (searchIssuesTool) Run(ctx context.Context, doer *user_model.User, args string) (string, error) {
+func (searchIssuesTool) Run(ctx context.Context, doer *user_model.User, _ Session, args string) (string, error) {
 	var params struct {
 		Keyword string `json:"keyword"`
 	}
@@ -142,7 +143,7 @@ func (readIssueTool) Args() []Arg {
 	return []Arg{{Name: "issue_id", Description: "The numeric issue ID from gitea_search_issues", Type: "integer"}}
 }
 
-func (readIssueTool) Run(ctx context.Context, doer *user_model.User, args string) (string, error) {
+func (readIssueTool) Run(ctx context.Context, doer *user_model.User, _ Session, args string) (string, error) {
 	var params struct {
 		IssueID int64 `json:"issue_id"`
 	}
@@ -189,7 +190,7 @@ func (listReposTool) Scope() Scope { return ScopeUser }
 
 func (listReposTool) Args() []Arg { return nil }
 
-func (listReposTool) Run(ctx context.Context, doer *user_model.User, _ string) (string, error) {
+func (listReposTool) Run(ctx context.Context, doer *user_model.User, _ Session, _ string) (string, error) {
 	repos, _, err := repo_model.GetUserRepositories(ctx, repo_model.SearchRepoOptions{
 		Actor:       doer,
 		ListOptions: db_list.ListOptions{Page: 1, PageSize: toolResultLimit},

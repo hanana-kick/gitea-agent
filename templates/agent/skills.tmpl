@@ -1,0 +1,105 @@
+{{template "admin/layout_head" (dict "pageClass" "admin agent")}}
+	<div class="admin-setting-content">
+		<h4 class="ui top attached header tw-flex tw-items-center">
+			<div class="tw-flex-1">{{ctx.Locale.Tr "agent.skills_title"}}</div>
+			<button type="button" class="ui small primary button show-modal" data-modal="#agent-skill-modal"
+				data-modal-form.url="{{AppSubUrl}}/-/admin/agent/skills">
+				{{ctx.Locale.Tr "agent.skills_new"}}
+			</button>
+		</h4>
+		<div class="ui attached segment">
+			<p class="help">{{ctx.Locale.Tr "agent.skills_help"}}</p>
+			{{if .Rows}}
+				<table class="ui very basic table unstackable">
+					<thead>
+						<tr>
+							<th>{{ctx.Locale.Tr "agent.skills_name"}}</th>
+							<th>{{ctx.Locale.Tr "agent.skills_scope"}}</th>
+							<th>{{ctx.Locale.Tr "agent.skills_enabled"}}</th>
+							<th></th>
+						</tr>
+					</thead>
+					<tbody>
+						{{range .Rows}}
+							<tr>
+								<td>
+									<code>{{.Name}}</code>
+									<div class="muted">{{.Description}}</div>
+								</td>
+								<td class="tw-whitespace-nowrap">
+									{{if eq .Scope "server"}}
+										{{ctx.Locale.Tr "agent.skills_scope_server"}}
+									{{else if eq .Scope "repository"}}
+										{{ctx.Locale.Tr "agent.skills_scope_repository"}}
+									{{else}}
+										{{ctx.Locale.Tr "agent.skills_scope_common"}}
+									{{end}}
+								</td>
+								<td>{{if .Enabled}}{{svg "octicon-check" 16}}{{else}}{{svg "octicon-x" 16}}{{end}}</td>
+								<td class="tw-whitespace-nowrap">
+									<button type="button" class="ui small button show-modal" data-modal="#agent-skill-modal"
+										data-modal-form.url="{{AppSubUrl}}/-/admin/agent/skills"
+										data-modal-name.value="{{.Name}}"
+										data-modal-description.value="{{.Description}}"
+										data-modal-body.value="{{.Body}}"
+										data-modal-scope.value="{{.Scope}}"
+										data-modal-enabled.checked="{{.Enabled}}">
+										{{ctx.Locale.Tr "agent.skills_edit"}}
+									</button>
+									<form class="tw-inline" method="post" action="{{AppSubUrl}}/-/admin/agent/skills/delete">
+										<input type="hidden" name="name" value="{{.Name}}">
+										<button class="ui small button tw-text-red" type="submit">{{ctx.Locale.Tr "agent.skills_delete"}}</button>
+									</form>
+								</td>
+							</tr>
+						{{end}}
+					</tbody>
+				</table>
+			{{else}}
+				<p class="tw-text-center">{{ctx.Locale.Tr "agent.skills_none"}}</p>
+			{{end}}
+		</div>
+	</div>
+
+	<div class="ui modal" id="agent-skill-modal">
+		<div class="header">{{ctx.Locale.Tr "agent.skills_edit"}}</div>
+		<form class="ui form" method="post" action="{{AppSubUrl}}/-/admin/agent/skills">
+			<div class="content">
+				<div class="required field">
+					<label for="skill-name">{{ctx.Locale.Tr "agent.skills_name"}}</label>
+					<input id="skill-name" name="name" maxlength="64" required>
+					<p class="help">{{ctx.Locale.Tr "agent.skills_name_help"}}</p>
+				</div>
+				<div class="required field">
+					<label for="skill-description">{{ctx.Locale.Tr "agent.skills_description"}}</label>
+					<input id="skill-description" name="description" maxlength="255" required>
+					<p class="help">{{ctx.Locale.Tr "agent.skills_description_help"}}</p>
+				</div>
+				<div class="required field">
+					<label for="skill-scope">{{ctx.Locale.Tr "agent.skills_scope"}}</label>
+					<select id="skill-scope" name="scope" class="ui dropdown">
+						<option value="common">{{ctx.Locale.Tr "agent.skills_scope_common"}}</option>
+						<option value="repository">{{ctx.Locale.Tr "agent.skills_scope_repository"}}</option>
+						<option value="server">{{ctx.Locale.Tr "agent.skills_scope_server"}}</option>
+					</select>
+					<p class="help">{{ctx.Locale.Tr "agent.skills_scope_help"}}</p>
+				</div>
+				<div class="required field">
+					<label for="skill-body">{{ctx.Locale.Tr "agent.skills_body"}}</label>
+					<textarea id="skill-body" name="body" rows="14" required></textarea>
+					<p class="help">{{ctx.Locale.Tr "agent.skills_body_help"}}</p>
+				</div>
+				<div class="field">
+					<div class="ui checkbox">
+						<input id="skill-enabled" name="enabled" type="checkbox" value="true" checked>
+						<label for="skill-enabled">{{ctx.Locale.Tr "agent.skills_enabled"}}</label>
+					</div>
+				</div>
+			</div>
+			<div class="actions">
+				<button class="ui cancel button" type="button">{{ctx.Locale.Tr "cancel"}}</button>
+				<button class="ui primary button" type="submit">{{ctx.Locale.Tr "save"}}</button>
+			</div>
+		</form>
+	</div>
+{{template "admin/layout_footer" .}}

@@ -21,7 +21,7 @@ func TestRegistryIsStableAndComplete(t *testing.T) {
 		names = append(names, tool.Name())
 		assert.NotEmpty(t, tool.Description(), "%s needs a description for the model", tool.Name())
 	}
-	assert.Equal(t, []string{"gitea_list_repos", "gitea_read_issue", "gitea_search_issues"}, names)
+	assert.Equal(t, []string{"gitea_list_repos", "gitea_read_issue", "gitea_read_skill", "gitea_search_issues"}, names)
 }
 
 func TestScopeAllowedFor(t *testing.T) {

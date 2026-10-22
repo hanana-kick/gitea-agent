@@ -55,6 +55,38 @@ func toolsPrompt(offerings []agent_tools.Tool) string {
 	return strings.TrimRight(builder.String(), "\n")
 }
 
+// skillCatalogPrompt lists the skills of a session by name and one line each. The steps
+// themselves stay out of the prompt until the model opens a skill, so the catalog costs
+// the prompt a line per skill. It is written for the model, so it stays in English.
+func skillCatalogPrompt(list []*agent_model.Skill) string {
+	if len(list) == 0 {
+		return ""
+	}
+	builder := strings.Builder{}
+	builder.WriteString("You have skills: procedures written down for this session. Open one with ")
+	builder.WriteString("gitea_read_skill before you start a task it covers, and follow it.\n")
+	shown := 0
+	for _, skill := range list {
+		line := "- " + skill.Name + ": " + clipLine(skill.Description, skillLineLimit) + "\n"
+		if shown == skillCatalogLimit || builder.Len()+len(line) > skillCatalogBytes {
+			builder.WriteString("- (more skills are not listed here)\n")
+			break
+		}
+		builder.WriteString(line)
+		shown++
+	}
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+// clipLine cuts one line of catalog text to what the prompt can afford.
+func clipLine(text string, limit int) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if len(text) <= limit {
+		return text
+	}
+	return strings.TrimSpace(text[:limit]) + "…"
+}
+
 // scopePrompt describes what the session is allowed to look after. It is written for the
 // model, not for the UI, so it stays in English.
 func scopePrompt(ctx context.Context, conversation *agent_model.Conversation) string {
@@ -81,15 +113,16 @@ func scopePrompt(ctx context.Context, conversation *agent_model.Conversation) st
 // transcript. Files sent with a message are inlined when they are text and attached as
 // pictures when the model accepts them. Tool records are history for the reader, so they
 // stay out of the prompt.
-func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, history []*agent_model.Message, attachments map[int64][]*agent_model.Attachment, offerings []agent_tools.Tool) []llm.Message {
+func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, history []*agent_model.Message, attachments map[int64][]*agent_model.Attachment, offerings []agent_tools.Tool, catalog []*agent_model.Skill) []llm.Message {
 	messages := make([]llm.Message, 0, len(history)+1)
-	messages = append(messages, llm.Message{
-		Role: "system",
-		Content: scopePrompt(ctx, conversation) + "\n\n" +
-			"You answer through a chat transcript. Answer in the language the user writes in, " +
-			"and keep answers short unless asked for detail.\n\n" +
-			toolsPrompt(offerings),
-	})
+	system := scopePrompt(ctx, conversation) + "\n\n" +
+		"You answer through a chat transcript. Answer in the language the user writes in, " +
+		"and keep answers short unless asked for detail.\n\n" +
+		toolsPrompt(offerings)
+	if skills := skillCatalogPrompt(catalog); skills != "" {
+		system += "\n\n" + skills
+	}
+	messages = append(messages, llm.Message{Role: "system", Content: system})
 
 	// keep the newest history when the transcript is long; the summary stands in for
 	// everything dropped, so older context is not lost entirely
@@ -97,7 +130,8 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 	if len(recent) > engineHistoryLimit {
 		recent = recent[len(recent)-engineHistoryLimit:]
 	}
-	total := 0
+	// the system prompt is spent before any history, so the transcript budget accounts for it
+	total := len(system)
 	kept := make([]llm.Message, 0, len(recent))
 	for i := range slices.Backward(recent) {
 		message := recent[i]
