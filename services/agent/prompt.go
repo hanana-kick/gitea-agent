@@ -5,21 +5,30 @@ package agent
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	agent_model "gitea.dev/models/agent"
 	repo_model "gitea.dev/models/repo"
 	llm "gitea.dev/services/agent/llm"
+	agent_tools "gitea.dev/services/agent/tools"
 )
 
-// messageWithAttachments appends the readable files of a message to its text.
-func messageWithAttachments(message *agent_model.Message, attachments []*agent_model.Attachment) string {
+// messageFiles renders the files sent with a message: text files are inlined where they
+// can be read, pictures become data URLs the model is shown when it accepts them.
+func messageFiles(message *agent_model.Message, attachments []*agent_model.Attachment) (string, []string) {
 	if len(attachments) == 0 {
-		return message.Content
+		return message.Content, nil
 	}
 	builder := strings.Builder{}
 	builder.WriteString(message.Content)
+	var images []string
 	for _, attachment := range attachments {
+		if picture := ImageDataURL(attachment); picture != "" {
+			builder.WriteString("\n\n[attached image: " + attachment.Name + " (" + attachment.SizeText() + ")]")
+			images = append(images, picture)
+			continue
+		}
 		text := AttachmentText(attachment)
 		if text == "" {
 			builder.WriteString("\n\n[attached file: " + attachment.Name + " (" + attachment.SizeText() + ")]")
@@ -27,7 +36,23 @@ func messageWithAttachments(message *agent_model.Message, attachments []*agent_m
 		}
 		builder.WriteString("\n\n[attached file: " + attachment.Name + "]\n```\n" + text + "\n```")
 	}
-	return builder.String()
+	return builder.String(), images
+}
+
+// toolsPrompt tells the model what it may look up for itself. It is written for the
+// model, so it stays in English.
+func toolsPrompt(offerings []agent_tools.Tool) string {
+	if len(offerings) == 0 {
+		return "You answer from what you know and say plainly when something can not be done."
+	}
+	builder := strings.Builder{}
+	builder.WriteString("You can call the tools below to read this Gitea instance yourself. Call one ")
+	builder.WriteString("whenever it beats guessing, and say what you looked up; never invent what a ")
+	builder.WriteString("tool would have returned.\n")
+	for _, tool := range offerings {
+		builder.WriteString("- " + tool.Name() + ": " + tool.Description() + "\n")
+	}
+	return strings.TrimRight(builder.String(), "\n")
 }
 
 // scopePrompt describes what the session is allowed to look after. It is written for the
@@ -52,16 +77,18 @@ func scopePrompt(ctx context.Context, conversation *agent_model.Conversation) st
 	return "You are Pod, an agent of this Gitea instance."
 }
 
-// buildPrompt renders the messages handed to the model: the scope prompt, then the transcript.
-// Files sent with a message are inlined when they are text, so the model can read them.
-func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, history []*agent_model.Message, attachments map[int64][]*agent_model.Attachment) []llm.Message {
+// buildPrompt renders the messages handed to the model: the scope prompt, then the
+// transcript. Files sent with a message are inlined when they are text and attached as
+// pictures when the model accepts them. Tool records are history for the reader, so they
+// stay out of the prompt.
+func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, history []*agent_model.Message, attachments map[int64][]*agent_model.Attachment, offerings []agent_tools.Tool) []llm.Message {
 	messages := make([]llm.Message, 0, len(history)+1)
 	messages = append(messages, llm.Message{
 		Role: "system",
 		Content: scopePrompt(ctx, conversation) + "\n\n" +
-			"You answer through a chat transcript. Tool use is not available yet, so answer from what " +
-			"you know and say plainly when something can not be done. Answer in the language the user " +
-			"writes in, and keep answers short unless asked for detail.",
+			"You answer through a chat transcript. Answer in the language the user writes in, " +
+			"and keep answers short unless asked for detail.\n\n" +
+			toolsPrompt(offerings),
 	})
 
 	// keep the newest history when the transcript is long; the summary stands in for
@@ -72,22 +99,25 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 	}
 	total := 0
 	kept := make([]llm.Message, 0, len(recent))
-	for i := len(recent) - 1; i >= 0; i-- {
+	for i := range slices.Backward(recent) {
 		message := recent[i]
-		if message.Role == agent_model.MessageRoleSystem {
+		if message.Role != agent_model.MessageRoleUser && message.Role != agent_model.MessageRoleAssistant {
 			continue
 		}
-		content := messageWithAttachments(message, attachments[message.ID])
+		content, images := messageFiles(message, attachments[message.ID])
 		total += len(content)
+		for _, picture := range images {
+			total += len(picture)
+		}
 		if total > enginePromptLimit && len(kept) > 0 {
 			break
 		}
-		kept = append(kept, llm.Message{Role: message.Role, Content: content})
+		kept = append(kept, llm.Message{Role: message.Role, Content: content, Images: images})
 	}
 	if summary := strings.TrimSpace(conversation.Summary); summary != "" {
 		messages = append(messages, llm.Message{Role: "system", Content: "Earlier in this conversation: " + summary})
 	}
-	for i := len(kept) - 1; i >= 0; i-- {
+	for i := range slices.Backward(kept) {
 		messages = append(messages, kept[i])
 	}
 	return messages

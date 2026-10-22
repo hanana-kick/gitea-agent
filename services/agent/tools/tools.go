@@ -5,9 +5,12 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
+	"slices"
+	"strings"
 
+	agent_model "gitea.dev/models/agent"
 	user_model "gitea.dev/models/user"
+	llm "gitea.dev/services/agent/llm"
 )
 
 // Scope is the reach a tool needs: it decides which session kinds may call it and what
@@ -23,11 +26,41 @@ const (
 	ScopeRepository Scope = "repository"
 )
 
-// AllowedFor reports whether a session kind may use the tool: the session kind mirrors
-// the scope naming (user sessions map to ScopeUser, server sessions to ScopeServer, and
-// repository sessions to ScopeRepository).
+// reach ranks how far a scope looks. A session may use the tools of its own scope and of
+// every narrower one, so a repository session can still read what its user can see.
+func (s Scope) reach() int {
+	switch s {
+	case ScopeServer:
+		return 2
+	case ScopeRepository:
+		return 1
+	}
+	return 0
+}
+
+// reachOf ranks what a session kind may reach: the resident and a server session see the
+// whole instance, a repository session sees one repository.
+func reachOf(sessionKind string) int {
+	switch sessionKind {
+	case agent_model.ConversationKindResident, agent_model.ConversationKindServer:
+		return 2
+	case agent_model.ConversationKindRepository:
+		return 1
+	}
+	return 0
+}
+
+// AllowedFor reports whether a session kind may use a tool of this scope.
 func (s Scope) AllowedFor(sessionKind string) bool {
-	return s == Scope(sessionKind)
+	return s.reach() <= reachOf(sessionKind)
+}
+
+// Arg is one argument of a tool, described for the model.
+type Arg struct {
+	Name        string
+	Description string
+	// Type is the JSON type of the argument; "string" when empty.
+	Type string
 }
 
 // Tool is one capability the agent may call.
@@ -36,11 +69,11 @@ type Tool interface {
 	// Description is written for the model: what it does and when to use it.
 	Description() string
 	Scope() Scope
-	// Args returns the JSON-schema-style argument description shown to the model.
-	Args() map[string]string
+	// Args returns the arguments in the order they are shown to the model.
+	Args() []Arg
 	// Run executes the call as the calling user, so every read stays inside what that
 	// user may see.
-	Run(ctx context.Context, doer *user_model.User, args json.RawMessage) (string, error)
+	Run(ctx context.Context, doer *user_model.User, args string) (string, error)
 }
 
 // Permission modes of a tool.
@@ -55,5 +88,45 @@ const (
 
 // Registry returns every tool sorted by name; callers filter by scope and permission.
 func Registry() []Tool {
-	return []Tool{}
+	list := append([]Tool{}, GiteaTools{}.Registry()...)
+	slices.SortFunc(list, func(a, b Tool) int { return strings.Compare(a.Name(), b.Name()) })
+	return list
+}
+
+// Find returns a registered tool by name.
+func Find(name string) (Tool, bool) {
+	for _, tool := range Registry() {
+		if tool.Name() == name {
+			return tool, true
+		}
+	}
+	return nil, false
+}
+
+// Definitions renders tools the way an OpenAI-compatible model expects to read them.
+func Definitions(list []Tool) []llm.ToolDef {
+	defs := make([]llm.ToolDef, 0, len(list))
+	for _, tool := range list {
+		args := tool.Args()
+		properties := make(map[string]any, len(args))
+		required := make([]string, 0, len(args))
+		for _, arg := range args {
+			kind := arg.Type
+			if kind == "" {
+				kind = "string"
+			}
+			properties[arg.Name] = map[string]any{"type": kind, "description": arg.Description}
+			required = append(required, arg.Name)
+		}
+		parameters := map[string]any{"type": "object", "properties": properties}
+		if len(required) > 0 {
+			parameters["required"] = required
+		}
+		defs = append(defs, llm.ToolDef{Type: "function", Function: llm.ToolFunction{
+			Name:        tool.Name(),
+			Description: tool.Description(),
+			Parameters:  parameters,
+		}})
+	}
+	return defs
 }

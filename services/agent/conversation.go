@@ -602,7 +602,8 @@ func AppendMessage(ctx context.Context, conversationID int64, role, content stri
 		return nil, errors.New("a message needs content")
 	}
 	switch role {
-	case agent_model.MessageRoleUser, agent_model.MessageRoleAssistant, agent_model.MessageRoleSystem:
+	// every caller passes a literal role, so a reader can never forge one of these
+	case agent_model.MessageRoleUser, agent_model.MessageRoleAssistant, agent_model.MessageRoleSystem, agent_model.MessageRoleTool:
 	default:
 		return nil, fmt.Errorf("unknown message role %q", role)
 	}

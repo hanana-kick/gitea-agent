@@ -4,13 +4,16 @@
 package agent
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"strconv"
 	"time"
 
 	agent_model "gitea.dev/models/agent"
+	"gitea.dev/modules/json"
+	"gitea.dev/modules/log"
 	"gitea.dev/modules/templates"
 	agent_service "gitea.dev/services/agent"
 	"gitea.dev/services/context"
@@ -43,6 +46,14 @@ type messageEvent struct {
 	Attachments []attachmentEvent `json:"attachments,omitempty"`
 }
 
+// approvalEvent is one tool call waiting for the reader to allow it.
+type approvalEvent struct {
+	ID        int64  `json:"id"`
+	RunID     int64  `json:"runID"`
+	Tool      string `json:"tool"`
+	Arguments string `json:"arguments"`
+}
+
 // ChatEvents streams the updates of one session: transcript entries and run state. A client
 // may drop at any time; the run continues on the server and the transcript is stored.
 func ChatEvents(ctx *context.Context) {
@@ -54,7 +65,7 @@ func ChatEvents(ctx *context.Context) {
 
 	flusher, ok := ctx.Resp.(http.Flusher)
 	if !ok {
-		ctx.ServerError("agent events", fmt.Errorf("the response writer does not support streaming"))
+		ctx.ServerError("agent events", errors.New("the response writer does not support streaming"))
 		return
 	}
 	header := ctx.Resp.Header()
@@ -74,7 +85,19 @@ func ChatEvents(ctx *context.Context) {
 
 	// catch the client up on what it missed, then report the current run
 	replayEvents(ctx, conversation, eventsSince(ctx))
-	writeEvent(ctx, flusher, agent_service.EventRun, agent_service.RunStateOf(latestRunState(ctx, conversation.ID)))
+	if err := writeEvent(ctx, agent_service.EventRun, agent_service.RunStateOf(latestRunState(ctx, conversation.ID))); err != nil {
+		return
+	}
+	// a client that comes back finds the calls still waiting for its answer
+	approvals, err := agent_service.PendingApprovals(ctx, conversation.ID)
+	if err != nil {
+		log.Error("agent events: unable to list pending tool calls of session %d: %v", conversation.ID, err)
+	}
+	for _, approval := range approvals {
+		if err := writeEvent(ctx, agent_service.EventApproval, approval); err != nil {
+			return
+		}
+	}
 	flusher.Flush()
 
 	heartbeat := time.NewTicker(eventsHeartbeat)
@@ -94,7 +117,7 @@ func ChatEvents(ctx *context.Context) {
 			if !ok {
 				return
 			}
-			if err := writeEvent(ctx, flusher, event.Name, event.Data); err != nil {
+			if err := writeEvent(ctx, event.Name, event.Data); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -102,7 +125,7 @@ func ChatEvents(ctx *context.Context) {
 			if !ok {
 				return
 			}
-			if err := writeEvent(ctx, flusher, event.Name, event.Data); err != nil {
+			if err := writeEvent(ctx, event.Name, event.Data); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -115,7 +138,7 @@ func ChatEvents(ctx *context.Context) {
 func ChatEventsAll(ctx *context.Context) {
 	flusher, ok := ctx.Resp.(http.Flusher)
 	if !ok {
-		ctx.ServerError("agent events", fmt.Errorf("the response writer does not support streaming"))
+		ctx.ServerError("agent events", errors.New("the response writer does not support streaming"))
 		return
 	}
 	header := ctx.Resp.Header()
@@ -146,7 +169,7 @@ func ChatEventsAll(ctx *context.Context) {
 			if !ok {
 				return
 			}
-			if err := writeEvent(ctx, flusher, event.Name, event.Data); err != nil {
+			if err := writeEvent(ctx, event.Name, event.Data); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -186,7 +209,7 @@ func replayEvents(ctx *context.Context, conversation *agent_model.Conversation, 
 		missed = missed[len(missed)-eventsReplay:]
 	}
 	for _, message := range missed {
-		if _, err := fmt.Fprint(ctx.Resp, formatEvent(ctx, agent_service.EventMessage, messageEventOf(ctx, message), message.ID)); err != nil {
+		if _, err := fmt.Fprint(ctx.Resp, formatEvent(agent_service.EventMessage, messageEventOf(ctx, message), message.ID)); err != nil {
 			return
 		}
 	}
@@ -194,10 +217,11 @@ func replayEvents(ctx *context.Context, conversation *agent_model.Conversation, 
 
 // writeEvent resolves the payload of an event and writes it. Messages carry their ID as the
 // event ID so a reconnecting client can resume from it.
-func writeEvent(ctx *context.Context, flusher http.Flusher, name string, data any) error {
+func writeEvent(ctx *context.Context, name string, data any) error {
 	eventID := int64(0)
 	payload := data
-	if name == agent_service.EventMessage {
+	switch name {
+	case agent_service.EventMessage:
 		messageID, ok := data.(int64)
 		if !ok {
 			return nil
@@ -208,12 +232,18 @@ func writeEvent(ctx *context.Context, flusher http.Flusher, name string, data an
 		}
 		payload = messageEventOf(ctx, message)
 		eventID = message.ID
+	case agent_service.EventApproval:
+		approval, ok := data.(*agent_model.ToolApproval)
+		if !ok {
+			return nil
+		}
+		payload = approvalEvent{ID: approval.ID, RunID: approval.RunID, Tool: approval.Tool, Arguments: approval.Arguments}
 	}
-	_, err := fmt.Fprint(ctx.Resp, formatEvent(ctx, name, payload, eventID))
+	_, err := fmt.Fprint(ctx.Resp, formatEvent(name, payload, eventID))
 	return err
 }
 
-func formatEvent(ctx *context.Context, name string, data any, eventID int64) string {
+func formatEvent(name string, data any, eventID int64) string {
 	body, err := json.Marshal(data)
 	if err != nil {
 		return ""
@@ -239,6 +269,10 @@ func messageEventOf(ctx *context.Context, message *agent_model.Message) messageE
 		HTML:        string(templates.NewRenderUtils(ctx).MarkdownToHtml(message.Content)),
 		TimeHTML:    string(templates.TimeSince(message.CreatedUnix)),
 	}
+	if message.Role == agent_model.MessageRoleTool {
+		// a tool record is a log line, not prose: it stays verbatim in one block
+		event.HTML = "<pre>" + html.EscapeString(message.Content) + "</pre>"
+	}
 	return event
 }
 
@@ -248,6 +282,8 @@ func messageRoleLabel(ctx *context.Context, role string) string {
 		return string(ctx.Tr("agent.chat_you"))
 	case agent_model.MessageRoleAssistant:
 		return string(ctx.Tr("agent.chat_agent"))
+	case agent_model.MessageRoleTool:
+		return string(ctx.Tr("agent.chat_tool"))
 	}
 	return string(ctx.Tr("agent.chat_system"))
 }

@@ -167,6 +167,12 @@
 			data-events-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/events"
 			data-messages-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages"
 			data-cancel-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/cancel"
+			data-approvals-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/approvals"
+			data-run-id="{{.PendingRunID}}"
+			data-approval-title="{{ctx.Locale.Tr "agent.chat_approval_title" "%s"}}"
+			data-approval-help="{{ctx.Locale.Tr "agent.chat_approval_help"}}"
+			data-approval-allow="{{ctx.Locale.Tr "agent.chat_approval_allow"}}"
+			data-approval-refuse="{{ctx.Locale.Tr "agent.chat_approval_refuse"}}"
 			data-labels="{{.LabelsJSON}}"{{end}}>
 			{{if .IsDraft}}
 				<header class="agent-chat-head">
@@ -226,43 +232,51 @@
 							data-oldest="{{.OldestMessageID}}">{{ctx.Locale.Tr "agent.chat_load_older"}}</button>
 					{{end}}
 					{{range .Messages}}
-						<div class="agent-chat-message {{.Role}}" data-message-id="{{.ID}}">
-							<div class="agent-chat-message-meta">
-								{{if eq .Role "user"}}
-									{{ctx.Locale.Tr "agent.chat_you"}}
-								{{else if eq .Role "assistant"}}
-									{{ctx.Locale.Tr "agent.chat_agent"}}
-								{{else}}
-									{{ctx.Locale.Tr "agent.chat_system"}}
-								{{end}}
-								· {{DateUtils.TimeSince .CreatedUnix}}
+						{{if eq .Role "tool"}}
+							{{/* a tool call and its result is a log line of the transcript, not a message */}}
+							<div class="agent-chat-message tool agent-chat-tool" data-message-id="{{.ID}}">
+								<div class="agent-chat-message-meta">{{ctx.Locale.Tr "agent.chat_tool"}} · {{DateUtils.TimeSince .CreatedUnix}}</div>
+								<div class="agent-chat-tool-body"><pre>{{.Content}}</pre></div>
 							</div>
-							<div class="agent-chat-bubble">
-								<div class="render-content markup">{{ctx.RenderUtils.MarkdownToHtml .Content}}</div>
-								{{$attachments := index $.MessageAttachments .ID}}
-								{{if $attachments}}
-									<div class="agent-chat-attachments">
-										{{range $attachments}}
-											<a class="agent-chat-attachment" href="{{AppSubUrl}}{{.URL}}">
-												{{svg "octicon-paperclip" 14}}
-												<span class="gt-ellipsis">{{.Name}}</span>
-												<span class="agent-chat-attachment-size">{{.SizeText}}</span>
-											</a>
-										{{end}}
-									</div>
-								{{end}}
+						{{else}}
+							<div class="agent-chat-message {{.Role}}" data-message-id="{{.ID}}">
+								<div class="agent-chat-message-meta">
+									{{if eq .Role "user"}}
+										{{ctx.Locale.Tr "agent.chat_you"}}
+									{{else if eq .Role "assistant"}}
+										{{ctx.Locale.Tr "agent.chat_agent"}}
+									{{else}}
+										{{ctx.Locale.Tr "agent.chat_system"}}
+									{{end}}
+									· {{DateUtils.TimeSince .CreatedUnix}}
+								</div>
+								<div class="agent-chat-bubble">
+									<div class="render-content markup">{{ctx.RenderUtils.MarkdownToHtml .Content}}</div>
+									{{$attachments := index $.MessageAttachments .ID}}
+									{{if $attachments}}
+										<div class="agent-chat-attachments">
+											{{range $attachments}}
+												<a class="agent-chat-attachment" href="{{AppSubUrl}}{{.URL}}">
+													{{svg "octicon-paperclip" 14}}
+													<span class="gt-ellipsis">{{.Name}}</span>
+													<span class="agent-chat-attachment-size">{{.SizeText}}</span>
+												</a>
+											{{end}}
+										</div>
+									{{end}}
+								</div>
+								<div class="agent-chat-message-actions">
+									<button type="button" class="agent-chat-copy-message" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_copy"}}">{{svg "octicon-copy" 14}}</button>
+									{{if eq .Role "user"}}
+										<button type="button" class="agent-chat-edit-message show-modal"
+											data-modal="#agent-chat-edit-modal"
+											data-modal-form.url="{{AppSubUrl}}/-/agent/{{$.Session.ID}}/messages/{{.ID}}"
+											data-tooltip-content="{{ctx.Locale.Tr "agent.chat_edit"}}">{{svg "octicon-pencil" 14}}</button>
+									{{end}}
+								</div>
+								<div class="agent-chat-source tw-hidden">{{.Content}}</div>
 							</div>
-							<div class="agent-chat-message-actions">
-								<button type="button" class="agent-chat-copy-message" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_copy"}}">{{svg "octicon-copy" 14}}</button>
-								{{if eq .Role "user"}}
-									<button type="button" class="agent-chat-edit-message show-modal"
-										data-modal="#agent-chat-edit-modal"
-										data-modal-form.url="{{AppSubUrl}}/-/agent/{{$.Session.ID}}/messages/{{.ID}}"
-										data-tooltip-content="{{ctx.Locale.Tr "agent.chat_edit"}}">{{svg "octicon-pencil" 14}}</button>
-								{{end}}
-							</div>
-							<div class="agent-chat-source tw-hidden">{{.Content}}</div>
-						</div>
+						{{end}}
 					{{else}}
 						<div class="agent-chat-empty">{{ctx.Locale.Tr "agent.chat_no_messages"}}</div>
 					{{end}}
@@ -272,6 +286,25 @@
 							<div class="agent-chat-bubble">
 								<div class="agent-chat-pending-status"><span class="agent-chat-reasoning-dots"><i></i><i></i><i></i></span><span class="agent-chat-pending-label">{{.PendingText}}</span></div>
 								<div class="agent-chat-live-text"></div>
+							</div>
+						</div>
+					{{end}}
+					{{range .PendingApprovals}}
+						{{/* the run waits for this reader: the card posts the decision and the transcript reloads */}}
+						<div class="agent-chat-approval" data-approval-id="{{.ID}}" data-run-id="{{.RunID}}">
+							<div class="agent-chat-approval-title">{{ctx.Locale.Tr "agent.chat_approval_title" .Tool}}</div>
+							<div class="agent-chat-approval-tool">
+								<span class="agent-chat-approval-name">{{.Tool}}</span>
+								{{if .Arguments}}<span class="agent-chat-approval-args">{{.Arguments}}</span>{{end}}
+							</div>
+							<p class="agent-chat-approval-help">{{ctx.Locale.Tr "agent.chat_approval_help"}}</p>
+							<div class="agent-chat-approval-actions">
+								<form method="post" action="{{AppSubUrl}}/-/agent/{{$.Session.ID}}/approvals/{{.ID}}/allow">
+									<button type="submit" class="ui small primary button">{{ctx.Locale.Tr "agent.chat_approval_allow"}}</button>
+								</form>
+								<form method="post" action="{{AppSubUrl}}/-/agent/{{$.Session.ID}}/approvals/{{.ID}}/refuse">
+									<button type="submit" class="ui small button">{{ctx.Locale.Tr "agent.chat_approval_refuse"}}</button>
+								</form>
 							</div>
 						</div>
 					{{end}}

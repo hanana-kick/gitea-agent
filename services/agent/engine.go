@@ -14,9 +14,11 @@ import (
 
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
+	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/timeutil"
 	llm "gitea.dev/services/agent/llm"
+	agent_tools "gitea.dev/services/agent/tools"
 )
 
 const (
@@ -25,6 +27,12 @@ const (
 	engineRunTimeout   = 10 * time.Minute
 	engineHistoryLimit = 40
 	enginePromptLimit  = 100 * 1024 // cap the transcript handed to the model
+
+	// engineToolRounds caps how often one answer may stop to call tools before it has
+	// to answer without them, so a model that keeps calling still finishes.
+	engineToolRounds = 6
+	// engineApprovalWait is how long a manual tool call waits for its user.
+	engineApprovalWait = 5 * time.Minute
 
 	engineNameHistoryLimit = 8
 	engineTitleTimeout     = 60 * time.Second
@@ -44,6 +52,7 @@ const (
 	EventRun          = "run"          // a run changed state
 	EventConversation = "conversation" // the session was renamed or given an icon
 	EventDelta        = "delta"        // the answer is arriving piece by piece
+	EventApproval     = "approval"     // a tool call waits for the reader to allow it
 )
 
 // ConversationState is the part of a session that clients show in a list.
@@ -112,16 +121,18 @@ type Engine struct {
 	queue  chan int64
 	broker *eventBroker
 
-	mu      sync.Mutex
-	cancels map[int64]context.CancelFunc // conversation ID -> cancel of the active run
-	locks   map[int64]*sync.Mutex        // serializes the runs of one conversation
+	mu        sync.Mutex
+	cancels   map[int64]context.CancelFunc // conversation ID -> cancel of the active run
+	locks     map[int64]*sync.Mutex        // serializes the runs of one conversation
+	approvals map[int64]chan bool          // approval ID -> the waiting run
 }
 
 var engine = &Engine{
-	queue:   make(chan int64, engineQueueSize),
-	broker:  newEventBroker(),
-	cancels: make(map[int64]context.CancelFunc),
-	locks:   make(map[int64]*sync.Mutex),
+	queue:     make(chan int64, engineQueueSize),
+	broker:    newEventBroker(),
+	cancels:   make(map[int64]context.CancelFunc),
+	locks:     make(map[int64]*sync.Mutex),
+	approvals: make(map[int64]chan bool),
 }
 
 // InitEngine recovers the runs a restart interrupted and starts the workers.
@@ -163,14 +174,14 @@ func recoverRuns(ctx context.Context) error {
 
 // SubmitUserMessage stores a user message and starts a run for it. The caller does not
 // wait for the answer. The stored message is returned so files can be attached to it.
-func SubmitUserMessage(ctx context.Context, conversation *agent_model.Conversation, content string) (*agent_model.Message, *agent_model.Run, error) {
+func SubmitUserMessage(ctx context.Context, conversation *agent_model.Conversation, userID int64, content string) (*agent_model.Message, *agent_model.Run, error) {
 	message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleUser, content)
 	if err != nil {
 		return nil, nil, err
 	}
 	engine.broker.publish(conversation.ID, Event{Name: EventMessage, Data: message.ID})
 
-	run, err := StartRun(ctx, conversation)
+	run, err := StartRun(ctx, conversation, userID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -178,9 +189,10 @@ func SubmitUserMessage(ctx context.Context, conversation *agent_model.Conversati
 }
 
 // StartRun queues a new run for a conversation. It is used when a message only needs an
-// answer, e.g. after an edit rewound the transcript.
-func StartRun(ctx context.Context, conversation *agent_model.Conversation) (*agent_model.Run, error) {
-	run := &agent_model.Run{ConversationID: conversation.ID, Status: agent_model.RunStatusQueued}
+// answer, e.g. after an edit rewound the transcript. userID is who asked for it: the
+// tools of the run read only what that user may see.
+func StartRun(ctx context.Context, conversation *agent_model.Conversation, userID int64) (*agent_model.Run, error) {
+	run := &agent_model.Run{ConversationID: conversation.ID, UserID: userID, Status: agent_model.RunStatusQueued}
 	if err := db.Insert(ctx, run); err != nil {
 		return nil, err
 	}
@@ -438,7 +450,9 @@ func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model
 func conversationExcerpt(history []*agent_model.Message, resident bool) string {
 	messages := make([]*agent_model.Message, 0, len(history))
 	for _, message := range history {
-		if message.Role == agent_model.MessageRoleSystem {
+		// tool records and internal notes are for the reader; the answer already reflects
+		// what a tool returned, so they would only crowd the excerpt
+		if message.Role == agent_model.MessageRoleSystem || message.Role == agent_model.MessageRoleTool {
 			continue
 		}
 		if content := strings.TrimSpace(message.Content); content != "" {
@@ -470,7 +484,7 @@ func conversationExcerpt(history []*agent_model.Message, resident bool) string {
 
 	var parts []string
 	remaining := engineSummaryBudget
-	for i := len(messages) - 1; i >= 0; i-- {
+	for i := range slices.Backward(messages) {
 		limit := engineSummaryOlder
 		if i >= lastUser {
 			limit = engineSummaryNewest // the newest exchange carries the meaning
@@ -515,7 +529,8 @@ func cleanConversationTitle(title string) string {
 	return title
 }
 
-// answer builds the prompt from the stored transcript and asks the session model.
+// answer builds the prompt from the stored transcript and asks the session model, making
+// the tool calls it asks for until it answers.
 func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run) (string, string, error) {
 	role := ModelRoleForKind(conversation.Kind)
 	ref, err := ModelRoleRef(ctx, role)
@@ -533,6 +548,18 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 	if err != nil {
 		return "", "", err
 	}
+	// a run with no known user has nobody's rights to read with, so it gets no tools
+	doer, err := runUser(ctx, run)
+	if err != nil && !errors.Is(err, errRunUserUnknown{}) {
+		return "", "", err
+	}
+	offerings, err := agent_tools.Available(ctx, conversation.Kind)
+	if err != nil {
+		return "", "", err
+	}
+	if doer == nil {
+		offerings = nil
+	}
 	// every piece goes out at once, so the browser can show the answer while it is written
 	onDelta := func(delta llm.Delta) error {
 		if err := ctx.Err(); err != nil {
@@ -546,9 +573,224 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 		}})
 		return nil
 	}
-	return AnswerStream(ctx, ref, llm.ChatRequest{
-		Messages: buildPrompt(ctx, conversation, history, attachments),
-	}, onDelta)
+
+	messages := buildPrompt(ctx, conversation, history, attachments, offerings)
+	defs := agent_tools.Definitions(offerings)
+	model := ""
+	for round := range engineToolRounds {
+		// the last round goes without tools, so the model has to answer with what it read
+		askedFor := defs
+		if round == engineToolRounds-1 {
+			askedFor = nil
+		}
+		message, answered, err := AnswerMessage(ctx, ref, llm.ChatRequest{Messages: messages, Tools: askedFor}, onDelta)
+		if err != nil {
+			return "", model, err
+		}
+		model = answered
+		if len(message.ToolCalls) == 0 {
+			return message.Content, model, nil
+		}
+		// the calls are what the reader watches happen; the answer starts after them
+		e.broker.publish(conversation.ID, Event{Name: EventDelta, Data: DeltaState{RunID: run.ID, Reset: true}})
+		messages = append(messages, *message)
+		for _, call := range message.ToolCalls {
+			messages = append(messages, llm.Message{
+				Role:       "tool",
+				Content:    e.callTool(ctx, conversation, run, doer, call),
+				ToolCallID: call.ID,
+			})
+		}
+	}
+	return "", model, errors.New("the agent kept calling tools without answering")
+}
+
+// errRunUserUnknown is a run whose asking user is gone or was never recorded; such a run
+// has nobody's rights to read with, so it gets no tools.
+type errRunUserUnknown struct{}
+
+func (errRunUserUnknown) Error() string { return "the user of this run is unknown" }
+
+// runUser returns the user whose message started the run.
+func runUser(ctx context.Context, run *agent_model.Run) (*user_model.User, error) {
+	if run.UserID == 0 {
+		return nil, errRunUserUnknown{}
+	}
+	user, err := user_model.GetUserByID(ctx, run.UserID)
+	if err != nil {
+		if user_model.IsErrUserNotExist(err) {
+			return nil, errRunUserUnknown{}
+		}
+		return nil, err
+	}
+	return user, nil
+}
+
+// callTool makes one call the model asked for, records it in the transcript and returns
+// what the model gets to read.
+func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, doer *user_model.User, call llm.ToolCall) string {
+	tool, decision, err := agent_tools.Check(ctx, conversation.Kind, call.Function.Name)
+	switch {
+	case err != nil:
+		return e.recordTool(ctx, conversation, call, err.Error())
+	case decision == agent_tools.DecisionDenied:
+		return e.recordTool(ctx, conversation, call, "That tool is switched off for this session.")
+	case doer == nil:
+		return e.recordTool(ctx, conversation, call, "No user belongs to this session, so tools cannot run.")
+	}
+	if decision == agent_tools.DecisionAsk {
+		if allowed, reason := e.awaitApproval(ctx, conversation, run, call); !allowed {
+			return e.recordTool(ctx, conversation, call, reason)
+		}
+	}
+	output, err := tool.Run(ctx, doer, call.Function.Arguments)
+	if err != nil {
+		log.Error("Agent engine: tool %s of run %d failed: %v", call.Function.Name, run.ID, err)
+		return e.recordTool(ctx, conversation, call, "The tool could not run: "+err.Error())
+	}
+	return e.recordTool(ctx, conversation, call, output)
+}
+
+// recordTool puts one call and its result in the transcript, and hands the same result
+// back for the model to read.
+func (e *Engine) recordTool(ctx context.Context, conversation *agent_model.Conversation, call llm.ToolCall, result string) string {
+	args := strings.Join(strings.Fields(call.Function.Arguments), " ")
+	if message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleTool, argsLine(call.Function.Name, args)+"\n"+result); err == nil {
+		e.broker.publish(conversation.ID, Event{Name: EventMessage, Data: message.ID})
+	} else {
+		log.Error("Agent engine: unable to record tool %s: %v", call.Function.Name, err)
+	}
+	return result
+}
+
+// argsLine renders a call the way the transcript shows it.
+func argsLine(name, args string) string {
+	if args == "" || args == "{}" {
+		return name
+	}
+	return name + " " + args
+}
+
+// awaitApproval puts a manual call in front of the reader and waits for the answer. The
+// worker waits with it, which is why the wait is bounded and cancellable.
+func (e *Engine) awaitApproval(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, call llm.ToolCall) (bool, string) {
+	approval := &agent_model.ToolApproval{
+		ConversationID: conversation.ID,
+		RunID:          run.ID,
+		Tool:           call.Function.Name,
+		Arguments:      call.Function.Arguments,
+		Status:         agent_model.ToolApprovalPending,
+	}
+	if err := db.Insert(ctx, approval); err != nil {
+		log.Error("Agent engine: unable to store tool approval: %v", err)
+		return false, "The call could not be put to the user."
+	}
+
+	answer := make(chan bool, 1)
+	e.mu.Lock()
+	e.approvals[approval.ID] = answer
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		delete(e.approvals, approval.ID)
+		e.mu.Unlock()
+	}()
+	e.broker.publish(conversation.ID, Event{Name: EventApproval, Data: approval})
+
+	select {
+	case allowed := <-answer:
+		if allowed {
+			return true, ""
+		}
+		return false, "The user did not allow that call."
+	case <-ctx.Done():
+		e.expireApproval(approval.ID)
+		return false, "The run ended before anyone answered."
+	case <-time.After(engineApprovalWait):
+		e.expireApproval(approval.ID)
+		return false, "Nobody answered the request in time."
+	}
+}
+
+// expireApproval closes a call nobody answered.
+func (e *Engine) expireApproval(approvalID int64) {
+	if _, err := db.GetEngine(context.Background()).ID(approvalID).
+		Cols("status", "decided_unix").
+		Update(&agent_model.ToolApproval{Status: agent_model.ToolApprovalExpired, DecidedUnix: timeutil.TimeStampNow()}); err != nil {
+		log.Error("Agent engine: unable to expire tool approval %d: %v", approvalID, err)
+	}
+}
+
+// ErrApprovalNotPending is returned when a call has already been answered.
+type ErrApprovalNotPending struct{}
+
+func (ErrApprovalNotPending) Error() string { return "that call has already been answered" }
+
+// Is reports whether target is an ErrApprovalNotPending.
+func (ErrApprovalNotPending) Is(target error) bool {
+	_, ok := target.(ErrApprovalNotPending)
+	return ok
+}
+
+// PendingApprovals returns the calls of a session still waiting for a reader.
+func PendingApprovals(ctx context.Context, conversationID int64) ([]*agent_model.ToolApproval, error) {
+	approvals := make([]*agent_model.ToolApproval, 0, 4)
+	err := db.GetEngine(ctx).
+		Where("conversation_id = ?", conversationID).
+		And("status = ?", agent_model.ToolApprovalPending).
+		OrderBy("id ASC").
+		Find(&approvals)
+	return approvals, err
+}
+
+// ResolveApproval records what the reader decided about a pending call and wakes the run
+// waiting for it. A call left pending by a restart is still closed here.
+func ResolveApproval(ctx context.Context, conversationID, approvalID, decidedBy int64, allowed bool) error {
+	approval := &agent_model.ToolApproval{}
+	exist, err := db.GetEngine(ctx).ID(approvalID).
+		And("conversation_id = ?", conversationID).
+		Get(approval)
+	if err != nil {
+		return err
+	}
+	if !exist || approval.Status != agent_model.ToolApprovalPending {
+		return ErrApprovalNotPending{}
+	}
+	run, exist, err := db.GetByID[agent_model.Run](ctx, approval.RunID)
+	if err != nil {
+		return err
+	}
+	// only the person whose question started the run answers for it
+	if exist && run.UserID != 0 && run.UserID != decidedBy {
+		return ErrApprovalNotOwner{}
+	}
+	status := agent_model.ToolApprovalRefused
+	if allowed {
+		status = agent_model.ToolApprovalAllowed
+	}
+	if _, err := db.GetEngine(ctx).ID(approvalID).Cols("status", "decided_user_id", "decided_unix").
+		Update(&agent_model.ToolApproval{Status: status, DecidedUserID: decidedBy, DecidedUnix: timeutil.TimeStampNow()}); err != nil {
+		return err
+	}
+
+	engine.mu.Lock()
+	waiting := engine.approvals[approvalID]
+	engine.mu.Unlock()
+	if waiting != nil {
+		waiting <- allowed // buffered: the run may already have moved on
+	}
+	return nil
+}
+
+// ErrApprovalNotOwner is returned when someone other than the requester answers a call.
+type ErrApprovalNotOwner struct{}
+
+func (ErrApprovalNotOwner) Error() string { return "only the user who asked may answer that call" }
+
+// Is reports whether target is an ErrApprovalNotOwner.
+func (ErrApprovalNotOwner) Is(target error) bool {
+	_, ok := target.(ErrApprovalNotOwner)
+	return ok
 }
 
 func (e *Engine) finishRun(ctx context.Context, run *agent_model.Run, status, reason string) {

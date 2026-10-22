@@ -627,6 +627,74 @@ button.agent-chat-card {
   background: var(--color-primary);
 }
 
+/* a tool call and its result: a log line of the transcript, so it takes the whole column */
+.agent-chat-message.tool {
+  align-self: stretch;
+  max-width: none;
+}
+
+.agent-chat-tool-body {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--color-text-light-2);
+  background: var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-tool-body pre {
+  margin: 0;
+  font-size: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* the run waits for the reader to allow a tool call */
+.agent-chat-approval {
+  padding: 8px 10px;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-approval-title {
+  color: var(--color-warning-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.agent-chat-approval-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.agent-chat-approval-name,
+.agent-chat-approval-args {
+  font-family: var(--fonts-monospace);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.agent-chat-approval-args {
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-approval-help {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-approval-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.agent-chat-approval-actions form {
+  margin: 0; /* the buttons carry the spacing, not the form */
+}
+
 .agent-chat-attach {
   position: relative; /* keeps the transparent file input inside the label */
   order: -1; /* the attachment sits left of the input, the DOM keeps the input first */

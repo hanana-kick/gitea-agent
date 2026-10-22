@@ -443,6 +443,8 @@ func prepareMigrationTasks() []*migration {
 		newMigration(367, "Add agent tool permissions", v28.AddAgentToolPermission),
 		newMigration(368, "Add agent conversation owner", v28.AddAgentConversationOwner),
 		newMigration(369, "Add agent message edited", v28.AddAgentMessageEdited),
+		newMigration(370, "Add agent run user", v28.AddAgentRunUser),
+		newMigration(371, "Add agent tool approval", v28.AddAgentToolApproval),
 	}
 	return preparedMigrations
 }

@@ -90,7 +90,7 @@
 			</div>
 		</details>
 		{{end}}
-		<details class="item" {{if or .PageIsAgentProviders .PageIsAgentModelGroups .PageIsAgentModelRoles}}open{{end}}>
+		<details class="item" {{if or .PageIsAgentProviders .PageIsAgentModelGroups .PageIsAgentModelRoles .PageIsAgentTools}}open{{end}}>
 			<summary>{{ctx.Locale.Tr "admin.agent_providers"}}</summary>
 			<div class="menu">
 				<a class="{{if .PageIsAgentProviders}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/providers">
@@ -104,6 +104,9 @@
 				</a>
 				<a class="{{if .PageIsAgentModelRoles}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/roles">
 					{{ctx.Locale.Tr "agent.roles_title"}}
+				</a>
+				<a class="{{if .PageIsAgentTools}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/tools">
+					{{ctx.Locale.Tr "agent.tools_title"}}
 				</a>
 			</div>
 		</details>

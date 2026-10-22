@@ -7,20 +7,76 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"gitea.dev/modules/json"
 )
 
 // Message represents a chat message.
 type Message struct {
-	Role    string `json:"role"` // system, user, assistant
+	Role    string `json:"role"` // system, user, assistant, tool
 	Content string `json:"content"`
+	// Images are data URLs of pictures sent with the message. Only models that accept
+	// them get them; the router drops them for the others.
+	Images []string `json:"-"`
+	// ToolCalls is what the model asked to run. Only assistant messages carry it.
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	// ToolCallID names the call a tool message answers.
+	ToolCallID string `json:"tool_call_id,omitempty"`
+}
+
+// MarshalJSON writes the OpenAI shape: content is a bare string for text and a list of
+// parts once the message carries pictures.
+func (m Message) MarshalJSON() ([]byte, error) {
+	if len(m.Images) == 0 {
+		type plain Message
+		return json.Marshal(plain(m))
+	}
+	parts := make([]map[string]any, 0, len(m.Images)+1)
+	if m.Content != "" {
+		parts = append(parts, map[string]any{"type": "text", "text": m.Content})
+	}
+	for _, image := range m.Images {
+		parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}})
+	}
+	body := map[string]any{"role": m.Role, "content": parts}
+	if m.ToolCallID != "" {
+		body["tool_call_id"] = m.ToolCallID
+	}
+	return json.Marshal(body)
+}
+
+// ToolCall is one call the model asked the agent to make.
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Function FunctionCall `json:"function"`
+}
+
+// FunctionCall names the tool and carries its arguments as JSON.
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// ToolDef describes one tool the model may call.
+type ToolDef struct {
+	Type     string       `json:"type"`
+	Function ToolFunction `json:"function"`
+}
+
+// ToolFunction is the callable half of a ToolDef; Parameters is a JSON schema.
+type ToolFunction struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
 }
 
 // ChatRequest is the request body for chat completion.
@@ -30,6 +86,31 @@ type ChatRequest struct {
 	Temperature float64   `json:"temperature,omitempty"`
 	MaxTokens   int       `json:"max_tokens,omitempty"`
 	Stream      bool      `json:"stream"`
+	// Tools are the calls the model may ask for; empty means the model only answers.
+	Tools []ToolDef `json:"tools,omitempty"`
+	// ToolChoice narrows those calls; empty leaves the decision to the model.
+	ToolChoice string `json:"tool_choice,omitempty"`
+}
+
+// WithoutImages returns the messages with their pictures dropped, for a model that
+// reads text only.
+func WithoutImages(messages []Message) []Message {
+	dropped := make([]Message, 0, len(messages))
+	for _, message := range messages {
+		message.Images = nil
+		dropped = append(dropped, message)
+	}
+	return dropped
+}
+
+// HasImages reports whether any message carries a picture.
+func HasImages(messages []Message) bool {
+	for _, message := range messages {
+		if len(message.Images) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // ChatResponse is the response body for chat completion.
@@ -107,9 +188,7 @@ func DoListModels(ctx context.Context, httpClient HTTPClient, url string, header
 	if err != nil {
 		return nil, err
 	}
-	for k, v := range header {
-		httpReq.Header[k] = v
-	}
+	maps.Copy(httpReq.Header, header)
 
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
@@ -166,16 +245,13 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 	if err != nil {
 		return ChatResponse{}, err
 	}
-
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return ChatResponse{}, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
-	for k, v := range header {
-		httpReq.Header[k] = v
-	}
+	maps.Copy(httpReq.Header, header)
 
 	// a stream that goes silent is dead: providers send at least keep-alives while working
 	streamCtx, cancelStream := context.WithCancel(ctx)
@@ -235,6 +311,7 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 
 	var answer, reasoning strings.Builder
 	var id, model string
+	var toolCalls []ToolCall
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 32*1024), 1024*1024)
 	for scanner.Scan() {
@@ -256,6 +333,15 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 					Content          string `json:"content"`
 					Reasoning        string `json:"reasoning"`
 					ReasoningContent string `json:"reasoning_content"`
+					ToolCalls        []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Type     string `json:"type"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
@@ -282,12 +368,26 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 		// some providers do not send [DONE], the finish reason is the end of the answer
 		finished := chunk.Choices[0].FinishReason != ""
 		delta := chunk.Choices[0].Delta
+		// a call arrives in pieces: the name once and the arguments in fragments
+		for _, call := range delta.ToolCalls {
+			for len(toolCalls) <= call.Index {
+				toolCalls = append(toolCalls, ToolCall{Type: "function"})
+			}
+			piece := &toolCalls[call.Index]
+			if call.ID != "" {
+				piece.ID = call.ID
+			}
+			if piece.Function.Name == "" {
+				piece.Function.Name = call.Function.Name
+			}
+			piece.Function.Arguments += call.Function.Arguments
+		}
 		thought := delta.Reasoning + delta.ReasoningContent
 		if delta.Content == "" && thought == "" {
 			if finished {
 				break
 			}
-			continue
+			continue // a call fragment carries nothing to show yet
 		}
 		answer.WriteString(delta.Content)
 		reasoning.WriteString(thought)
@@ -311,7 +411,7 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 		ID:      id,
 		Object:  "chat.completion",
 		Model:   model,
-		Choices: []Choice{{Index: 0, Message: Message{Role: "assistant", Content: answer.String()}}},
+		Choices: []Choice{{Index: 0, Message: Message{Role: "assistant", Content: answer.String(), ToolCalls: toolCalls}}},
 	}, nil
 }
 
@@ -352,9 +452,7 @@ func DoChat(ctx context.Context, httpClient HTTPClient, method, url string, head
 		return ChatResponse{}, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	for k, v := range header {
-		httpReq.Header[k] = v
-	}
+	maps.Copy(httpReq.Header, header)
 
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {

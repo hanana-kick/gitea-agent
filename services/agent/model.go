@@ -108,12 +108,25 @@ func CanUseModelRef(ctx context.Context, ref string) (bool, error) {
 // Answer sends a request through the session model reference and returns the reply and the
 // model that produced it.
 func Answer(ctx context.Context, ref string, req llm.ChatRequest) (reply, model string, err error) {
-	return answer(ctx, ref, req, nil)
+	return textOf(answer(ctx, ref, req, nil))
 }
 
 // AnswerStream does the same but reports the answer as it arrives.
 func AnswerStream(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.OnDelta) (reply, model string, err error) {
+	return textOf(answer(ctx, ref, req, onDelta))
+}
+
+// AnswerMessage asks the session model and returns its message, tool calls included, so
+// the caller can carry a tool round on to the real answer.
+func AnswerMessage(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.OnDelta) (*llm.Message, string, error) {
 	return answer(ctx, ref, req, onDelta)
+}
+
+func textOf(message *llm.Message, model string, err error) (string, string, error) {
+	if err != nil {
+		return "", model, err
+	}
+	return message.Content, model, nil
 }
 
 // RouteError carries the per-member attempts of a failed group call.
@@ -135,50 +148,57 @@ func AsRoute(err error) (*RouteResult, bool) {
 	return nil, false
 }
 
-func answer(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.OnDelta) (reply, model string, err error) {
+func answer(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.OnDelta) (*llm.Message, string, error) {
 	kind, rest, ok := strings.Cut(ref, ":")
 	if !ok {
-		return "", "", ErrModelRefInvalid{}
+		return nil, "", ErrModelRefInvalid{}
 	}
 	switch kind {
 	case modelRefGroup:
 		group, err := GetModelGroupBySlug(ctx, rest)
 		if err != nil {
-			return "", "", err
+			return nil, "", err
 		}
 		if group == nil {
-			return "", "", ErrModelRefInvalid{}
+			return nil, "", ErrModelRefInvalid{}
 		}
 		result, err := chatThroughGroup(ctx, group, req, onDelta)
 		if err != nil {
-			return "", "", RouteError{Result: result, Err: err}
+			return nil, "", RouteError{Result: result, Err: err}
 		}
-		return result.Reply, result.Model, nil
+		if result.Assistant == nil {
+			return nil, "", errors.New("the model returned no answer")
+		}
+		return result.Assistant, result.Model, nil
 	case modelRefProvider:
 		providerID, modelName, ok := strings.Cut(rest, "/")
 		if !ok || modelName == "" {
-			return "", "", ErrModelRefInvalid{}
+			return nil, "", ErrModelRefInvalid{}
 		}
 		id, err := strconv.ParseInt(providerID, 10, 64)
 		if err != nil {
-			return "", "", ErrModelRefInvalid{}
+			return nil, "", ErrModelRefInvalid{}
 		}
 		provider, err := GetProviderByID(ctx, id)
 		if err != nil {
-			return "", "", err
+			return nil, "", err
 		}
 		if provider == nil {
-			return "", "", ErrModelRefInvalid{}
+			return nil, "", ErrModelRefInvalid{}
 		}
 		apiKey := ResolveProviderAPIKey(ctx, provider)
 		if apiKey == "" {
-			return "", "", errors.New("no api key available")
+			return nil, "", errors.New("no api key available")
 		}
 		client, err := llm.NewClient(provider.Provider, apiKey, provider.BaseURL, modelName, provider.CustomHeaders())
 		if err != nil {
-			return "", "", err
+			return nil, "", err
 		}
 		req.Model = modelName
+		// a model that reads text only must not be sent the pictures of a question
+		if llm.HasImages(req.Messages) && !llm.AcceptsImages(ctx, provider.Provider, modelName) {
+			req.Messages = llm.WithoutImages(req.Messages)
+		}
 		var resp llm.ChatResponse
 		if onDelta != nil {
 			resp, err = client.ChatStream(ctx, req, onDelta)
@@ -186,18 +206,19 @@ func answer(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.On
 			resp, err = client.Chat(ctx, req)
 		}
 		if err != nil {
-			return "", "", err
+			return nil, "", err
 		}
 		answered := modelName
 		if resp.Model != "" {
 			answered = resp.Model
 		}
 		if len(resp.Choices) == 0 {
-			return "", answered, errors.New("the model returned no answer")
+			return nil, answered, errors.New("the model returned no answer")
 		}
-		return resp.Choices[0].Message.Content, answered, nil
+		message := resp.Choices[0].Message
+		return &message, answered, nil
 	}
-	return "", "", ErrModelRefInvalid{}
+	return nil, "", ErrModelRefInvalid{}
 }
 
 // ModelRefLabel renders a reference for humans, falling back to the raw value.

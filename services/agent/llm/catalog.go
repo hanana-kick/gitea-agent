@@ -25,6 +25,27 @@ const (
 	catalogRetryWait = 5 * time.Minute
 )
 
+// catalogLookupWait bounds how long an answer may wait for the catalog; a model whose
+// modalities never arrive is treated as able to see, so the question still gets answered.
+const catalogLookupWait = 10 * time.Second
+
+// AcceptsImages reports whether a model may be shown pictures. A model the catalog
+// describes as text-only never receives them; a model it does not know about does,
+// because a brand new vision model is worth more than a rejected attachment. When the
+// catalog is unavailable entirely, pictures go through too.
+func AcceptsImages(ctx context.Context, providerType, modelID string) bool {
+	if modelID == "" {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(ctx, catalogLookupWait)
+	defer cancel()
+	catalog := LoadCatalog(ctx)
+	if catalog == nil {
+		return true
+	}
+	return slices.Contains(catalog.InputModalities(providerType, modelID), "image")
+}
+
 // Catalog holds the input modalities the shared catalog reports, narrowed to the
 // providers this instance knows about.
 type Catalog struct {

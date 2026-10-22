@@ -26,10 +26,13 @@ type RouteAttempt struct {
 
 // RouteResult is the outcome of routing a request through a group.
 type RouteResult struct {
-	Role     string
-	Model    string
-	Reply    string
-	Attempts []RouteAttempt
+	Role  string
+	Model string
+	Reply string
+	// Assistant is the model's own message, kept so a tool round can be continued from
+	// the very call the model asked for.
+	Assistant *llm.Message
+	Attempts  []RouteAttempt
 }
 
 // TestGroup routes a minimal chat request through a group to prove the wiring works.
@@ -162,6 +165,10 @@ func tryMember(ctx context.Context, role *agent_model.ModelGroup, member *agent_
 
 	chatReq := req
 	chatReq.Model = member.Model
+	// a member that reads text only must not be sent the pictures of a question
+	if llm.HasImages(chatReq.Messages) && !llm.AcceptsImages(ctx, provider.Provider, member.Model) {
+		chatReq.Messages = llm.WithoutImages(chatReq.Messages)
+	}
 	var resp llm.ChatResponse
 	if onDelta != nil {
 		resp, err = client.ChatStream(ctx, chatReq, onDelta)
@@ -173,7 +180,7 @@ func tryMember(ctx context.Context, role *agent_model.ModelGroup, member *agent_
 		return err
 	}
 
-	reply, ok := usableReply(resp)
+	message, ok := usableReply(resp)
 	if !ok {
 		// an empty answer is as good as a failure: the next member must try
 		err := errors.New("the model returned an empty answer")
@@ -186,15 +193,17 @@ func tryMember(ctx context.Context, role *agent_model.ModelGroup, member *agent_
 	if resp.Model != "" {
 		result.Model = resp.Model
 	}
-	result.Reply = reply
+	result.Reply = strings.TrimSpace(message.Content)
+	result.Assistant = &message
 	return nil
 }
 
-// usableReply reports whether a response carries an answer worth showing.
-func usableReply(resp llm.ChatResponse) (string, bool) {
+// usableReply reports whether a response carries an answer worth showing: text, or the
+// start of a tool call the agent has to carry out.
+func usableReply(resp llm.ChatResponse) (llm.Message, bool) {
 	if len(resp.Choices) == 0 {
-		return "", false
+		return llm.Message{}, false
 	}
-	reply := strings.TrimSpace(resp.Choices[0].Message.Content)
-	return reply, reply != ""
+	message := resp.Choices[0].Message
+	return message, strings.TrimSpace(message.Content) != "" || len(message.ToolCalls) > 0
 }

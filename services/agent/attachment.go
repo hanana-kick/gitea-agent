@@ -4,7 +4,9 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -52,12 +54,44 @@ func MaxAttachmentBytes() int64 {
 	return setting.Attachment.MaxSize * 1024 * 1024
 }
 
+// attachmentImageLimit caps what is handed to a model as a picture; a bigger file stays
+// a download for the reader.
+const attachmentImageLimit = 4 * 1024 * 1024
+
+// pictureMimes maps the picture extensions of this instance to their media types.
+var pictureMimes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+}
+
+// ImageDataURL returns a picture as a data URL the model can be shown, or "" when the
+// file is not a picture, is too big to send, or cannot be read.
+func ImageDataURL(attachment *agent_model.Attachment) string {
+	kind, ok := pictureMimes[strings.ToLower(filepath.Ext(attachment.Name))]
+	if !ok || attachment.Size > attachmentImageLimit {
+		return ""
+	}
+	file, err := os.Open(AttachmentPath(attachment))
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, attachmentImageLimit))
+	if err != nil || len(content) == 0 {
+		return ""
+	}
+	return "data:" + kind + ";base64," + base64.StdEncoding.EncodeToString(content)
+}
+
 // StoreAttachment writes one uploaded file and records it against a message.
 func StoreAttachment(ctx context.Context, conversationID, messageID int64, name string, content io.Reader, size int64) (*agent_model.Attachment, error) {
 	if !AttachmentAllowed() {
 		return nil, ErrAttachmentInvalid{Reason: "attachments are disabled"}
 	}
-	if max := MaxAttachmentBytes(); size > max {
+	if limit := MaxAttachmentBytes(); size > limit {
 		return nil, ErrAttachmentInvalid{Reason: fmt.Sprintf("the file is larger than %d MB", setting.Attachment.MaxSize)}
 	}
 	name = filepath.Base(strings.TrimSpace(name))
@@ -96,7 +130,7 @@ func StoreAttachment(ctx context.Context, conversationID, messageID int64, name 
 
 // AllowedAttachmentType reports whether the extension is one the instance accepts.
 func AllowedAttachmentType(ext string) bool {
-	for _, allowed := range strings.Split(setting.Attachment.AllowedTypes, ",") {
+	for allowed := range strings.SplitSeq(setting.Attachment.AllowedTypes, ",") {
 		if allowed != "" && strings.EqualFold(strings.TrimSpace(allowed), ext) {
 			return true
 		}
@@ -163,7 +197,7 @@ func AttachmentText(attachment *agent_model.Attachment) string {
 		return ""
 	}
 	// a NUL byte or invalid utf-8 means it is not text
-	if !utf8.Valid(content) || strings.ContainsRune(string(content), 0) {
+	if !utf8.Valid(content) || bytes.ContainsRune(content, 0) {
 		return ""
 	}
 	return string(content)

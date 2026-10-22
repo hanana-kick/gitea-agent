@@ -10,6 +10,7 @@ type AgentChatAttachment = {id: number, name: string, sizeText: string, url: str
 type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[]};
 type AgentChatRun = {id: number, conversationId: number, status: string, error: string, cancelable: boolean};
 type AgentChatConversation = {id: number, title: string, summary: string, icon: string};
+type AgentChatApproval = {id: number, runID: number, tool: string, arguments: string};
 
 // a conversation does not exist until its first message, so the draft posts the message and
 // then follows the created conversation
@@ -106,6 +107,13 @@ export function initAgentChat() {
   const messagesUrl = mainEl.getAttribute('data-messages-url')!;
   const cancelUrl = mainEl.getAttribute('data-cancel-url')!;
   const labels = JSON.parse(mainEl.getAttribute('data-labels')!) as AgentChatLabels;
+  const approvalsUrl = mainEl.getAttribute('data-approvals-url')!;
+  const approvalLabels = {
+    title: mainEl.getAttribute('data-approval-title')!, // the tool name is interpolated where the locale keeps %s
+    help: mainEl.getAttribute('data-approval-help')!,
+    allow: mainEl.getAttribute('data-approval-allow')!,
+    refuse: mainEl.getAttribute('data-approval-refuse')!,
+  };
   const messagesEl = mainEl.querySelector<HTMLElement>('.agent-chat-messages')!;
   const composerEl = mainEl.querySelector<HTMLFormElement>('.agent-chat-composer')!;
   const sendEl = mainEl.querySelector<HTMLButtonElement>('.agent-chat-send')!;
@@ -140,6 +148,16 @@ export function initAgentChat() {
     metaEl.className = 'agent-chat-message-meta';
     metaEl.textContent = `${message.roleLabel} · `;
     metaEl.insertAdjacentHTML('beforeend', message.timeHTML);
+
+    // a tool record is a log line of the transcript: no bubble, no actions, nothing to copy or edit
+    if (message.role === 'tool') {
+      messageEl.classList.add('agent-chat-tool');
+      const bodyEl = document.createElement('div');
+      bodyEl.className = 'agent-chat-tool-body';
+      bodyEl.innerHTML = message.html;
+      messageEl.append(metaEl, bodyEl);
+      return messageEl;
+    }
 
     const bubbleEl = document.createElement('div');
     bubbleEl.className = 'agent-chat-bubble';
@@ -182,9 +200,14 @@ export function initAgentChat() {
     return messageEl;
   }
 
+  // the run of this session: approvals and the tool records they answer belong to it
+  let currentRunID = Number(mainEl.getAttribute('data-run-id') ?? 0);
+
   function appendMessage(message: AgentChatMessage) {
     if (messagesEl.querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`)) return;
     dropPending();
+    // the answer to a tool call has arrived, so its card has served its purpose
+    if (message.role === 'tool') dropApprovals(currentRunID);
 
     for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
 
@@ -330,7 +353,74 @@ export function initAgentChat() {
     if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
+  // a tool call the pod is waiting for: the card posts the decision, so the page reloads
+  function buildApproval(approval: AgentChatApproval): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'agent-chat-approval';
+    el.setAttribute('data-approval-id', String(approval.id));
+    el.setAttribute('data-run-id', String(approval.runID));
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'agent-chat-approval-title';
+    const [titlePrefix, titleSuffix = ''] = approvalLabels.title.split('%s');
+    titleEl.textContent = titlePrefix + approval.tool + titleSuffix;
+
+    const toolEl = document.createElement('div');
+    toolEl.className = 'agent-chat-approval-tool';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'agent-chat-approval-name';
+    nameEl.textContent = approval.tool;
+    toolEl.append(nameEl);
+    if (approval.arguments) {
+      const argsEl = document.createElement('span');
+      argsEl.className = 'agent-chat-approval-args';
+      argsEl.textContent = approval.arguments;
+      toolEl.append(argsEl);
+    }
+
+    const helpEl = document.createElement('p');
+    helpEl.className = 'agent-chat-approval-help';
+    helpEl.textContent = approvalLabels.help;
+
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'agent-chat-approval-actions';
+    for (const [action, label, buttonClass] of [
+      ['allow', approvalLabels.allow, 'ui small primary button'],
+      ['refuse', approvalLabels.refuse, 'ui small button'],
+    ]) {
+      const formEl = document.createElement('form');
+      formEl.method = 'post';
+      formEl.action = `${approvalsUrl}/${approval.id}/${action}`;
+      const buttonEl = document.createElement('button');
+      buttonEl.type = 'submit';
+      buttonEl.className = buttonClass;
+      buttonEl.textContent = label;
+      formEl.append(buttonEl);
+      actionsEl.append(formEl);
+    }
+
+    el.append(titleEl, toolEl, helpEl, actionsEl);
+    return el;
+  }
+
+  // the engine stopped waiting: the cards of that run are stale, whatever the reader did
+  function dropApprovals(runID: number) {
+    for (const el of messagesEl.querySelectorAll<HTMLElement>('.agent-chat-approval')) {
+      if (!runID || Number(el.getAttribute('data-run-id')) === runID) el.remove();
+    }
+  }
+
+  function appendApproval(approval: AgentChatApproval) {
+    if (messagesEl.querySelector(`[data-approval-id="${CSS.escape(String(approval.id))}"]`)) return;
+    const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= bottomThreshold;
+    for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
+    messagesEl.append(buildApproval(approval));
+    // the reader stays where they left the transcript
+    if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
   function applyRun(run: AgentChatRun) {
+    currentRunID = run.id;
     setSessionBusy(elConversationID, run.status === 'queued' || run.status === 'running');
     if (run.status === 'queued' || run.status === 'running') {
       setBusy(true);
@@ -341,6 +431,7 @@ export function initAgentChat() {
       return;
     }
     setBusy(false);
+    dropApprovals(run.id);
     if (run.status === 'succeeded') {
       dropPending(); // the stored message takes its place
       pendingRunID = 0;
@@ -425,6 +516,9 @@ export function initAgentChat() {
 
     source.addEventListener('message', (event: MessageEvent) => {
       appendMessage(JSON.parse(event.data) as AgentChatMessage);
+    });
+    source.addEventListener('approval', (event: MessageEvent) => {
+      appendApproval(JSON.parse(event.data) as AgentChatApproval);
     });
     source.addEventListener('delta', (event: MessageEvent) => {
       applyDelta(JSON.parse(event.data) as AgentChatDelta);

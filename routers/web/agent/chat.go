@@ -4,7 +4,6 @@
 package agent
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	agent_model "gitea.dev/models/agent"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/modules/httplib"
+	"gitea.dev/modules/json"
 	"gitea.dev/modules/setting"
 	agent_service "gitea.dev/services/agent"
 	"gitea.dev/services/context"
@@ -82,7 +82,7 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 
 	ctx.Data["Title"] = ctx.Tr("agent.chat_title")
 	ctx.Data["PageIsAgentChat"] = true
-	scope, scopeBaseURL := chatScope(ctx, session, list)
+	scope, scopeBaseURL := chatScope(ctx, session)
 	keyword := ctx.FormTrim("q")
 	if keyword != "" {
 		list = filterConversations(list, keyword)
@@ -142,6 +142,12 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation) {
 		ctx.Data["OldestMessageID"] = oldestID
 		ctx.Data["HasOlderMessages"] = hasOlder
 		ctx.Data["LastMessageID"] = lastMessageID(messages)
+		approvals, err := agent_service.PendingApprovals(ctx, session.ID)
+		if err != nil {
+			ctx.ServerError("PendingApprovals", err)
+			return
+		}
+		ctx.Data["PendingApprovals"] = approvals
 		role := agent_service.ModelRoleForKind(session.Kind)
 		ref, err := agent_service.ModelRoleRef(ctx, role)
 		if err != nil {
@@ -266,7 +272,7 @@ func ChatDraftCreate(ctx *context.Context) {
 		ctx.ServerError("CreateConversation", err)
 		return
 	}
-	message, _, err := agent_service.SubmitUserMessage(ctx, session, ctx.FormString("content"))
+	message, _, err := agent_service.SubmitUserMessage(ctx, session, ctx.Doer.ID, ctx.FormString("content"))
 	if err != nil {
 		if isXMLHTTP(ctx) {
 			ctx.Resp.WriteHeader(http.StatusBadRequest)
@@ -491,7 +497,7 @@ func ChatMessageNew(ctx *context.Context) {
 		chatError(ctx, err)
 		return
 	}
-	message, _, err := agent_service.SubmitUserMessage(ctx, session, ctx.FormString("content"))
+	message, _, err := agent_service.SubmitUserMessage(ctx, session, ctx.Doer.ID, ctx.FormString("content"))
 	if err != nil {
 		if isXMLHTTP(ctx) {
 			ctx.Resp.WriteHeader(http.StatusBadRequest)
@@ -525,7 +531,7 @@ func ChatMessageEdit(ctx *context.Context) {
 		ctx.Redirect(chatSessionURL(session.ID))
 		return
 	}
-	if _, err := agent_service.StartRun(ctx, session); err != nil {
+	if _, err := agent_service.StartRun(ctx, session, ctx.Doer.ID); err != nil {
 		ctx.ServerError("StartRun", err)
 		return
 	}
@@ -545,6 +551,37 @@ func ChatRunCancel(ctx *context.Context) {
 		return
 	}
 	answer(ctx, session.ID)
+}
+
+// ChatApprovalAllow lets a tool call the agent asked for go ahead.
+func ChatApprovalAllow(ctx *context.Context) {
+	chatApproval(ctx, true)
+}
+
+// ChatApprovalRefuse turns down a tool call the agent asked for.
+func ChatApprovalRefuse(ctx *context.Context) {
+	chatApproval(ctx, false)
+}
+
+// chatApproval answers one pending tool call and returns to the transcript.
+func chatApproval(ctx *context.Context, allowed bool) {
+	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
+	if err != nil {
+		chatError(ctx, err)
+		return
+	}
+	if err := agent_service.ResolveApproval(ctx, session.ID, ctx.PathParamInt64("aid"), ctx.Doer.ID, allowed); err != nil {
+		switch {
+		case errors.Is(err, agent_service.ErrApprovalNotPending{}):
+			ctx.Flash.Error(ctx.Tr("agent.chat_approval_answered"))
+		case errors.Is(err, agent_service.ErrApprovalNotOwner{}):
+			ctx.Flash.Error(ctx.Tr("agent.chat_approval_not_yours"))
+		default:
+			ctx.ServerError("ResolveApproval", err)
+			return
+		}
+	}
+	ctx.Redirect(chatSessionURL(session.ID))
 }
 
 // ChatTitlePost renames a session.
@@ -570,7 +607,7 @@ func ChatTitlePost(ctx *context.Context) {
 
 // chatScope returns the session group the sidebar shows: the one asked for, else the one
 // the open session belongs to, else Pod.
-func chatScope(ctx *context.Context, session *agent_model.Conversation, list *agent_service.ConversationList) (string, string) {
+func chatScope(ctx *context.Context, session *agent_model.Conversation) (string, string) {
 	baseURL := setting.AppSubURL + chatURL
 	if session != nil {
 		baseURL = chatSessionURL(session.ID)

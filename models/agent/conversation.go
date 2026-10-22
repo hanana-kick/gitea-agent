@@ -59,6 +59,9 @@ const (
 	MessageRoleUser      = "user"
 	MessageRoleAssistant = "assistant"
 	MessageRoleSystem    = "system"
+	// MessageRoleTool records a call the agent made and what came back; it is history
+	// for the reader, not part of a later prompt.
+	MessageRoleTool = "tool"
 )
 
 // Message is one entry of a conversation transcript.
@@ -95,11 +98,13 @@ func IsRunActive(status string) bool {
 // Run is one server-side agent execution. It is stored before the work starts so a
 // client can disconnect, and the instance can recover after a restart.
 type Run struct {
-	ID             int64  `xorm:"pk autoincr"`
-	ConversationID int64  `xorm:"INDEX NOT NULL"`
-	Status         string `xorm:"VARCHAR(16) NOT NULL"`
-	Model          string `xorm:"VARCHAR(160) NOT NULL DEFAULT ''"` // model that answered
-	Error          string `xorm:"TEXT"`                             // failure reason, when failed
+	ID             int64 `xorm:"pk autoincr"`
+	ConversationID int64 `xorm:"INDEX NOT NULL"`
+	// UserID is who sent the message the run answers; tools run with that user's rights.
+	UserID int64  `xorm:"NOT NULL DEFAULT 0"`
+	Status string `xorm:"VARCHAR(16) NOT NULL"`
+	Model  string `xorm:"VARCHAR(160) NOT NULL DEFAULT ''"` // model that answered
+	Error  string `xorm:"TEXT"`                             // failure reason, when failed
 
 	CreatedUnix  timeutil.TimeStamp `xorm:"created NOT NULL"`
 	StartedUnix  timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
