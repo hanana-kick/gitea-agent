@@ -7,16 +7,28 @@ import (
 	"context"
 
 	"gitea.dev/modelmigration/base"
-	agent_model "gitea.dev/models/agent"
 
 	"xorm.io/xorm"
 )
+
+// agentToolPermissionV367 is the frozen shape of agent_tool_permission, the admin-chosen
+// mode of one agent tool.
+type agentToolPermissionV367 struct {
+	ID      int64  `xorm:"pk autoincr"`
+	Tool    string `xorm:"UNIQUE NOT NULL"`
+	Mode    string `xorm:"NOT NULL DEFAULT 'llm'"`
+	Enabled bool   `xorm:"NOT NULL DEFAULT TRUE"`
+}
+
+func (agentToolPermissionV367) TableName() string {
+	return "agent_tool_permission"
+}
 
 // AddAgentToolPermission adds the per-tool permission modes of the agent.
 func AddAgentToolPermission(_ context.Context, x base.EngineMigration) error {
 	_, err := x.SyncWithOptions(xorm.SyncOptions{
 		IgnoreConstrains:  true,
 		IgnoreDropIndices: true,
-	}, new(agent_model.ToolPermission))
+	}, new(agentToolPermissionV367))
 	return err
 }

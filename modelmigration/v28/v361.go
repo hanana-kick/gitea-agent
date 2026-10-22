@@ -8,10 +8,49 @@ import (
 	"fmt"
 
 	"gitea.dev/modelmigration/base"
-	agent_model "gitea.dev/models/agent"
+	"gitea.dev/modules/timeutil"
 
 	"xorm.io/xorm"
 )
+
+// agentAPIKeyV361 is the frozen shape of agent_api_key, a named LLM credential.
+type agentAPIKeyV361 struct {
+	ID      int64  `xorm:"pk autoincr"`
+	Name    string `xorm:"UNIQUE NOT NULL"`
+	OwnerID int64  `xorm:"INDEX NOT NULL"`
+	// SecretEnc holds the encrypted key.
+	SecretEnc string `xorm:"LONGTEXT NOT NULL"`
+
+	CreatedUnix  timeutil.TimeStamp `xorm:"created NOT NULL"`
+	UpdatedUnix  timeutil.TimeStamp `xorm:"updated NOT NULL"`
+	LastUsedUnix timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
+}
+
+func (agentAPIKeyV361) TableName() string {
+	return "agent_api_key"
+}
+
+// agentProviderV361 is the frozen shape of agent_provider at the point its credentials
+// move into agent_api_key.
+type agentProviderV361 struct {
+	ID         int64  `xorm:"pk autoincr"`
+	UserID     int64  `xorm:"INDEX NOT NULL"`
+	Name       string `xorm:"NOT NULL"`
+	Provider   string `xorm:"NOT NULL"`
+	BaseURL    string
+	Model      string `xorm:"NOT NULL"`
+	ModelsJSON string `xorm:"TEXT"`
+
+	APIKeyID    int64              `xorm:"INDEX NOT NULL DEFAULT 0"`
+	HeadersJSON string             `xorm:"TEXT"`
+	HasKey      bool               `xorm:"-"`
+	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
+	UpdatedUnix timeutil.TimeStamp `xorm:"updated NOT NULL"`
+}
+
+func (agentProviderV361) TableName() string {
+	return "agent_provider"
+}
 
 // AddAgentAPIKeyTable moves provider credentials into their own managed table. Stored keys
 // are copied as-is: they are already encrypted with the instance secret key.
@@ -19,7 +58,7 @@ func AddAgentAPIKeyTable(_ context.Context, x base.EngineMigration) error {
 	if _, err := x.SyncWithOptions(xorm.SyncOptions{
 		IgnoreConstrains:  true,
 		IgnoreDropIndices: true,
-	}, new(agent_model.APIKey), new(agent_model.Provider)); err != nil {
+	}, new(agentAPIKeyV361), new(agentProviderV361)); err != nil {
 		return err
 	}
 
@@ -34,7 +73,7 @@ func AddAgentAPIKeyTable(_ context.Context, x base.EngineMigration) error {
 		return fmt.Errorf("read stored provider keys: %w", err)
 	}
 	for _, stored := range keys {
-		key := &agent_model.APIKey{
+		key := &agentAPIKeyV361{
 			Name:      stored.Name,
 			OwnerID:   stored.UserID,
 			SecretEnc: stored.APIKeyEnc,
@@ -48,5 +87,5 @@ func AddAgentAPIKeyTable(_ context.Context, x base.EngineMigration) error {
 	}
 
 	// drop the columns now that the keys live in agent_api_key
-	return base.RecreateTables(new(agent_model.Provider))(x)
+	return base.RecreateTables(new(agentProviderV361))(x)
 }
