@@ -228,10 +228,18 @@
 					{{end}}
 					{{range .Messages}}
 						{{if eq .Role "tool"}}
+							{{$record := index $.ToolRecords .ID}}
 							{{/* a tool call and its result is a log line of the transcript, not a message */}}
 							<div class="agent-chat-message tool agent-chat-tool" data-message-id="{{.ID}}">
-								<div class="agent-chat-message-meta">{{ctx.Locale.Tr "agent.chat_tool"}} · {{DateUtils.TimeSince .CreatedUnix}}</div>
-								<div class="agent-chat-tool-body"><pre>{{.Content}}</pre></div>
+								<details class="agent-chat-tool-details">
+									<summary class="agent-chat-tool-summary">
+										{{svg "octicon-chevron-right" 12 "agent-chat-tool-chevron"}}
+										<code class="agent-chat-tool-name">{{$record.Name}}</code>
+										{{if $record.Args}}<span class="agent-chat-tool-args gt-ellipsis">{{$record.Args}}</span>{{end}}
+										<span class="agent-chat-message-meta">{{DateUtils.TimeSince .CreatedUnix}}</span>
+									</summary>
+									<div class="agent-chat-tool-body"><pre>{{.Content}}</pre></div>
+								</details>
 							</div>
 						{{else}}
 							<div class="agent-chat-message {{.Role}}" data-message-id="{{.ID}}">
@@ -251,11 +259,17 @@
 									{{if $attachments}}
 										<div class="agent-chat-attachments">
 											{{range $attachments}}
-												<a class="agent-chat-attachment" href="{{AppSubUrl}}{{.URL}}">
-													{{svg "octicon-paperclip" 14}}
-													<span class="gt-ellipsis">{{.Name}}</span>
-													<span class="agent-chat-attachment-size">{{.SizeText}}</span>
-												</a>
+												{{if .IsPicture}}
+													<a class="agent-chat-attachment-image" href="{{AppSubUrl}}{{.URL}}" target="_blank" rel="noreferrer noopener">
+														<img src="{{AppSubUrl}}{{.URL}}" alt="{{.Name}}" loading="lazy">
+													</a>
+												{{else}}
+													<a class="agent-chat-attachment" href="{{AppSubUrl}}{{.URL}}" download>
+														{{svg "octicon-paperclip" 14}}
+														<span class="gt-ellipsis">{{.Name}}</span>
+														<span class="agent-chat-attachment-size">{{.SizeText}}</span>
+													</a>
+												{{end}}
 											{{end}}
 										</div>
 									{{end}}

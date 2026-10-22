@@ -69,9 +69,8 @@ func APIKeyNew(ctx *context.Context) {
 func APIKeyNewPost(ctx *context.Context) {
 	_, err := agent_service.CreateAPIKey(ctx, ctx.Doer.ID, ctx.FormTrim("name"), ctx.FormString("value"))
 	if err != nil {
-		var invalid agent_service.ErrAPIKeyInvalid
-		if errors.As(err, &invalid) {
-			ctx.Flash.Error(err.Error())
+		if invalid, ok := errors.AsType[agent_service.ErrAPIKeyInvalid](err); ok {
+			ctx.Flash.Error(invalid.Error())
 		} else {
 			ctx.Flash.Error(ctx.Tr("agent.api_key_save_failed", err.Error()))
 		}
@@ -102,9 +101,8 @@ func APIKey(ctx *context.Context) {
 func APIKeyPost(ctx *context.Context) {
 	id := ctx.PathParamInt64("id")
 	if err := agent_service.ReplaceAPIKeyValue(ctx, id, ctx.FormString("value")); err != nil {
-		var invalid agent_service.ErrAPIKeyInvalid
-		if errors.As(err, &invalid) {
-			ctx.Flash.Error(err.Error())
+		if invalid, ok := errors.AsType[agent_service.ErrAPIKeyInvalid](err); ok {
+			ctx.Flash.Error(invalid.Error())
 		} else if errors.Is(err, agent_service.ErrAPIKeyNotFound{}) {
 			ctx.NotFound(nil)
 			return

@@ -195,6 +195,14 @@ func answer(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.On
 			return nil, "", err
 		}
 		req.Model = modelName
+		// gateways that insist on a limit reject a request without one; a model that
+		// advertises one gets exactly that instead of a guess
+		if req.MaxTokens <= 0 {
+			req.MaxTokens = llm.MaxOutputTokens(ctx, provider.Provider, modelName)
+			if req.MaxTokens <= 0 {
+				req.MaxTokens = llm.DefaultMaxTokens
+			}
+		}
 		// a model that reads text only must not be sent the pictures of a question
 		if llm.HasImages(req.Messages) && !llm.AcceptsImages(ctx, provider.Provider, modelName) {
 			req.Messages = llm.WithoutImages(req.Messages)

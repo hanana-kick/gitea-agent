@@ -278,7 +278,7 @@ func renderGroupForm(ctx *context.Context, role *agent_model.ModelGroup, form gr
 	ctx.Data["GroupMembers"] = groupMemberCatalogue(ctx, role)
 	ctx.Data["FormAction"] = setting.AppSubURL + groupsURL + "/new"
 	if isEdit {
-		ctx.Data["FormAction"] = setting.AppSubURL + groupsURL + "/" + fmt.Sprint(role.ID) + "/edit"
+		ctx.Data["FormAction"] = setting.AppSubURL + groupsURL + "/" + strconv.FormatInt(role.ID, 10) + "/edit"
 	}
 	ctx.Data["CancelLink"] = setting.AppSubURL + groupsURL
 	ctx.HTML(http.StatusOK, tplGroupForm)

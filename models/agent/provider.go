@@ -4,11 +4,11 @@
 package agent
 
 import (
-	"encoding/json"
 	"slices"
 	"strings"
 
 	"gitea.dev/models/db"
+	"gitea.dev/modules/json"
 	"gitea.dev/modules/timeutil"
 
 	"xorm.io/builder"

@@ -15,7 +15,7 @@ import (
 
 func TestCatalogReadsOnlyWantedProviders(t *testing.T) {
 	const payload = `{
-	  "openai": {"models": {"gpt-4o": {"modalities": {"input": ["text", "image"], "output": ["text"]}}}},
+	  "openai": {"models": {"gpt-4o": {"modalities": {"input": ["text", "image"], "output": ["text"]}, "limit": {"context": 128000, "output": 16384}}}},
 	  "unrelated": {"models": {"x": {"modalities": {"input": ["text"]}}}},
 	  "opencode": {"models": {"glm-5.3": {"modalities": {"input": ["text"]}}}}
 	}`
@@ -39,6 +39,12 @@ func TestCatalogReadsOnlyWantedProviders(t *testing.T) {
 	// a provider the catalog does not cover, and an unknown model, yield nothing
 	assert.Nil(t, catalog.InputModalities(ProviderOpenAI, "unknown-model"))
 	assert.Nil(t, catalog.InputModalities("unrelated-provider", "x"))
+
+	// the output limit a model advertises is what a request carries
+	assert.Equal(t, 16384, catalog.OutputLimit(ProviderOpenAI, "gpt-4o"))
+	assert.Equal(t, 0, catalog.OutputLimit(ProviderOpenAI, "unknown-model"), "an unknown model has no limit")
+	assert.Equal(t, 0, catalog.OutputLimit(ProviderOpenCodeGo, "glm-5.3"), "a model without a limit has none")
+	assert.Equal(t, 0, MaxOutputTokens(context.Background(), ProviderOpenAI, "unknown-model"))
 }
 
 func TestCatalogSurvivesFailure(t *testing.T) {

@@ -5,7 +5,9 @@ package agent
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"gitea.dev/models/db"
 	"gitea.dev/modules/timeutil"
@@ -42,6 +44,27 @@ func (a *Attachment) SizeText() string {
 // URL is the download path of the attachment.
 func (a *Attachment) URL() string {
 	return "/-/agent/" + strconv.FormatInt(a.ConversationID, 10) + "/attachments/" + strconv.FormatInt(a.ID, 10)
+}
+
+// PictureMime returns the media type of a picture this instance shows inline, or "" when the
+// file is not one of them. Everything that decides what to do with a picture reads this.
+func PictureMime(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	}
+	return ""
+}
+
+// IsPicture reports whether the transcript can show the file itself instead of its name.
+func (a *Attachment) IsPicture() bool {
+	return PictureMime(a.Name) != ""
 }
 
 func (Attachment) TableName() string {

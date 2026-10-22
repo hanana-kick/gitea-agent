@@ -165,6 +165,14 @@ func tryMember(ctx context.Context, role *agent_model.ModelGroup, member *agent_
 
 	chatReq := req
 	chatReq.Model = member.Model
+	// a request without a limit is rejected by gateways that insist on one, and a model
+	// that advertises one gets exactly that instead of a guess
+	if chatReq.MaxTokens <= 0 {
+		chatReq.MaxTokens = llm.MaxOutputTokens(ctx, provider.Provider, member.Model)
+		if chatReq.MaxTokens <= 0 {
+			chatReq.MaxTokens = llm.DefaultMaxTokens
+		}
+	}
 	// a member that reads text only must not be sent the pictures of a question
 	if llm.HasImages(chatReq.Messages) && !llm.AcceptsImages(ctx, provider.Provider, member.Model) {
 		chatReq.Messages = llm.WithoutImages(chatReq.Messages)

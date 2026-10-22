@@ -5,6 +5,7 @@ package llm
 
 import (
 	"context"
+	"maps"
 	"net/http"
 )
 
@@ -43,9 +44,7 @@ func (c *OpenAIClient) authHeader() http.Header {
 	header := http.Header{
 		"Authorization": {"Bearer " + c.APIKey},
 	}
-	for k, v := range c.ExtraHeaders {
-		header[k] = v
-	}
+	maps.Copy(header, c.ExtraHeaders)
 	return header
 }
 

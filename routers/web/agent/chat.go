@@ -143,6 +143,7 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 		}
 		ctx.Data["Messages"] = messages
 		ctx.Data["MessageAttachments"] = attachments
+		ctx.Data["ToolRecords"] = toolRecordMap(messages)
 		ctx.Data["OldestMessageID"] = oldestID
 		ctx.Data["HasOlderMessages"] = hasOlder
 		ctx.Data["LastMessageID"] = lastMessageID(messages)
@@ -342,15 +343,28 @@ func ChatAttachment(ctx *context.Context) {
 	})
 }
 
+// toolRecordMap splits the tool records of a transcript for the template: the call the
+// model made, and what came back behind it.
+func toolRecordMap(messages []*agent_model.Message) map[int64]*toolEvent {
+	records := make(map[int64]*toolEvent, 4)
+	for _, message := range messages {
+		if message.Role == agent_model.MessageRoleTool {
+			records[message.ID] = toolRecordOf(message.Content)
+		}
+	}
+	return records
+}
+
 // attachmentPayloads renders the files of a message for the clients.
 func attachmentPayloads(attachments []*agent_model.Attachment) []attachmentEvent {
 	payloads := make([]attachmentEvent, 0, len(attachments))
 	for _, attachment := range attachments {
 		payloads = append(payloads, attachmentEvent{
-			ID:       attachment.ID,
-			Name:     attachment.Name,
-			SizeText: attachment.SizeText(),
-			URL:      setting.AppSubURL + attachment.URL(),
+			ID:        attachment.ID,
+			Name:      attachment.Name,
+			SizeText:  attachment.SizeText(),
+			URL:       setting.AppSubURL + attachment.URL(),
+			IsPicture: attachment.IsPicture(),
 		})
 	}
 	return payloads

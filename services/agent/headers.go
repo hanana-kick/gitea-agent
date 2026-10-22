@@ -39,10 +39,15 @@ func ParseHeaderLines(lines string) (map[string]string, error) {
 		}
 	}
 	if len(headers) == 0 {
-		return nil, nil
+		return nil, ErrHeadersEmpty{}
 	}
 	return headers, nil
 }
+
+// ErrHeadersEmpty says the field carried no usable header.
+type ErrHeadersEmpty struct{}
+
+func (ErrHeadersEmpty) Error() string { return "no headers are given" }
 
 // FormatHeaderLines renders headers as sorted "Name: Value" lines for the admin form.
 func FormatHeaderLines(headers map[string]string) string {

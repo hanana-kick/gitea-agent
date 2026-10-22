@@ -6,9 +6,9 @@ package agent
 import (
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	agent_model "gitea.dev/models/agent"
@@ -32,6 +32,16 @@ type attachmentEvent struct {
 	Name     string `json:"name"`
 	SizeText string `json:"sizeText"`
 	URL      string `json:"url"`
+	// IsPicture says the transcript may show the file itself.
+	IsPicture bool `json:"isPicture"`
+}
+
+// toolEvent is one tool record split into what the model called and what came back, so the
+// transcript can fold it into one summary line.
+type toolEvent struct {
+	Name   string `json:"name"`
+	Args   string `json:"args"`
+	Result string `json:"result"`
 }
 
 // messageEvent is one transcript entry as the browser receives it. The raw content is kept
@@ -44,6 +54,7 @@ type messageEvent struct {
 	HTML        string            `json:"html"`
 	TimeHTML    string            `json:"timeHTML"`
 	Attachments []attachmentEvent `json:"attachments,omitempty"`
+	Tool        *toolEvent        `json:"tool,omitempty"`
 }
 
 // approvalEvent is one tool call waiting for the reader to allow it.
@@ -270,10 +281,17 @@ func messageEventOf(ctx *context.Context, message *agent_model.Message) messageE
 		TimeHTML:    string(templates.TimeSince(message.CreatedUnix)),
 	}
 	if message.Role == agent_model.MessageRoleTool {
-		// a tool record is a log line, not prose: it stays verbatim in one block
-		event.HTML = "<pre>" + html.EscapeString(message.Content) + "</pre>"
+		// a tool record folds into one summary line: the call, and what came back behind it
+		event.Tool = toolRecordOf(message.Content)
 	}
 	return event
+}
+
+// toolRecordOf splits a stored tool record: the call the model made, and what came back.
+func toolRecordOf(content string) *toolEvent {
+	call, result, _ := strings.Cut(content, "\n")
+	name, args, _ := strings.Cut(call, " ")
+	return &toolEvent{Name: name, Args: args, Result: strings.TrimSpace(result)}
 }
 
 func messageRoleLabel(ctx *context.Context, role string) string {

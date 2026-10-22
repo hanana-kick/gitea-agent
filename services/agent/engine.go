@@ -38,14 +38,6 @@ const (
 	engineNameHistoryLimit = 8
 	engineTitleTimeout     = 60 * time.Second
 	engineTitleExcerpt     = 500
-	// generous for six words, because a model that reasons first spends the budget before
-	// it names anything; a gateway that insists on a limit still gets a valid one
-	engineTitleTokens = 512
-	// room for an answer and the reasoning ahead of it; an answer that needs more is long
-	// past what a chat reply should be. Gateways that insist on a limit reject a request
-	// without one, so every answer carries it.
-	engineAnswerTokens = 4096
-
 	// the skill list in the prompt is capped by count and by size, so skills cost the
 	// prompt a few lines however many the instance stores
 	skillCatalogLimit = 24 // skills, not lines
@@ -435,7 +427,7 @@ func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model
 		{Role: "system", Content: system},
 		{Role: "user", Content: ask + conversationExcerpt(history, resident)},
 	}
-	title, _, err := Answer(ctx, ref, llm.ChatRequest{Messages: prompt, MaxTokens: engineTitleTokens})
+	title, _, err := Answer(ctx, ref, llm.ChatRequest{Messages: prompt})
 	if err != nil {
 		log.Warn("Agent engine: unable to name session %d: %v", conversation.ID, err)
 		return
@@ -605,7 +597,7 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 		if round == engineToolRounds-1 {
 			askedFor = nil
 		}
-		message, answered, err := AnswerMessage(ctx, ref, llm.ChatRequest{Messages: messages, Tools: askedFor, MaxTokens: engineAnswerTokens}, onDelta)
+		message, answered, err := AnswerMessage(ctx, ref, llm.ChatRequest{Messages: messages, Tools: askedFor}, onDelta)
 		if err != nil {
 			return "", model, err
 		}

@@ -18,8 +18,8 @@ func TestParseHeaderLines(t *testing.T) {
 	assert.Equal(t, map[string]string{"X-One": "1", "X-Two": "value: with colons"}, headers)
 
 	headers, err = ParseHeaderLines("")
-	require.NoError(t, err)
 	assert.Nil(t, headers)
+	assert.ErrorIs(t, err, ErrHeadersEmpty{})
 }
 
 func TestParseHeaderLinesRejects(t *testing.T) {

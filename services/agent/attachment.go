@@ -58,20 +58,11 @@ func MaxAttachmentBytes() int64 {
 // a download for the reader.
 const attachmentImageLimit = 4 * 1024 * 1024
 
-// pictureMimes maps the picture extensions of this instance to their media types.
-var pictureMimes = map[string]string{
-	".png":  "image/png",
-	".jpg":  "image/jpeg",
-	".jpeg": "image/jpeg",
-	".gif":  "image/gif",
-	".webp": "image/webp",
-}
-
 // ImageDataURL returns a picture as a data URL the model can be shown, or "" when the
 // file is not a picture, is too big to send, or cannot be read.
 func ImageDataURL(attachment *agent_model.Attachment) string {
-	kind, ok := pictureMimes[strings.ToLower(filepath.Ext(attachment.Name))]
-	if !ok || attachment.Size > attachmentImageLimit {
+	kind := agent_model.PictureMime(attachment.Name)
+	if kind == "" || attachment.Size > attachmentImageLimit {
 		return ""
 	}
 	file, err := os.Open(AttachmentPath(attachment))

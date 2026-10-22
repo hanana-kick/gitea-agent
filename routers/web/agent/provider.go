@@ -5,7 +5,6 @@ package agent
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
+	"gitea.dev/modules/json"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	agent_service "gitea.dev/services/agent"
@@ -104,7 +104,7 @@ func ProviderNewPost(ctx *context.Context) {
 	}
 
 	models := modelsFrom(ctx, form)
-	if err := validateProviderForm(ctx, form, models, nil); err != nil {
+	if err := validateProviderForm(ctx, form, models); err != nil {
 		renderProviderForm(ctx, nil, form, catalogFrom(ctx), err.Error())
 		return
 	}
@@ -171,7 +171,7 @@ func ProviderEditPost(ctx *context.Context) {
 	}
 
 	models := modelsFrom(ctx, form)
-	if err := validateProviderForm(ctx, form, models, p); err != nil {
+	if err := validateProviderForm(ctx, form, models); err != nil {
 		renderProviderForm(ctx, p, form, catalogFrom(ctx), err.Error())
 		return
 	}
@@ -304,7 +304,7 @@ func modelsFrom(ctx *context.Context, form providerForm) []agent_model.ProviderM
 }
 
 // validateProviderForm checks the form; on edit p carries the provider being changed.
-func validateProviderForm(ctx *context.Context, form providerForm, models []agent_model.ProviderModel, p *agent_model.Provider) error {
+func validateProviderForm(ctx *context.Context, form providerForm, models []agent_model.ProviderModel) error {
 	if form.Name == "" || form.Provider == "" {
 		return errors.New(ctx.Locale.TrString("agent.required_fields"))
 	}

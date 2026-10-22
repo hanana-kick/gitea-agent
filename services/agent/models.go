@@ -19,7 +19,7 @@ import (
 // dash only separates when it stands alone between two values.
 func ParseModelLines(lines string) []agent_model.ProviderModel {
 	models := make([]agent_model.ProviderModel, 0)
-	for _, raw := range strings.Split(lines, "\n") {
+	for raw := range strings.SplitSeq(lines, "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue

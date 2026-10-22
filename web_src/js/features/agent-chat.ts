@@ -6,13 +6,13 @@ import {addDelegatedEventListener, createElementFromHTML, toggleElem} from '../u
 
 type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string};
 type AgentChatDelta = {runId: number, content?: string, reasoning?: string, reset?: boolean};
-type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string};
-type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[]};
+type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string, isPicture: boolean};
+type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[], tool?: {name: string, args: string, result: string}};
 type AgentChatRun = {id: number, conversationId: number, status: string, error: string, cancelable: boolean};
 type AgentChatConversation = {id: number, title: string, summary: string, icon: string};
 type AgentChatApproval = {id: number, runID: number, tool: string, arguments: string};
 
-function formatFileSize(bytes: number): string {
+export function formatFileSize(bytes: number): string {
   const units = ['B', 'KB', 'MB'];
   let value = bytes;
   let unit = 0;
@@ -65,6 +65,22 @@ function initAttachmentList(form: HTMLFormElement): () => void {
 
   input.addEventListener('change', render);
   return clear;
+}
+
+// ChatGPT and Claude send on Enter and grow the input while typing; a chat box that stays
+// three rows tall wastes half the panel.
+function initComposerKeys(form: HTMLFormElement, input: HTMLTextAreaElement) {
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+    event.preventDefault();
+    form.requestSubmit();
+  });
+  const grow = () => {
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 240)}px`;
+  };
+  input.addEventListener('input', grow);
+  grow();
 }
 
 // a conversation does not exist until its first message, so the draft posts the message and
@@ -229,13 +245,33 @@ export function initAgentChat() {
     metaEl.textContent = `${message.roleLabel} · `;
     metaEl.insertAdjacentHTML('beforeend', message.timeHTML);
 
-    // a tool record is a log line of the transcript: no bubble, no actions, nothing to copy or edit
+    // a tool record folds into one summary line: the call, and what came back behind it
     if (message.role === 'tool') {
       messageEl.classList.add('agent-chat-tool');
+      const detailsEl = document.createElement('details');
+      detailsEl.className = 'agent-chat-tool-details';
+      const summaryEl = document.createElement('summary');
+      summaryEl.className = 'agent-chat-tool-summary';
+      summaryEl.insertAdjacentHTML('beforeend', svg('octicon-chevron-right', 12, 'agent-chat-tool-chevron'));
+      const nameEl = document.createElement('code');
+      nameEl.className = 'agent-chat-tool-name';
+      nameEl.textContent = message.tool?.name ?? '';
+      summaryEl.append(nameEl);
+      if (message.tool?.args) {
+        const argsEl = document.createElement('span');
+        argsEl.className = 'agent-chat-tool-args gt-ellipsis';
+        argsEl.textContent = message.tool.args;
+        summaryEl.append(argsEl);
+      }
+      const timeEl = document.createElement('span');
+      timeEl.className = 'agent-chat-message-meta';
+      timeEl.innerHTML = message.timeHTML;
+      summaryEl.append(timeEl);
       const bodyEl = document.createElement('div');
       bodyEl.className = 'agent-chat-tool-body';
-      bodyEl.innerHTML = message.html;
-      messageEl.append(metaEl, bodyEl);
+      bodyEl.innerHTML = `<pre>${message.html}</pre>`;
+      detailsEl.append(summaryEl, bodyEl);
+      messageEl.append(detailsEl);
       return messageEl;
     }
 
@@ -250,9 +286,24 @@ export function initAgentChat() {
       const listEl = document.createElement('div');
       listEl.className = 'agent-chat-attachments';
       for (const attachment of message.attachments) {
+        if (attachment.isPicture) {
+          const imageEl = document.createElement('a');
+          imageEl.className = 'agent-chat-attachment-image';
+          imageEl.setAttribute('href', attachment.url);
+          imageEl.setAttribute('target', '_blank');
+          imageEl.setAttribute('rel', 'noreferrer noopener');
+          const image = document.createElement('img');
+          image.setAttribute('src', attachment.url);
+          image.setAttribute('alt', attachment.name);
+          image.setAttribute('loading', 'lazy');
+          imageEl.append(image);
+          listEl.append(imageEl);
+          continue;
+        }
         const linkEl = document.createElement('a');
         linkEl.className = 'agent-chat-attachment';
         linkEl.setAttribute('href', attachment.url);
+        linkEl.setAttribute('download', '');
         const nameEl = document.createElement('span');
         nameEl.className = 'gt-ellipsis';
         nameEl.textContent = attachment.name;
@@ -653,6 +704,7 @@ export function initAgentChat() {
   initMessageActions();
   scrollToLastQuestion();
   const clearAttachments = initAttachmentList(composerEl);
+  initComposerKeys(composerEl, inputEl);
 
   composerEl.addEventListener('submit', async (event) => {
     event.preventDefault();

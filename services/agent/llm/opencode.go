@@ -5,6 +5,7 @@ package llm
 
 import (
 	"context"
+	"maps"
 	"net/http"
 )
 
@@ -46,9 +47,7 @@ func NewOpenCodeClient(apiKey, sessionID, baseURL, modelsURL, model string, extr
 // then custom headers, then the fixed session header, which custom headers may not replace.
 func (c *OpenCodeClient) authHeader() http.Header {
 	header := http.Header{"Authorization": {"Bearer " + c.APIKey}}
-	for k, v := range c.ExtraHeaders {
-		header[k] = v
-	}
+	maps.Copy(header, c.ExtraHeaders)
 	if c.SessionID != "" {
 		header.Set(SessionHeader, c.SessionID)
 	}

@@ -46,23 +46,54 @@ func AcceptsImages(ctx context.Context, providerType, modelID string) bool {
 	return slices.Contains(catalog.InputModalities(providerType, modelID), "image")
 }
 
-// Catalog holds the input modalities the shared catalog reports, narrowed to the
-// providers this instance knows about.
+// catalogModel is what the catalog reports about one model.
+type catalogModel struct {
+	InputModalities []string
+	// OutputLimit is the largest answer the model accepts, in tokens; 0 when unknown.
+	OutputLimit int
+}
+
+// Catalog holds what the shared catalog reports, narrowed to the providers this instance
+// knows about.
 type Catalog struct {
-	providers map[string]map[string][]string // catalog provider id -> model id -> input modalities
+	providers map[string]map[string]catalogModel // catalog provider id -> model id -> info
 }
 
 // InputModalities returns the input modalities of a model, or nil when unknown.
 func (c *Catalog) InputModalities(providerType, modelID string) []string {
+	return c.model(providerType, modelID).InputModalities
+}
+
+// OutputLimit returns the largest answer the model accepts, in tokens, or 0 when unknown.
+func (c *Catalog) OutputLimit(providerType, modelID string) int {
+	return c.model(providerType, modelID).OutputLimit
+}
+
+func (c *Catalog) model(providerType, modelID string) catalogModel {
 	if c == nil || modelID == "" {
-		return nil
+		return catalogModel{}
 	}
 	info, ok := Provider(providerType)
 	if !ok || info.ModelsDevProvider == "" {
-		return nil
+		return catalogModel{}
 	}
 	return c.providers[info.ModelsDevProvider][modelID]
 }
+
+// MaxOutputTokens returns the largest answer the model accepts, in tokens, or 0 when the
+// catalog does not say. A caller decides what an unknown model gets.
+func MaxOutputTokens(ctx context.Context, providerType, modelID string) int {
+	if modelID == "" {
+		return 0
+	}
+	ctx, cancel := context.WithTimeout(ctx, catalogLookupWait)
+	defer cancel()
+	return LoadCatalog(ctx).OutputLimit(providerType, modelID)
+}
+
+// DefaultMaxTokens is what a request carries when the catalog says nothing: room for an
+// answer and the reasoning ahead of it.
+const DefaultMaxTokens = 4096
 
 var (
 	catalogMu      sync.Mutex
@@ -113,6 +144,9 @@ type catalogPayload struct {
 		Modalities struct {
 			Input []string `json:"input"`
 		} `json:"modalities"`
+		Limit struct {
+			Output int `json:"output"`
+		} `json:"limit"`
 	} `json:"models"`
 }
 
@@ -124,7 +158,7 @@ func fetchCatalog(ctx context.Context) (*Catalog, error) {
 		}
 	}
 	if len(wanted) == 0 {
-		return &Catalog{providers: map[string]map[string][]string{}}, nil
+		return &Catalog{providers: map[string]map[string]catalogModel{}}, nil
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ModelCatalogURL, nil)
@@ -141,8 +175,9 @@ func fetchCatalog(ctx context.Context) (*Catalog, error) {
 		return nil, fmt.Errorf("model catalog returned status %d", resp.StatusCode)
 	}
 
-	// decode only the providers in use; the full document covers hundreds of them
-	catalog := &Catalog{providers: map[string]map[string][]string{}}
+	// decode only the providers in use; the full document covers hundreds of them. The
+	// streaming walk is what keeps this cheap: the document is far too big to decode whole.
+	catalog := &Catalog{providers: map[string]map[string]catalogModel{}}
 	dec := json.NewDecoder(resp.Body)
 	if _, err := dec.Token(); err != nil { // opening brace
 		return nil, err
@@ -164,9 +199,12 @@ func fetchCatalog(ctx context.Context) (*Catalog, error) {
 		if err := dec.Decode(&payload); err != nil {
 			return nil, err
 		}
-		models := make(map[string][]string, len(payload.Models))
+		models := make(map[string]catalogModel, len(payload.Models))
 		for id, m := range payload.Models {
-			models[id] = normalizeModalities(m.Modalities.Input)
+			models[id] = catalogModel{
+				InputModalities: normalizeModalities(m.Modalities.Input),
+				OutputLimit:     m.Limit.Output,
+			}
 		}
 		catalog.providers[providerID] = models
 	}
