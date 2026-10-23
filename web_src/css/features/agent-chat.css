@@ -601,8 +601,10 @@ button.agent-chat-card {
 }
 
 .agent-chat-message.user .agent-chat-bubble {
-  color: var(--color-primary-contrast);
-  background: var(--color-primary);
+  /* a pastel of the primary: dark text stays readable; the leg that is pastel in the light
+     theme darkens in the dark one, so the same rule reads in both */
+  color: var(--color-text);
+  background: var(--color-primary-light-6);
 }
 
 /* a tool call and its result: a log line of the transcript, so it takes the whole column */
