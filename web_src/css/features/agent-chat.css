@@ -591,7 +591,7 @@ button.agent-chat-card {
   /* the answer is a card of its own on the page: the pastel of the surface colour keeps it
      apart from the user's tinted bubble on both themes, and the hairline gives it an edge */
   padding: 8px 10px;
-  background: color-mix(in srgb, var(--color-secondary) 22%, var(--color-body));
+  background: color-mix(in srgb, var(--color-secondary) 8%, var(--color-body));
   border: 1px solid var(--color-secondary);
 }
 
