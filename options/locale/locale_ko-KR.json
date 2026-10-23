@@ -4141,6 +4141,7 @@
   "agent.chat_no_messages": "아직 메시지가 없습니다.",
   "agent.chat_message_empty": "메시지 내용을 입력하세요.",
   "agent.chat_reasoning": "생각 중…",
+  "agent.chat_thought": "추론",
   "agent.chat_placeholder": "에이전트에게 메시지 보내기…",
   "agent.chat_send": "보내기",
   "agent.chat_you": "나",

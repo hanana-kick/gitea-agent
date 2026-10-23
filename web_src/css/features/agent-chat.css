@@ -616,65 +616,68 @@ button.agent-chat-card {
   max-width: none;
 }
 
-/* the call folds into one line and the result opens underneath it; a log line of the
-   transcript reads as a hairline, not as a filled block that competes with the answer */
-.agent-chat-tool-details {
+/* a call and a thought fold into one faint line with what they hold behind it: a log entry
+   of the transcript carries no frame, so only the answer keeps a card */
+.agent-chat-fold {
   min-width: 0;
-  border: 1px solid var(--color-secondary);
-  border-radius: var(--border-radius-medium);
 }
 
-.agent-chat-tool-summary {
+.agent-chat-fold-summary {
   display: flex;
   gap: 8px;
   align-items: center;
   min-width: 0;
-  padding: 6px 10px;
+  padding: 2px 0;
   font-size: 12px;
   color: var(--color-text-light-2);
   list-style: none;
   cursor: pointer;
 }
 
-.agent-chat-tool-summary::-webkit-details-marker {
+.agent-chat-fold-summary::-webkit-details-marker {
   display: none;
 }
 
-.agent-chat-tool-chevron {
+.agent-chat-fold-summary:hover {
+  color: var(--color-text);
+}
+
+.agent-chat-fold-chevron {
   flex-shrink: 0;
-  color: var(--color-text-light-2);
   transition: transform 0.12s;
 }
 
-.agent-chat-tool-details[open] > .agent-chat-tool-summary .agent-chat-tool-chevron {
+.agent-chat-fold[open] > .agent-chat-fold-summary .agent-chat-fold-chevron {
   transform: rotate(90deg);
 }
 
-.agent-chat-tool-name {
+.agent-chat-fold-body {
+  margin: 2px 0 6px 20px; /* under the line, past the chevron */
   font-size: 12px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-fold-body > pre {
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-chat-thought {
+  margin-bottom: 4px; /* the answer card keeps its distance from the line above it */
+}
+
+.agent-chat-tool-name {
+  padding: 0; /* the name is part of the line, not a chip of its own */
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
   white-space: nowrap;
+  background: none;
 }
 
 .agent-chat-tool-args {
   color: var(--color-text-light-2);
-}
-
-.agent-chat-tool-body {
-  margin: 0 10px 8px;
-  font-size: 12px;
-  color: var(--color-text-light-2);
-  background: color-mix(in srgb, var(--color-secondary) 35%, var(--color-body));
-  border-radius: var(--border-radius);
-}
-
-.agent-chat-tool-body pre {
-  margin: 0;
-  padding: 6px 10px;
-  font-size: inherit;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 /* the run waits for the reader to allow a tool call */

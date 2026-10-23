@@ -4142,6 +4142,7 @@
   "agent.chat_no_messages": "No messages yet.",
   "agent.chat_message_empty": "A message needs text.",
   "agent.chat_reasoning": "Reasoning…",
+  "agent.chat_thought": "Reasoning",
   "agent.chat_placeholder": "Message the agent…",
   "agent.chat_send": "Send",
   "agent.chat_you": "You",

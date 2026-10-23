@@ -4,10 +4,10 @@ import {svg} from '../svg.ts';
 import {errorMessage} from '../modules/errors.ts';
 import {addDelegatedEventListener, createElementFromHTML, toggleElem} from '../utils/dom.ts';
 
-type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string};
+type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string, thought: string};
 type AgentChatDelta = {runId: number, content?: string, reasoning?: string, reset?: boolean};
 type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string, isPicture: boolean};
-type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, attachments?: AgentChatAttachment[], tool?: {name: string, args: string, result: string}};
+type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, reasoning?: string, attachments?: AgentChatAttachment[], tool?: {name: string, args: string, result: string}};
 type AgentChatRun = {id: number, conversationId: number, status: string, error: string, cancelable: boolean};
 type AgentChatConversation = {id: number, title: string, summary: string, icon: string};
 type AgentChatApproval = {id: number, runID: number, tool: string, arguments: string};
@@ -256,6 +256,23 @@ export function initAgentChat() {
     toggleElem(noteEl, note !== '');
   }
 
+  // a call and a thought fold the same way: one faint line, and what it holds behind it
+  function buildFold(summary: Node[], body: string): HTMLDetailsElement {
+    const detailsEl = document.createElement('details');
+    detailsEl.className = 'agent-chat-fold';
+    const summaryEl = document.createElement('summary');
+    summaryEl.className = 'agent-chat-fold-summary';
+    summaryEl.insertAdjacentHTML('beforeend', svg('octicon-chevron-right', 12, 'agent-chat-fold-chevron'));
+    summaryEl.append(...summary);
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'agent-chat-fold-body';
+    const preEl = document.createElement('pre');
+    preEl.textContent = body;
+    bodyEl.append(preEl);
+    detailsEl.append(summaryEl, bodyEl);
+    return detailsEl;
+  }
+
   function buildMessage(message: AgentChatMessage): HTMLElement {
     const messageEl = document.createElement('div');
     messageEl.className = `agent-chat-message ${message.role}`;
@@ -266,34 +283,35 @@ export function initAgentChat() {
     metaEl.textContent = `${message.roleLabel} · `;
     metaEl.insertAdjacentHTML('beforeend', message.timeHTML);
 
-    // a tool record folds into one summary line: the call, and what came back behind it
+    // a tool record folds into one faint line: the call, and what came back behind it
     if (message.role === 'tool') {
       messageEl.classList.add('agent-chat-tool');
-      const detailsEl = document.createElement('details');
-      detailsEl.className = 'agent-chat-tool-details';
-      const summaryEl = document.createElement('summary');
-      summaryEl.className = 'agent-chat-tool-summary';
-      summaryEl.insertAdjacentHTML('beforeend', svg('octicon-chevron-right', 12, 'agent-chat-tool-chevron'));
       const nameEl = document.createElement('code');
       nameEl.className = 'agent-chat-tool-name';
       nameEl.textContent = message.tool?.name ?? '';
-      summaryEl.append(nameEl);
+      const summary: Node[] = [nameEl];
       if (message.tool?.args) {
         const argsEl = document.createElement('span');
         argsEl.className = 'agent-chat-tool-args gt-ellipsis';
         argsEl.textContent = message.tool.args;
-        summaryEl.append(argsEl);
+        summary.push(argsEl);
       }
       const timeEl = document.createElement('span');
       timeEl.className = 'agent-chat-message-meta';
       timeEl.innerHTML = message.timeHTML;
-      summaryEl.append(timeEl);
-      const bodyEl = document.createElement('div');
-      bodyEl.className = 'agent-chat-tool-body';
-      bodyEl.innerHTML = `<pre>${message.html}</pre>`;
-      detailsEl.append(summaryEl, bodyEl);
-      messageEl.append(detailsEl);
+      summary.push(timeEl);
+      messageEl.append(buildFold(summary, message.content));
       return messageEl;
+    }
+
+    messageEl.append(metaEl);
+    // what the model thought before the answer folds away above it
+    if (message.reasoning) {
+      const labelEl = document.createElement('span');
+      labelEl.textContent = labels.thought;
+      const thoughtEl = buildFold([labelEl], message.reasoning);
+      thoughtEl.classList.add('agent-chat-thought');
+      messageEl.append(thoughtEl);
     }
 
     const bubbleEl = document.createElement('div');
@@ -348,7 +366,7 @@ export function initAgentChat() {
     sourceEl.className = 'agent-chat-source tw-hidden';
     sourceEl.textContent = message.content;
 
-    messageEl.append(metaEl, bubbleEl, actionsEl, sourceEl);
+    messageEl.append(bubbleEl, actionsEl, sourceEl);
     return messageEl;
   }
 
@@ -468,10 +486,15 @@ export function initAgentChat() {
     for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
     const el = document.createElement('div');
     el.className = 'agent-chat-message assistant agent-chat-pending';
-    el.innerHTML = `<div class="agent-chat-bubble">
-      <div class="agent-chat-pending-status"><span class="agent-chat-reasoning-dots"><i></i><i></i><i></i></span><span class="agent-chat-pending-label"></span></div>
-      <div class="agent-chat-live-text"></div>
-    </div>`;
+    const labelEl = document.createElement('span');
+    labelEl.textContent = labels.thought;
+    const thoughtEl = buildFold([labelEl], '');
+    thoughtEl.classList.add('agent-chat-thought', 'tw-hidden'); // no fold until there is a thought
+    const bubbleEl = document.createElement('div');
+    bubbleEl.className = 'agent-chat-bubble';
+    bubbleEl.innerHTML = `<div class="agent-chat-pending-status"><span class="agent-chat-reasoning-dots"><i></i><i></i><i></i></span><span class="agent-chat-pending-label"></span></div>
+      <div class="agent-chat-live-text"></div>`;
+    el.append(thoughtEl, bubbleEl);
     messagesEl.append(el);
     pendingEl = el;
     return el;
@@ -498,6 +521,11 @@ export function initAgentChat() {
     }
 
     const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= bottomThreshold;
+    if (delta.reasoning) {
+      const thoughtEl = ensurePending().querySelector<HTMLElement>('.agent-chat-thought')!;
+      toggleElem(thoughtEl, true);
+      thoughtEl.querySelector('pre')!.textContent += delta.reasoning;
+    }
     if (delta.content) {
       ensurePending().querySelector<HTMLElement>('.agent-chat-live-text')!.textContent += delta.content;
       setPendingState('streaming', '');

@@ -591,7 +591,8 @@ func GetMessage(ctx context.Context, id int64) (*agent_model.Message, error) {
 }
 
 // AppendMessage stores one transcript entry and marks the session as recently used.
-func AppendMessage(ctx context.Context, conversationID int64, role, content string) (*agent_model.Message, error) {
+// Reasoning is what the model thought before an answer, so every call but an answer passes "".
+func AppendMessage(ctx context.Context, conversationID int64, role, content, reasoning string) (*agent_model.Message, error) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return nil, errors.New("a message needs content")
@@ -602,7 +603,7 @@ func AppendMessage(ctx context.Context, conversationID int64, role, content stri
 	default:
 		return nil, fmt.Errorf("unknown message role %q", role)
 	}
-	message := &agent_model.Message{ConversationID: conversationID, Role: role, Content: content}
+	message := &agent_model.Message{ConversationID: conversationID, Role: role, Content: content, Reasoning: strings.TrimSpace(reasoning)}
 	if err := db.Insert(ctx, message); err != nil {
 		return nil, err
 	}

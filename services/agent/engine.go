@@ -181,7 +181,7 @@ func recoverRuns(ctx context.Context) error {
 // SubmitUserMessage stores a user message and starts a run for it. The caller does not
 // wait for the answer. The stored message is returned so files can be attached to it.
 func SubmitUserMessage(ctx context.Context, conversation *agent_model.Conversation, userID int64, content string) (*agent_model.Message, *agent_model.Run, error) {
-	message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleUser, content)
+	message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleUser, content, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -348,7 +348,7 @@ func (e *Engine) execute(runID int64) {
 	run.Status = agent_model.RunStatusRunning
 	e.publishRun(conversation.ID, run)
 
-	reply, model, err := e.answer(runCtx, conversation, run)
+	result, err := e.answer(runCtx, conversation, run)
 	if err != nil {
 		status := agent_model.RunStatusFailed
 		reason := err.Error()
@@ -368,18 +368,18 @@ func (e *Engine) execute(runID int64) {
 		return
 	}
 
-	if strings.TrimSpace(reply) == "" {
+	if strings.TrimSpace(result.Content) == "" {
 		e.finishRun(ctx, run, agent_model.RunStatusFailed, "the model returned an empty answer")
 		return
 	}
-	message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleAssistant, reply)
+	message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleAssistant, result.Content, result.Reasoning)
 	if err != nil {
 		e.finishRun(ctx, run, agent_model.RunStatusFailed, err.Error())
 		return
 	}
 	e.broker.publish(conversation.ID, Event{Name: EventMessage, Data: message.ID})
 
-	run.Model = model
+	run.Model = result.Model
 	e.finishRun(ctx, run, agent_model.RunStatusSucceeded, "")
 	e.nameConversation(ctx, conversation)
 }
@@ -533,42 +533,53 @@ func cleanConversationTitle(title string) string {
 	return title
 }
 
+// answerResult is what one run produced: the answer, the reasoning that led to it and the
+// model that wrote them.
+type answerResult struct {
+	Content   string
+	Reasoning string
+	Model     string
+}
+
 // answer builds the prompt from the stored transcript and asks the session model, making
 // the tool calls it asks for until it answers.
-func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run) (string, string, error) {
+func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run) (answerResult, error) {
 	role := ModelRoleForKind(conversation.Kind)
 	ref, err := ModelRoleRef(ctx, role)
 	if err != nil {
-		return "", "", err
+		return answerResult{}, err
 	}
 	if ref == "" {
-		return "", "", ErrModelRoleNotSet{Role: role}
+		return answerResult{}, ErrModelRoleNotSet{Role: role}
 	}
 	history, err := ListMessages(ctx, conversation.ID, engineHistoryLimit)
 	if err != nil {
-		return "", "", err
+		return answerResult{}, err
 	}
 	attachments, err := ListMessageAttachments(ctx, messageIDs(history))
 	if err != nil {
-		return "", "", err
+		return answerResult{}, err
 	}
 	// a run with no known user has nobody's rights to read with, so it gets no tools
 	doer, err := runUser(ctx, run)
 	if err != nil && !errors.Is(err, errRunUserUnknown{}) {
-		return "", "", err
+		return answerResult{}, err
 	}
 	offerings, err := agent_tools.Available(ctx, conversation.Kind)
 	if err != nil {
-		return "", "", err
+		return answerResult{}, err
 	}
 	if doer == nil {
 		offerings = nil
 	}
+	// everything the model thought during the run, stored with the answer it ends in
+	var reasoning strings.Builder
 	// every piece goes out at once, so the browser can show the answer while it is written
 	onDelta := func(delta llm.Delta) error {
 		if err := ctx.Err(); err != nil {
 			return err // stop reading when the run was cancelled
 		}
+		reasoning.WriteString(delta.Reasoning)
 		e.broker.publish(conversation.ID, Event{Name: EventDelta, Data: DeltaState{
 			RunID:     run.ID,
 			Content:   delta.Content,
@@ -583,7 +594,7 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 	// promise the session cannot keep, so it stays out too.
 	catalog, err := agent_skills.List(ctx, conversation.Kind)
 	if err != nil {
-		return "", "", err
+		return answerResult{}, err
 	}
 	if !slices.ContainsFunc(offerings, func(tool agent_tools.Tool) bool { return tool.Name() == agent_tools.SkillToolName }) {
 		catalog = nil
@@ -599,11 +610,11 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 		}
 		message, answered, err := AnswerMessage(ctx, ref, llm.ChatRequest{Messages: messages, Tools: askedFor}, onDelta)
 		if err != nil {
-			return "", model, err
+			return answerResult{}, err
 		}
 		model = answered
 		if len(message.ToolCalls) == 0 {
-			return message.Content, model, nil
+			return answerResult{Content: message.Content, Reasoning: reasoning.String(), Model: model}, nil
 		}
 		// the calls are what the reader watches happen; the answer starts after them
 		e.broker.publish(conversation.ID, Event{Name: EventDelta, Data: DeltaState{RunID: run.ID, Reset: true}})
@@ -616,7 +627,7 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 			})
 		}
 	}
-	return "", model, errors.New("the agent kept calling tools without answering")
+	return answerResult{}, errors.New("the agent kept calling tools without answering")
 }
 
 // errRunUserUnknown is a run whose asking user is gone or was never recorded; such a run
@@ -669,7 +680,7 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 // back for the model to read.
 func (e *Engine) recordTool(ctx context.Context, conversation *agent_model.Conversation, call llm.ToolCall, result string) string {
 	args := strings.Join(strings.Fields(call.Function.Arguments), " ")
-	if message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleTool, argsLine(call.Function.Name, args)+"\n"+result); err == nil {
+	if message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleTool, argsLine(call.Function.Name, args)+"\n"+result, ""); err == nil {
 		e.broker.publish(conversation.ID, Event{Name: EventMessage, Data: message.ID})
 	} else {
 		log.Error("Agent engine: unable to record tool %s: %v", call.Function.Name, err)

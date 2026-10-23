@@ -53,6 +53,7 @@ type messageEvent struct {
 	Content     string            `json:"content"`
 	HTML        string            `json:"html"`
 	TimeHTML    string            `json:"timeHTML"`
+	Reasoning   string            `json:"reasoning,omitempty"`
 	Attachments []attachmentEvent `json:"attachments,omitempty"`
 	Tool        *toolEvent        `json:"tool,omitempty"`
 }
@@ -279,6 +280,7 @@ func messageEventOf(ctx *context.Context, message *agent_model.Message) messageE
 		Content:     message.Content,
 		HTML:        string(templates.NewRenderUtils(ctx).MarkdownToHtml(message.Content)),
 		TimeHTML:    string(templates.TimeSince(message.CreatedUnix)),
+		Reasoning:   message.Reasoning,
 	}
 	if message.Role == agent_model.MessageRoleTool {
 		// a tool record folds into one summary line: the call, and what came back behind it

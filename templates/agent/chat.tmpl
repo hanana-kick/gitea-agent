@@ -231,14 +231,14 @@
 							{{$record := index $.ToolRecords .ID}}
 							{{/* a tool call and its result is a log line of the transcript, not a message */}}
 							<div class="agent-chat-message tool agent-chat-tool" data-message-id="{{.ID}}">
-								<details class="agent-chat-tool-details">
-									<summary class="agent-chat-tool-summary">
-										{{svg "octicon-chevron-right" 12 "agent-chat-tool-chevron"}}
+								<details class="agent-chat-fold">
+									<summary class="agent-chat-fold-summary">
+										{{svg "octicon-chevron-right" 12 "agent-chat-fold-chevron"}}
 										<code class="agent-chat-tool-name">{{$record.Name}}</code>
 										{{if $record.Args}}<span class="agent-chat-tool-args gt-ellipsis">{{$record.Args}}</span>{{end}}
 										<span class="agent-chat-message-meta">{{DateUtils.TimeSince .CreatedUnix}}</span>
 									</summary>
-									<div class="agent-chat-tool-body"><pre>{{.Content}}</pre></div>
+									<div class="agent-chat-fold-body"><pre>{{.Content}}</pre></div>
 								</details>
 							</div>
 						{{else}}
@@ -253,6 +253,16 @@
 									{{end}}
 									· {{DateUtils.TimeSince .CreatedUnix}}
 								</div>
+								{{if .Reasoning}}
+									{{/* what the model thought before it answered: a log line the reader opens */}}
+									<details class="agent-chat-fold agent-chat-thought">
+										<summary class="agent-chat-fold-summary">
+											{{svg "octicon-chevron-right" 12 "agent-chat-fold-chevron"}}
+											<span>{{ctx.Locale.Tr "agent.chat_thought"}}</span>
+										</summary>
+										<div class="agent-chat-fold-body"><pre>{{.Reasoning}}</pre></div>
+									</details>
+								{{end}}
 								<div class="agent-chat-bubble">
 									<div class="render-content markup">{{ctx.RenderUtils.MarkdownToHtml .Content}}</div>
 								</div>

@@ -446,6 +446,7 @@ func prepareMigrationTasks() []*migration {
 		newMigration(370, "Add agent run user", v28.AddAgentRunUser),
 		newMigration(371, "Add agent tool approval", v28.AddAgentToolApproval),
 		newMigration(372, "Add agent skills", v28.AddAgentSkill),
+		newMigration(373, "Add agent message reasoning", v28.AddAgentMessageReasoning),
 	}
 	return preparedMigrations
 }

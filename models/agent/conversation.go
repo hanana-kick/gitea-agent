@@ -70,6 +70,8 @@ type Message struct {
 	ConversationID int64  `xorm:"INDEX NOT NULL"`
 	Role           string `xorm:"VARCHAR(16) NOT NULL"`
 	Content        string `xorm:"TEXT NOT NULL"`
+	// Reasoning is what the model thought before it wrote the message; only an answer has it.
+	Reasoning string `xorm:"TEXT"`
 
 	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
 	// EditedUnix is set when the user rewrote the message: the transcript after it was
