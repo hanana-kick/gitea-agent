@@ -25,24 +25,37 @@ export function formatFileSize(bytes: number): string {
 
 // The browser gives no sign that a file is chosen, so the composer lists what will go with
 // the message and lets the reader take one back. The list is cleared once the files are sent.
-function initAttachmentList(form: HTMLFormElement): () => void {
+// A change never replaces what is already there: picking again adds to the message.
+export function initAttachmentList(form: HTMLFormElement): () => void {
   const input = form.querySelector<HTMLInputElement>('input[type="file"][name="files"]');
   const list = form.querySelector<HTMLElement>('.agent-chat-attach-list');
   const removeLabel = document.querySelector<HTMLElement>('.agent-chat')?.getAttribute('data-attach-remove-label') ?? '';
   if (!input || !list) return () => {};
-
-  const removeAt = (index: number) => {
-    const kept = new DataTransfer();
-    for (const [i, file] of Array.from(input.files ?? []).entries()) {
-      if (i !== index) kept.items.add(file);
-    }
-    input.files = kept.files;
-    input.dispatchEvent(new Event('change', {bubbles: false})); // the list draws itself again
+  const chosen: File[] = []; // the picker replaces input.files, so the selection has to live here
+  let suppress = false; // removing re-dispatches change; the handler must not merge that again
+  const syncFiles = () => {
+    const merged = new DataTransfer();
+    for (const file of chosen) merged.items.add(file);
+    input.files = merged.files;
   };
 
+  const removeAt = (index: number) => {
+    chosen.splice(index, 1);
+    syncFiles();
+    suppress = true;
+    try {
+      input.dispatchEvent(new Event('change', {bubbles: false})); // the list draws itself again
+    } finally {
+      suppress = false;
+    }
+  };
   const chip = (file: File, index: number): HTMLElement => {
+    const thumb = file.type.startsWith('image/') ? URL.createObjectURL(file) : '';
+    const body = thumb ?
+      `<img class="agent-chat-attach-thumb" alt="" src="${thumb}">` :
+      svg('octicon-paperclip', 14);
     const el = createElementFromHTML<HTMLElement>(
-      `<div class="agent-chat-attachment">${svg('octicon-paperclip', 14)}<span class="gt-ellipsis"></span>` +
+      `<div class="agent-chat-attachment">${body}<span class="gt-ellipsis"></span>` +
       `<span class="agent-chat-attachment-size"></span>` +
       `<button type="button" class="agent-chat-attach-remove" data-tooltip-content="${removeLabel}" aria-label="${removeLabel}">${svg('octicon-x', 14)}</button></div>`,
     );
@@ -53,17 +66,25 @@ function initAttachmentList(form: HTMLFormElement): () => void {
   };
 
   const render = () => {
-    const files = Array.from(input.files ?? []);
+    const files = Array.from(input.files!);
     toggleElem(list, files.length > 0);
     list.replaceChildren(...files.map((file, index) => chip(file, index)));
   };
+  input.addEventListener('change', () => {
+    // files may be picked in several rounds: append to the message, never overwrite
+    const picked = Array.from(input.files!);
+    if (!suppress && picked.length) {
+      chosen.push(...picked);
+      syncFiles();
+    }
+    render();
+  });
 
   const clear = () => {
+    chosen.length = 0;
     input.value = '';
     render();
   };
-
-  input.addEventListener('change', render);
   return clear;
 }
 
