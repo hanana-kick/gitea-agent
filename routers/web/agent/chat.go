@@ -25,6 +25,10 @@ const (
 
 	// chatMessagePageSize is how much of a transcript the chat screen loads at once.
 	chatMessagePageSize = 50
+
+	// chatAttachmentLimit is how many files of one kind a message shows before the rest
+	// waits behind a "more" button. Keep it in step with attachmentLimit in agent-chat.ts.
+	chatAttachmentLimit = 5
 )
 
 // chatTitle uses the submitted title, falling back to the localized name of the kind.
@@ -142,7 +146,8 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 			return
 		}
 		ctx.Data["Messages"] = messages
-		ctx.Data["MessageAttachments"] = attachments
+		ctx.Data["MessageAttachments"] = groupAttachments(attachments)
+		ctx.Data["AttachmentLimit"] = chatAttachmentLimit
 		ctx.Data["ToolRecords"] = toolRecordMap(messages)
 		ctx.Data["OldestMessageID"] = oldestID
 		ctx.Data["HasOlderMessages"] = hasOlder
@@ -342,6 +347,30 @@ func ChatAttachment(ctx *context.Context) {
 		ContentDisposition: httplib.ContentDispositionAttachment,
 		LastModified:       attachment.CreatedUnix.AsLocalTime(),
 	})
+}
+
+// attachmentGroups is the files of one message split the way the transcript shows them:
+// pictures read as a row of thumbnails, everything else as a list of files.
+type attachmentGroups struct {
+	Pictures []*agent_model.Attachment
+	Files    []*agent_model.Attachment
+}
+
+// groupAttachments splits the files of every message of a transcript for the template.
+func groupAttachments(attachments map[int64][]*agent_model.Attachment) map[int64]*attachmentGroups {
+	grouped := make(map[int64]*attachmentGroups, len(attachments))
+	for messageID, files := range attachments {
+		group := &attachmentGroups{}
+		for _, file := range files {
+			if file.IsPicture() {
+				group.Pictures = append(group.Pictures, file)
+				continue
+			}
+			group.Files = append(group.Files, file)
+		}
+		grouped[messageID] = group
+	}
+	return grouped
 }
 
 // toolRecordMap splits the tool records of a transcript for the template: the call the

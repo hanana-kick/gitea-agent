@@ -1,7 +1,7 @@
 {{template "base/head" .}}
 <div role="main" aria-label="{{.Title}}" class="page-content agent-chat-page{{if or .Session .IsDraft}} has-panel{{end}}">
 	{{template "base/alert" ctx.RootData}}
-	<div class="ui container fluid padded flex-container agent-chat" data-runs-url="{{AppSubUrl}}/-/agent/events" data-busy-label="{{ctx.Locale.Tr "agent.chat_busy"}}" data-attach-remove-label="{{ctx.Locale.Tr "agent.chat_attach_remove"}}">
+	<div class="ui container fluid padded flex-container agent-chat" data-runs-url="{{AppSubUrl}}/-/agent/events" data-busy-label="{{ctx.Locale.Tr "agent.chat_busy"}}" data-attach-remove-label="{{ctx.Locale.Tr "agent.chat_attach_remove"}}" data-attach-more-label="{{ctx.Locale.Tr "agent.chat_more"}}">
 		<div class="flex-container-nav agent-chat-nav" aria-label="{{ctx.Locale.Tr "agent.chat_sessions"}}">
 			<div class="ui two item menu agent-chat-tabs">
 				<a class="item{{if eq .Scope "pod"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=pod">{{ctx.Locale.Tr "agent.chat_tab_pod"}}</a>
@@ -266,21 +266,35 @@
 								<div class="agent-chat-bubble">
 									<div class="render-content markup">{{ctx.RenderUtils.MarkdownToHtml .Content}}</div>
 								</div>
-								{{$attachments := index $.MessageAttachments .ID}}
-								{{if $attachments}}
+								{{$group := index $.MessageAttachments .ID}}
+								{{if $group}}
+									{{/* <!-- pictures read as a row of thumbnails, files as a list below them --> */}}
 									<div class="agent-chat-attachments">
-										{{range $attachments}}
-											{{if .IsPicture}}
-												<a class="agent-chat-attachment-image" href="{{AppSubUrl}}{{.URL}}" target="_blank" rel="noreferrer noopener">
-													<img src="{{AppSubUrl}}{{.URL}}" alt="{{.Name}}" loading="lazy">
-												</a>
-											{{else}}
-												<a class="agent-chat-attachment" href="{{AppSubUrl}}{{.URL}}" download>
-													{{svg "octicon-paperclip" 14}}
-													<span class="gt-ellipsis">{{.Name}}</span>
-													<span class="agent-chat-attachment-size">{{.SizeText}}</span>
-												</a>
-											{{end}}
+										{{if $group.Pictures}}
+											<div class="agent-chat-attach-group agent-chat-attach-pictures">
+												{{range $index, $picture := $group.Pictures}}
+													<a class="agent-chat-attachment-image{{if ge $index $.AttachmentLimit}} tw-hidden{{end}}" href="{{AppSubUrl}}{{$picture.URL}}" target="_blank" rel="noreferrer noopener">
+														<img src="{{AppSubUrl}}{{$picture.URL}}" alt="{{$picture.Name}}" loading="lazy">
+													</a>
+												{{end}}
+												{{if gt (len $group.Pictures) $.AttachmentLimit}}
+													<button type="button" class="agent-chat-attach-more">{{ctx.Locale.Tr "agent.chat_more"}}</button>
+												{{end}}
+											</div>
+										{{end}}
+										{{if $group.Files}}
+											<div class="agent-chat-attach-group agent-chat-attach-files">
+												{{range $index, $file := $group.Files}}
+													<a class="agent-chat-attachment{{if ge $index $.AttachmentLimit}} tw-hidden{{end}}" href="{{AppSubUrl}}{{$file.URL}}" download>
+														{{svg "octicon-paperclip" 14}}
+														<span class="gt-ellipsis">{{$file.Name}}</span>
+														<span class="agent-chat-attachment-size">{{$file.SizeText}}</span>
+													</a>
+												{{end}}
+												{{if gt (len $group.Files) $.AttachmentLimit}}
+													<button type="button" class="agent-chat-attach-more">{{ctx.Locale.Tr "agent.chat_more"}}</button>
+												{{end}}
+											</div>
 										{{end}}
 									</div>
 								{{end}}

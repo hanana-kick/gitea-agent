@@ -752,11 +752,39 @@ button.agent-chat-card {
   cursor: pointer;
 }
 
+.agent-chat-attachments,
+.agent-chat-attach-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .agent-chat-attachments {
+  margin-top: 4px;
+}
+
+/* pictures read as a row of thumbnails, files as a list of their own; a row shows five
+   before the rest waits behind one button */
+.agent-chat-attach-group {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 4px;
+  align-items: center;
+}
+
+.agent-chat-attach-more {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-attach-more:hover {
+  color: var(--color-text);
+  background: var(--color-hover);
 }
 
 .agent-chat-attachment {

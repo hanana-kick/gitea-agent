@@ -12,6 +12,28 @@ type AgentChatRun = {id: number, conversationId: number, status: string, error: 
 type AgentChatConversation = {id: number, title: string, summary: string, icon: string};
 type AgentChatApproval = {id: number, runID: number, tool: string, arguments: string};
 
+// how many files of one kind a list shows before the rest waits behind a single button;
+// keep in step with chatAttachmentLimit in routers/web/agent/chat.go
+const attachmentLimit = 5;
+
+// the overflow of a row of pictures or of files waits behind one button
+function limitAttachmentGroup(group: HTMLElement, moreLabel: string) {
+  const items = Array.from(group.children) as HTMLElement[];
+  if (items.length <= attachmentLimit) return;
+  for (const item of items.slice(attachmentLimit)) toggleElem(item, false);
+  const moreEl = document.createElement('button');
+  moreEl.type = 'button';
+  moreEl.className = 'agent-chat-attach-more';
+  moreEl.textContent = moreLabel;
+  group.append(moreEl);
+}
+
+// the button reveals what its own row kept back, then has nothing left to do
+function expandAttachments(button: HTMLElement) {
+  for (const item of button.parentElement?.querySelectorAll<HTMLElement>('.tw-hidden') ?? []) toggleElem(item, true);
+  button.remove();
+}
+
 export function formatFileSize(bytes: number): string {
   const units = ['B', 'KB', 'MB'];
   let value = bytes;
@@ -29,7 +51,9 @@ export function formatFileSize(bytes: number): string {
 export function initAttachmentList(form: HTMLFormElement): () => void {
   const input = form.querySelector<HTMLInputElement>('input[type="file"][name="files"]');
   const list = form.querySelector<HTMLElement>('.agent-chat-attach-list');
-  const removeLabel = document.querySelector<HTMLElement>('.agent-chat')?.getAttribute('data-attach-remove-label') ?? '';
+  const chatEl = document.querySelector<HTMLElement>('.agent-chat');
+  const removeLabel = chatEl?.getAttribute('data-attach-remove-label') ?? '';
+  const moreLabel = chatEl?.getAttribute('data-attach-more-label') ?? '';
   if (!input || !list) return () => {};
   const chosen: File[] = []; // the picker replaces input.files, so the selection has to live here
   let suppress = false; // removing re-dispatches change; the handler must not merge that again
@@ -49,8 +73,8 @@ export function initAttachmentList(form: HTMLFormElement): () => void {
       suppress = false;
     }
   };
-  const chip = (file: File, index: number): HTMLElement => {
-    const thumb = file.type.startsWith('image/') ? URL.createObjectURL(file) : '';
+  const chip = (file: File, index: number, picture: boolean): HTMLElement => {
+    const thumb = picture ? URL.createObjectURL(file) : '';
     const body = thumb ?
       `<img class="agent-chat-attach-thumb" alt="" src="${thumb}">` :
       svg('octicon-paperclip', 14);
@@ -68,7 +92,17 @@ export function initAttachmentList(form: HTMLFormElement): () => void {
   const render = () => {
     const files = Array.from(input.files!);
     toggleElem(list, files.length > 0);
-    list.replaceChildren(...files.map((file, index) => chip(file, index)));
+    const picturesEl = document.createElement('div');
+    picturesEl.className = 'agent-chat-attach-group agent-chat-attach-pictures';
+    const filesEl = document.createElement('div');
+    filesEl.className = 'agent-chat-attach-group agent-chat-attach-files';
+    for (const [index, file] of files.entries()) {
+      const picture = file.type.startsWith('image/');
+      (picture ? picturesEl : filesEl).append(chip(file, index, picture));
+    }
+    const groups = [picturesEl, filesEl].filter((group) => group.childElementCount > 0);
+    for (const group of groups) limitAttachmentGroup(group, moreLabel);
+    list.replaceChildren(...groups);
   };
   input.addEventListener('change', () => {
     // files may be picked in several rounds: append to the message, never overwrite
@@ -85,6 +119,7 @@ export function initAttachmentList(form: HTMLFormElement): () => void {
     input.value = '';
     render();
   };
+  addDelegatedEventListener(form, 'click', '.agent-chat-attach-more', expandAttachments);
   return clear;
 }
 
@@ -224,6 +259,7 @@ export function initAgentChat() {
   const messagesUrl = mainEl.getAttribute('data-messages-url')!;
   const cancelUrl = mainEl.getAttribute('data-cancel-url')!;
   const labels = JSON.parse(mainEl.getAttribute('data-labels')!) as AgentChatLabels;
+  const moreLabel = mainEl.closest<HTMLElement>('.agent-chat')?.getAttribute('data-attach-more-label') ?? '';
   const approvalsUrl = mainEl.getAttribute('data-approvals-url')!;
   const approvalLabels = {
     title: mainEl.getAttribute('data-approval-title')!, // the tool name is interpolated where the locale keeps %s
@@ -324,6 +360,10 @@ export function initAgentChat() {
     if (message.attachments && message.attachments.length > 0) {
       const listEl = document.createElement('div');
       listEl.className = 'agent-chat-attachments';
+      const picturesEl = document.createElement('div');
+      picturesEl.className = 'agent-chat-attach-group agent-chat-attach-pictures';
+      const filesEl = document.createElement('div');
+      filesEl.className = 'agent-chat-attach-group agent-chat-attach-files';
       for (const attachment of message.attachments) {
         if (attachment.isPicture) {
           const imageEl = document.createElement('a');
@@ -336,7 +376,7 @@ export function initAgentChat() {
           image.setAttribute('alt', attachment.name);
           image.setAttribute('loading', 'lazy');
           imageEl.append(image);
-          listEl.append(imageEl);
+          picturesEl.append(imageEl);
           continue;
         }
         const linkEl = document.createElement('a');
@@ -350,8 +390,11 @@ export function initAgentChat() {
         sizeEl.className = 'agent-chat-attachment-size';
         sizeEl.textContent = attachment.sizeText;
         linkEl.append(createElementFromHTML(svg('octicon-paperclip', 14)), nameEl, sizeEl);
-        listEl.append(linkEl);
+        filesEl.append(linkEl);
       }
+      const groups = [picturesEl, filesEl].filter((group) => group.childElementCount > 0);
+      for (const group of groups) limitAttachmentGroup(group, moreLabel);
+      listEl.append(...groups);
       messageEl.append(listEl); // files travel under the bubble, not inside it
     }
 
@@ -467,6 +510,7 @@ export function initAgentChat() {
       copyToClipboardWithFeedback(button, source!.textContent);
     });
     messagesEl.querySelector('.agent-chat-load-older')?.addEventListener('click', loadOlder);
+    addDelegatedEventListener(messagesEl, 'click', '.agent-chat-attach-more', expandAttachments);
   }
 
   // the block under the last message says what its answer is doing; the stored message
