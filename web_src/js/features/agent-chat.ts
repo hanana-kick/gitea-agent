@@ -313,7 +313,7 @@ export function initAgentChat() {
         linkEl.append(createElementFromHTML(svg('octicon-paperclip', 14)), nameEl, sizeEl);
         listEl.append(linkEl);
       }
-      bubbleEl.append(listEl);
+      messageEl.append(listEl); // files travel under the bubble, not inside it
     }
 
     const actionsEl = document.createElement('div');

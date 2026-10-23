@@ -601,10 +601,10 @@ button.agent-chat-card {
 }
 
 .agent-chat-message.user .agent-chat-bubble {
-  /* a pastel of the primary: dark text stays readable; the leg that is pastel in the light
-     theme darkens in the dark one, so the same rule reads in both */
+  /* a pastel of the primary, mixed live so the theme's hue is kept and the reader's own
+     lightness preference decides how bright it is; dark text reads on both ramps */
   color: var(--color-text);
-  background: var(--color-primary-light-6);
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-body));
 }
 
 /* a tool call and its result: a log line of the transcript, so it takes the whole column */
@@ -750,9 +750,9 @@ button.agent-chat-card {
 
 .agent-chat-attachments {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 4px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .agent-chat-attachment {
@@ -783,13 +783,8 @@ button.agent-chat-card {
 .agent-chat-attachment-image {
   display: block;
   max-width: 260px;
+  margin-right: 4px;
   border-radius: var(--border-radius);
-}
-
-/* a picture inside the user bubble keeps a margin, so it does not touch the bubble edge */
-.agent-chat-message.user .agent-chat-attachment-image {
-  margin-top: 6px;
-  border-radius: calc(var(--border-radius-medium) - 2px);
 }
 
 .agent-chat-attachment-image img {

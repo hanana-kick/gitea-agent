@@ -255,25 +255,25 @@
 								</div>
 								<div class="agent-chat-bubble">
 									<div class="render-content markup">{{ctx.RenderUtils.MarkdownToHtml .Content}}</div>
-									{{$attachments := index $.MessageAttachments .ID}}
-									{{if $attachments}}
-										<div class="agent-chat-attachments">
-											{{range $attachments}}
-												{{if .IsPicture}}
-													<a class="agent-chat-attachment-image" href="{{AppSubUrl}}{{.URL}}" target="_blank" rel="noreferrer noopener">
-														<img src="{{AppSubUrl}}{{.URL}}" alt="{{.Name}}" loading="lazy">
-													</a>
-												{{else}}
-													<a class="agent-chat-attachment" href="{{AppSubUrl}}{{.URL}}" download>
-														{{svg "octicon-paperclip" 14}}
-														<span class="gt-ellipsis">{{.Name}}</span>
-														<span class="agent-chat-attachment-size">{{.SizeText}}</span>
-													</a>
-												{{end}}
-											{{end}}
-										</div>
-									{{end}}
 								</div>
+								{{$attachments := index $.MessageAttachments .ID}}
+								{{if $attachments}}
+									<div class="agent-chat-attachments">
+										{{range $attachments}}
+											{{if .IsPicture}}
+												<a class="agent-chat-attachment-image" href="{{AppSubUrl}}{{.URL}}" target="_blank" rel="noreferrer noopener">
+													<img src="{{AppSubUrl}}{{.URL}}" alt="{{.Name}}" loading="lazy">
+												</a>
+											{{else}}
+												<a class="agent-chat-attachment" href="{{AppSubUrl}}{{.URL}}" download>
+													{{svg "octicon-paperclip" 14}}
+													<span class="gt-ellipsis">{{.Name}}</span>
+													<span class="agent-chat-attachment-size">{{.SizeText}}</span>
+												</a>
+											{{end}}
+										{{end}}
+									</div>
+								{{end}}
 								<div class="agent-chat-message-actions">
 									<button type="button" class="agent-chat-copy-message" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_copy"}}">{{svg "octicon-copy" 14}}</button>
 									{{if eq .Role "user"}}
