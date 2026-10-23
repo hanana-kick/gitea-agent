@@ -588,8 +588,11 @@ button.agent-chat-card {
 
 .agent-chat-message.assistant .agent-chat-bubble,
 .agent-chat-message.system .agent-chat-bubble {
-  padding: 0;
-  background: none;
+  /* the answer is a card of its own on the page: the pastel of the surface colour keeps it
+     apart from the user's tinted bubble on both themes, and the hairline gives it an edge */
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--color-secondary) 45%, var(--color-body));
+  border: 1px solid var(--color-secondary);
 }
 
 .agent-chat-bubble .markup > :first-child {
@@ -613,16 +616,12 @@ button.agent-chat-card {
   max-width: none;
 }
 
-/* the call folds into one line and the result opens underneath it */
+/* the call folds into one line and the result opens underneath it; a log line of the
+   transcript reads as a hairline, not as a filled block that competes with the answer */
 .agent-chat-tool-details {
   min-width: 0;
   border: 1px solid var(--color-secondary);
   border-radius: var(--border-radius-medium);
-  background: var(--color-secondary);
-}
-
-.agent-chat-tool-details[open] {
-  background: none;
 }
 
 .agent-chat-tool-summary {
@@ -632,6 +631,7 @@ button.agent-chat-card {
   min-width: 0;
   padding: 6px 10px;
   font-size: 12px;
+  color: var(--color-text-light-2);
   list-style: none;
   cursor: pointer;
 }
@@ -653,6 +653,7 @@ button.agent-chat-card {
 .agent-chat-tool-name {
   font-size: 12px;
   font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
   white-space: nowrap;
 }
 
@@ -664,7 +665,7 @@ button.agent-chat-card {
   margin: 0 10px 8px;
   font-size: 12px;
   color: var(--color-text-light-2);
-  background: var(--color-secondary);
+  background: color-mix(in srgb, var(--color-secondary) 35%, var(--color-body));
   border-radius: var(--border-radius);
 }
 
