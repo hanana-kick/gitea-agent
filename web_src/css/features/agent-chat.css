@@ -533,6 +533,11 @@ button.agent-chat-card {
   color: var(--color-text-light-2);
 }
 
+/* a message that carries files shares its line with the meta text */
+.agent-chat-message-time {
+  float: right;
+}
+
 .agent-chat-message.user .agent-chat-message-meta {
   text-align: right;
 }

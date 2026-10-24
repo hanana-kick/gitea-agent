@@ -242,8 +242,9 @@
 								</details>
 							</div>
 						{{else}}
+							{{$group := index $.MessageAttachments .ID}}
 							<div class="agent-chat-message {{.Role}}" data-message-id="{{.ID}}">
-								<div class="agent-chat-message-meta">
+								<div class="agent-chat-message-meta{{if hasAttachments $group}} gt-ellipsis{{end}}">
 									{{if eq .Role "user"}}
 										{{ctx.Locale.Tr "agent.chat_you"}}
 									{{else if eq .Role "assistant"}}
@@ -251,7 +252,7 @@
 									{{else}}
 										{{ctx.Locale.Tr "agent.chat_system"}}
 									{{end}}
-									· {{DateUtils.TimeSince .CreatedUnix}}
+									{{if hasAttachments $group}}<span class="agent-chat-message-time">{{DateUtils.TimeSince .CreatedUnix}}</span>{{else}}· {{DateUtils.TimeSince .CreatedUnix}}{{end}}
 								</div>
 								{{if .Reasoning}}
 									{{/* what the model thought before it answered: a log line the reader opens */}}
@@ -266,8 +267,7 @@
 								<div class="agent-chat-bubble">
 									<div class="render-content markup">{{ctx.RenderUtils.MarkdownToHtml .Content}}</div>
 								</div>
-								{{$group := index $.MessageAttachments .ID}}
-								{{if $group}}
+							{{if $group}}
 									{{/* <!-- pictures read as a row of thumbnails, files as a list below them --> */}}
 									<div class="agent-chat-attachments">
 										{{if $group.Pictures.Files}}
