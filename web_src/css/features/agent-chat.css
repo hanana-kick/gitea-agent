@@ -434,6 +434,8 @@ button.agent-chat-card {
   min-height: 0;
   padding: 12px;
   overflow-y: auto;
+  /* the attachment rows measure themselves against this column, not against their message */
+  container-type: inline-size;
 }
 
 .agent-chat-message {
@@ -831,12 +833,17 @@ button.agent-chat-card {
   white-space: nowrap;
 }
 
-/* a message that carries files stays on the side of its bubble: the rows under it stretch
-   from that side and the bubble keeps hugging its text */
+/* a message that carries files keeps its block but gives the attachment rows a width of
+   their own, measured on the transcript column, so five tiles always fill one row; the
+   bubble itself still hugs its text */
 .agent-chat-message:has(.agent-chat-attachments) {
-  align-self: flex-start;
-  align-items: flex-end;
-  max-width: none;
+  width: 100%;
+  max-width: 714px; /* the readable column: the 900px panel minus its padding */
+  margin-inline: auto;
+}
+
+.agent-chat-message:has(.agent-chat-attachments) .agent-chat-attachments {
+  width: 100%;
 }
 
 .agent-chat-message:has(.agent-chat-attachments) .agent-chat-bubble {
