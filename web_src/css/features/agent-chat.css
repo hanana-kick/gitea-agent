@@ -839,7 +839,14 @@ button.agent-chat-card {
 .agent-chat-message:has(.agent-chat-attachments) {
   width: 100%;
   max-width: 714px; /* the readable column: the 900px panel minus its padding */
-  margin-inline: auto;
+}
+
+.agent-chat-message.user:has(.agent-chat-attachments) {
+  margin-left: auto;
+}
+
+.agent-chat-message.assistant:has(.agent-chat-attachments) {
+  margin-right: auto;
 }
 
 .agent-chat-message:has(.agent-chat-attachments) .agent-chat-attachments {
