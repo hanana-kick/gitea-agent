@@ -44,6 +44,7 @@
 /* the session list follows the dashboard repo list: tabs, attached header, search, list */
 .agent-chat-main {
   display: flex;
+  flex: 1; /* it takes the space the session list leaves, instead of sizing to its content */
   flex-direction: column;
   /* a comfortable reading width, centred in the space left by the session list */
   max-width: 900px;
@@ -1012,11 +1013,16 @@ button.agent-chat-card {
     padding: 0 8px;
   }
 
-  /* the container is a column here, so the panel has to fill the block axis */
+  /* the container is a column here, so the panel has to fill the block axis; the auto
+     margins that centre it in a row would leave it at its content width instead */
   .agent-chat-nav {
     width: auto;
     flex: 1;
     min-height: 0;
+  }
+
+  .agent-chat-main {
+    margin-inline: 0;
   }
 
   /* one panel at a time: the list, or the chat with its draft */
