@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	agent_model "gitea.dev/models/agent"
 	db_list "gitea.dev/models/db"
 	issues_model "gitea.dev/models/issues"
 	access_model "gitea.dev/models/perm/access"
@@ -55,7 +56,7 @@ func (searchIssuesTool) Args() []Arg {
 	return []Arg{{Name: "keyword", Description: "Text to look for in issue titles and bodies"}}
 }
 
-func (searchIssuesTool) Run(ctx context.Context, doer *user_model.User, _ Session, args string) (string, error) {
+func (searchIssuesTool) Run(ctx context.Context, doer *user_model.User, session Session, args string) (string, error) {
 	var params struct {
 		Keyword string `json:"keyword"`
 	}
@@ -66,7 +67,7 @@ func (searchIssuesTool) Run(ctx context.Context, doer *user_model.User, _ Sessio
 	if params.Keyword == "" {
 		return "The keyword argument is required.", nil
 	}
-	issues, err := matchedIssues(ctx, doer, params.Keyword)
+	issues, err := matchedIssues(ctx, doer, session.RepoID, params.Keyword)
 	if err != nil {
 		return "", err
 	}
@@ -83,16 +84,22 @@ func (searchIssuesTool) Run(ctx context.Context, doer *user_model.User, _ Sessio
 	return clip(strings.Join(lines, "\n")), nil
 }
 
-// matchedIssues finds the issues the doer may see that mention the keyword. The index
-// does the matching while it is running; otherwise the newest issues are filtered here,
-// which only reaches as far as the listing does.
-func matchedIssues(ctx context.Context, doer *user_model.User, keyword string) ([]*issues_model.Issue, error) {
+// matchedIssues finds the issues the doer may see that mention the keyword. A repository
+// session passes its repository, so the search never leaves it. The index does the
+// matching while it is running; otherwise the newest issues are filtered here, which only
+// reaches as far as the listing does.
+func matchedIssues(ctx context.Context, doer *user_model.User, repoID int64, keyword string) ([]*issues_model.Issue, error) {
 	indexed := issue_indexer.IsAvailable(ctx)
 	options := issues_model.IssuesOptions{
 		Doer:      doer,
 		AllPublic: true,
 		IsPull:    optional.Some(false),
 		SortType:  "newest",
+	}
+	if repoID != 0 {
+		// the repository is the whole world of this session, so nothing outside it may match
+		options.RepoIDs = []int64{repoID}
+		options.AllPublic = false
 	}
 	if indexed {
 		// the index only returns ids, so the pass through Issues() is what keeps the
@@ -143,7 +150,7 @@ func (readIssueTool) Args() []Arg {
 	return []Arg{{Name: "issue_id", Description: "The numeric issue ID from gitea_search_issues", Type: "integer"}}
 }
 
-func (readIssueTool) Run(ctx context.Context, doer *user_model.User, _ Session, args string) (string, error) {
+func (readIssueTool) Run(ctx context.Context, doer *user_model.User, session Session, args string) (string, error) {
 	var params struct {
 		IssueID int64 `json:"issue_id"`
 	}
@@ -156,6 +163,9 @@ func (readIssueTool) Run(ctx context.Context, doer *user_model.User, _ Session, 
 	issue, err := issues_model.GetIssueByID(ctx, params.IssueID)
 	if err != nil {
 		return "There is no issue with that ID.", nil
+	}
+	if session.RepoID != 0 && issue.RepoID != session.RepoID {
+		return "That issue belongs to another repository, so search this one instead.", nil
 	}
 	if err := issue.LoadRepo(ctx); err != nil {
 		return "", err
@@ -189,6 +199,12 @@ func (listReposTool) Description() string {
 func (listReposTool) Scope() Scope { return ScopeUser }
 
 func (listReposTool) Args() []Arg { return nil }
+
+// Offered keeps the list out of a repository session: that session already works inside
+// one repository, so a list of the user's repositories has nothing to offer it.
+func (listReposTool) Offered(_ context.Context, session Session) (bool, error) {
+	return session.Kind != agent_model.ConversationKindRepository, nil
+}
 
 func (listReposTool) Run(ctx context.Context, doer *user_model.User, _ Session, _ string) (string, error) {
 	repos, _, err := repo_model.GetUserRepositories(ctx, repo_model.SearchRepoOptions{

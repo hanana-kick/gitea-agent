@@ -270,28 +270,28 @@
 								{{if $group}}
 									{{/* <!-- pictures read as a row of thumbnails, files as a list below them --> */}}
 									<div class="agent-chat-attachments">
-										{{if $group.Pictures}}
+										{{if $group.Pictures.Files}}
 											<div class="agent-chat-attach-group agent-chat-attach-pictures">
-												{{range $index, $picture := $group.Pictures}}
-													<a class="agent-chat-attachment-image{{if ge $index $.AttachmentLimit}} tw-hidden{{end}}" href="{{AppSubUrl}}{{$picture.URL}}" target="_blank" rel="noreferrer noopener">
+												{{range $index, $picture := $group.Pictures.Files}}
+													<a class="agent-chat-attachment-image{{if ge $index $group.Pictures.Shown}} tw-hidden{{end}}" href="{{AppSubUrl}}{{$picture.URL}}" target="_blank" rel="noreferrer noopener">
 														<img src="{{AppSubUrl}}{{$picture.URL}}" alt="{{$picture.Name}}" loading="lazy">
 													</a>
 												{{end}}
-												{{if gt (len $group.Pictures) $.AttachmentLimit}}
-													<button type="button" class="agent-chat-attach-more">{{ctx.Locale.Tr "agent.chat_more"}}</button>
+												{{if $group.Pictures.Rest}}
+													<button type="button" class="agent-chat-attach-more agent-chat-attach-count">+{{$group.Pictures.Rest}}</button>
 												{{end}}
 											</div>
 										{{end}}
-										{{if $group.Files}}
+										{{if $group.Files.Files}}
 											<div class="agent-chat-attach-group agent-chat-attach-files">
-												{{range $index, $file := $group.Files}}
-													<a class="agent-chat-attachment{{if ge $index $.AttachmentLimit}} tw-hidden{{end}}" href="{{AppSubUrl}}{{$file.URL}}" download>
+												{{range $index, $file := $group.Files.Files}}
+													<a class="agent-chat-attachment{{if ge $index $group.Files.Shown}} tw-hidden{{end}}" href="{{AppSubUrl}}{{$file.URL}}" download>
 														{{svg "octicon-paperclip" 14}}
 														<span class="gt-ellipsis">{{$file.Name}}</span>
 														<span class="agent-chat-attachment-size">{{$file.SizeText}}</span>
 													</a>
 												{{end}}
-												{{if gt (len $group.Files) $.AttachmentLimit}}
+												{{if $group.Files.Rest}}
 													<button type="button" class="agent-chat-attach-more">{{ctx.Locale.Tr "agent.chat_more"}}</button>
 												{{end}}
 											</div>

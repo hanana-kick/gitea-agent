@@ -51,7 +51,9 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--color-box-body);
+  /* the canvas carries the tint and the bubbles stay plain, so a long transcript reads as
+     paper with cards on it instead of one grey block after another */
+  background: color-mix(in srgb, var(--color-secondary) 11%, var(--color-body));
   border: 1px solid var(--color-secondary);
   border-radius: var(--border-radius-medium);
 }
@@ -588,10 +590,10 @@ button.agent-chat-card {
 
 .agent-chat-message.assistant .agent-chat-bubble,
 .agent-chat-message.system .agent-chat-bubble {
-  /* the answer is a card of its own on the page: the pastel of the surface colour keeps it
-     apart from the user's tinted bubble on both themes, and the hairline gives it an edge */
+  /* the answer is a card of its own on the tinted canvas: the surface colour keeps it plain
+     the way the user's bubble keeps the primary pastel */
   padding: 8px 10px;
-  background: color-mix(in srgb, var(--color-secondary) 8%, var(--color-body));
+  background: var(--color-box-body);
   border: 1px solid var(--color-secondary);
 }
 
@@ -787,6 +789,19 @@ button.agent-chat-card {
   background: var(--color-hover);
 }
 
+/* the fifth tile of a longer picture row says how many it holds back */
+.agent-chat-attach-count {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: calc((100% - 16px) / 5);
+  aspect-ratio: 1;
+  padding: 0;
+  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+}
+
 .agent-chat-attachment {
   display: flex;
   gap: 6px;
@@ -811,14 +826,45 @@ button.agent-chat-card {
   white-space: nowrap;
 }
 
-/* a picture is shown as a square crop, the usual thumbnail */
+/* a message that carries files takes the column, so its rows have a width to measure
+   themselves against; the bubble itself still hugs its text */
+.agent-chat-message:has(.agent-chat-attachments) {
+  align-self: stretch;
+}
+
+.agent-chat-message:has(.agent-chat-attachments) .agent-chat-bubble {
+  width: fit-content;
+}
+
+.agent-chat-message.user:has(.agent-chat-attachments) .agent-chat-bubble {
+  margin-left: auto;
+}
+
+/* the files of a message follow the side its bubble sits on */
+.agent-chat-message.user .agent-chat-attach-pictures {
+  justify-content: flex-end;
+}
+
+.agent-chat-message.user .agent-chat-attach-files {
+  align-items: flex-end;
+}
+
+/* a picture is shown as a square crop, the usual thumbnail; the row is five tiles wide and
+   fills the message, so five keep one row and a longer row wraps into more of them */
 .agent-chat-attachment-image {
   display: block;
-  width: 140px;
+  flex: 0 0 auto;
+  width: calc((100% - 16px) / 5); /* four 4px gaps */
   aspect-ratio: 1;
   overflow: hidden;
   border: 1px solid var(--color-secondary);
   border-radius: var(--border-radius);
+}
+
+/* files read as a list: one file to a line */
+.agent-chat-attachments .agent-chat-attach-files {
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .agent-chat-attachment-image img {

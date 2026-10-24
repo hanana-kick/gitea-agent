@@ -16,15 +16,17 @@ type AgentChatApproval = {id: number, runID: number, tool: string, arguments: st
 // keep in step with chatAttachmentLimit in routers/web/agent/chat.go
 const attachmentLimit = 5;
 
-// the overflow of a row of pictures or of files waits behind one button
-function limitAttachmentGroup(group: HTMLElement, moreLabel: string) {
+// the overflow of a row waits behind one control; the picture row's control is a tile that
+// says how many it holds back, so that row shows one tile fewer
+function limitAttachmentGroup(group: HTMLElement, moreLabel: string, counted = false) {
   const items = Array.from(group.children) as HTMLElement[];
   if (items.length <= attachmentLimit) return;
-  for (const item of items.slice(attachmentLimit)) toggleElem(item, false);
+  const shown = counted ? attachmentLimit - 1 : attachmentLimit;
+  for (const item of items.slice(shown)) toggleElem(item, false);
   const moreEl = document.createElement('button');
   moreEl.type = 'button';
-  moreEl.className = 'agent-chat-attach-more';
-  moreEl.textContent = moreLabel;
+  moreEl.className = counted ? 'agent-chat-attach-more agent-chat-attach-count' : 'agent-chat-attach-more';
+  moreEl.textContent = counted ? `+${items.length - shown}` : moreLabel;
   group.append(moreEl);
 }
 
@@ -392,8 +394,9 @@ export function initAgentChat() {
         linkEl.append(createElementFromHTML(svg('octicon-paperclip', 14)), nameEl, sizeEl);
         filesEl.append(linkEl);
       }
+      limitAttachmentGroup(picturesEl, moreLabel, true);
+      limitAttachmentGroup(filesEl, moreLabel);
       const groups = [picturesEl, filesEl].filter((group) => group.childElementCount > 0);
-      for (const group of groups) limitAttachmentGroup(group, moreLabel);
       listEl.append(...groups);
       messageEl.append(listEl); // files travel under the bubble, not inside it
     }

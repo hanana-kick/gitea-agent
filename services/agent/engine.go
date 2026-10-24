@@ -565,7 +565,8 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 	if err != nil && !errors.Is(err, errRunUserUnknown{}) {
 		return answerResult{}, err
 	}
-	offerings, err := agent_tools.Available(ctx, conversation.Kind)
+	session := agent_tools.Session{Kind: conversation.Kind, RepoID: conversation.RepoID}
+	offerings, err := agent_tools.Available(ctx, session)
 	if err != nil {
 		return answerResult{}, err
 	}
@@ -668,7 +669,8 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 			return e.recordTool(ctx, conversation, call, reason)
 		}
 	}
-	output, err := tool.Run(ctx, doer, agent_tools.Session{Kind: conversation.Kind}, call.Function.Arguments)
+	session := agent_tools.Session{Kind: conversation.Kind, RepoID: conversation.RepoID}
+	output, err := tool.Run(ctx, doer, session, call.Function.Arguments)
 	if err != nil {
 		log.Error("Agent engine: tool %s of run %d failed: %v", call.Function.Name, run.ID, err)
 		return e.recordTool(ctx, conversation, call, "The tool could not run: "+err.Error())

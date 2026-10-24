@@ -147,7 +147,6 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 		}
 		ctx.Data["Messages"] = messages
 		ctx.Data["MessageAttachments"] = groupAttachments(attachments)
-		ctx.Data["AttachmentLimit"] = chatAttachmentLimit
 		ctx.Data["ToolRecords"] = toolRecordMap(messages)
 		ctx.Data["OldestMessageID"] = oldestID
 		ctx.Data["HasOlderMessages"] = hasOlder
@@ -342,18 +341,33 @@ func ChatAttachment(ctx *context.Context) {
 		return
 	}
 	defer file.Close()
-	ctx.ServeContent(file, context.ServeHeaderOptions{
+	header := context.ServeHeaderOptions{
 		Filename:           attachment.Name,
 		ContentDisposition: httplib.ContentDispositionAttachment,
 		LastModified:       attachment.CreatedUnix.AsLocalTime(),
-	})
+	}
+	// a picture opens as itself, so the thumbnail of the transcript leads to a preview;
+	// every other file is meant to land in the reader's downloads
+	if pictureMime := agent_model.PictureMime(attachment.Name); pictureMime != "" {
+		header.ContentDisposition = httplib.ContentDispositionInline
+		header.ContentType = pictureMime
+	}
+	ctx.ServeContent(file, header)
+}
+
+// attachmentRow is one row of a message's attachments: the files, how many of them the row
+// shows and how many wait behind its control.
+type attachmentRow struct {
+	Files []*agent_model.Attachment
+	Shown int
+	Rest  int
 }
 
 // attachmentGroups is the files of one message split the way the transcript shows them:
-// pictures read as a row of thumbnails, everything else as a list of files.
+// pictures read as a row of thumbnails, everything else as a list of files below it.
 type attachmentGroups struct {
-	Pictures []*agent_model.Attachment
-	Files    []*agent_model.Attachment
+	Pictures attachmentRow
+	Files    attachmentRow
 }
 
 // groupAttachments splits the files of every message of a transcript for the template.
@@ -363,14 +377,30 @@ func groupAttachments(attachments map[int64][]*agent_model.Attachment) map[int64
 		group := &attachmentGroups{}
 		for _, file := range files {
 			if file.IsPicture() {
-				group.Pictures = append(group.Pictures, file)
+				group.Pictures.Files = append(group.Pictures.Files, file)
 				continue
 			}
-			group.Files = append(group.Files, file)
+			group.Files.Files = append(group.Files.Files, file)
 		}
+		// the picture row keeps one tile for the count of what it holds back
+		group.Pictures.Shown, group.Pictures.Rest = attachmentFit(len(group.Pictures.Files), chatAttachmentLimit, true)
+		group.Files.Shown, group.Files.Rest = attachmentFit(len(group.Files.Files), chatAttachmentLimit, false)
 		grouped[messageID] = group
 	}
 	return grouped
+}
+
+// attachmentFit reports how many files a row shows and how many are left. A row that fits
+// shows everything; a longer one stops at cap, one earlier when its last slot is the count.
+func attachmentFit(count, cap int, counted bool) (int, int) {
+	if count <= cap {
+		return count, 0
+	}
+	shown := cap
+	if counted {
+		shown--
+	}
+	return shown, count - shown
 }
 
 // toolRecordMap splits the tool records of a transcript for the template: the call the

@@ -67,6 +67,8 @@ type Arg struct {
 // the calling user may see, but a tool that reaches further needs the session it is in.
 type Session struct {
 	Kind string
+	// RepoID is the repository a repository session works inside, so its tools stay there; 0 for a session that is not bound to one.
+	RepoID int64
 }
 
 // Tool is one capability the agent may call.

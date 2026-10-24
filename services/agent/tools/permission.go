@@ -23,15 +23,14 @@ const (
 	DecisionDenied Decision = "denied"
 )
 
-// Available returns the tools a session of this kind may use, sorted by name: the
-// registry narrowed by scope, by what the admin left enabled, and by whether the tool has
-// anything to offer this session.
-func Available(ctx context.Context, sessionKind string) ([]Tool, error) {
-	session := Session{Kind: sessionKind}
+// Available returns the tools this session may use, sorted by name: the registry narrowed
+// by scope, by what the admin left enabled, and by whether the tool has anything to offer
+// this session.
+func Available(ctx context.Context, session Session) ([]Tool, error) {
 	list := Registry()
 	usable := make([]Tool, 0, len(list))
 	for _, tool := range list {
-		if !tool.Scope().AllowedFor(sessionKind) {
+		if !tool.Scope().AllowedFor(session.Kind) {
 			continue
 		}
 		offered, err := offeredTo(ctx, tool, session)

@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -71,6 +72,20 @@ func TestDefinitionsDescribeArgumentsForTheModel(t *testing.T) {
 	assert.Equal(t, "integer", issueID["type"])
 	assert.NotEmpty(t, issueID["description"])
 	assert.Equal(t, []string{"issue_id"}, numbered["required"])
+}
+
+func TestListReposIsOfferedOnlyOutsideARepository(t *testing.T) {
+	ctx := context.Background()
+	// a repository session works inside one repository, so the user's other repositories are none of its business
+	offered, err := listReposTool{}.Offered(ctx, Session{Kind: agent_model.ConversationKindRepository, RepoID: 3})
+	require.NoError(t, err)
+	assert.False(t, offered)
+
+	for _, kind := range []string{agent_model.ConversationKindResident, agent_model.ConversationKindServer} {
+		offered, err := listReposTool{}.Offered(ctx, Session{Kind: kind})
+		require.NoError(t, err)
+		assert.True(t, offered, "in %s", kind)
+	}
 }
 
 func TestClipKeepsToolOutputInsideThePrompt(t *testing.T) {
