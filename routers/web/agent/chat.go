@@ -341,18 +341,18 @@ func ChatAttachment(ctx *context.Context) {
 		return
 	}
 	defer file.Close()
-	header := context.ServeHeaderOptions{
+	// a picture opens as itself, so the thumbnail of the transcript leads to a preview;
+	// every other file is meant to land in the reader's downloads
+	options := context.ServeHeaderOptions{
 		Filename:           attachment.Name,
 		ContentDisposition: httplib.ContentDispositionAttachment,
 		LastModified:       attachment.CreatedUnix.AsLocalTime(),
 	}
-	// a picture opens as itself, so the thumbnail of the transcript leads to a preview;
-	// every other file is meant to land in the reader's downloads
 	if pictureMime := agent_model.PictureMime(attachment.Name); pictureMime != "" {
-		header.ContentDisposition = httplib.ContentDispositionInline
-		header.ContentType = pictureMime
+		options.ContentType = pictureMime
+		options.ContentDisposition = httplib.ContentDispositionInline
 	}
-	ctx.ServeContent(file, header)
+	ctx.ServeContent(file, options)
 }
 
 // attachmentRow is one row of a message's attachments: the files, how many of them the row

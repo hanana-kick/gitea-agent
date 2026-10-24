@@ -834,10 +834,12 @@ button.agent-chat-card {
 
 .agent-chat-message:has(.agent-chat-attachments) .agent-chat-bubble {
   width: fit-content;
+  margin-inline: auto;
 }
 
 .agent-chat-message.user:has(.agent-chat-attachments) .agent-chat-bubble {
   margin-left: auto;
+  margin-right: 0;
 }
 
 /* the files of a message follow the side its bubble sits on */
