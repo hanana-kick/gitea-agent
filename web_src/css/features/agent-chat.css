@@ -855,28 +855,33 @@ button.agent-chat-card {
 
 .agent-chat-message:has(.agent-chat-attachments) .agent-chat-bubble {
   width: fit-content;
-  margin-inline: 0;
+}
+
+.agent-chat-message.user:has(.agent-chat-attachments) .agent-chat-bubble {
+  margin-left: auto;
+  margin-right: 0;
 }
 
 .agent-chat-message.assistant:has(.agent-chat-attachments) .agent-chat-bubble {
-  margin-inline: 0 auto;
+  margin-left: 0;
+  margin-right: auto;
 }
 
 /* the rows of a message follow the side its bubble sits on */
 .agent-chat-message.user .agent-chat-attach-pictures {
-  justify-content: flex-start;
-}
-
-.agent-chat-message.user .agent-chat-attach-files {
-  align-items: flex-start;
-}
-
-.agent-chat-message.assistant .agent-chat-attach-pictures {
   justify-content: flex-end;
 }
 
-.agent-chat-message.assistant .agent-chat-attach-files {
+.agent-chat-message.user .agent-chat-attach-files {
   align-items: flex-end;
+}
+
+.agent-chat-message.assistant .agent-chat-attach-pictures {
+  justify-content: flex-start;
+}
+
+.agent-chat-message.assistant .agent-chat-attach-files {
+  align-items: flex-start;
 }
 
 /* a picture is shown as a square crop, the usual thumbnail; the row is five tiles wide and
