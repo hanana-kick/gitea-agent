@@ -831,28 +831,37 @@ button.agent-chat-card {
   white-space: nowrap;
 }
 
-/* a message that carries files takes the column, so its rows have a width to measure
-   themselves against; the bubble itself still hugs its text */
+/* a message that carries files stays on the side of its bubble: the rows under it stretch
+   from that side and the bubble keeps hugging its text */
 .agent-chat-message:has(.agent-chat-attachments) {
-  align-self: stretch;
+  align-self: flex-start;
+  align-items: flex-end;
+  max-width: none;
 }
 
 .agent-chat-message:has(.agent-chat-attachments) .agent-chat-bubble {
   width: fit-content;
-  margin-inline: auto;
+  margin-inline: 0;
 }
 
-.agent-chat-message.user:has(.agent-chat-attachments) .agent-chat-bubble {
-  margin-left: auto;
-  margin-right: 0;
+.agent-chat-message.assistant:has(.agent-chat-attachments) .agent-chat-bubble {
+  margin-inline: 0 auto;
 }
 
-/* the files of a message follow the side its bubble sits on */
+/* the rows of a message follow the side its bubble sits on */
 .agent-chat-message.user .agent-chat-attach-pictures {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .agent-chat-message.user .agent-chat-attach-files {
+  align-items: flex-start;
+}
+
+.agent-chat-message.assistant .agent-chat-attach-pictures {
+  justify-content: flex-end;
+}
+
+.agent-chat-message.assistant .agent-chat-attach-files {
   align-items: flex-end;
 }
 
