@@ -4128,7 +4128,7 @@
   "agent.group_id": "ID",
   "agent.group_id_auto": "저장하면 자동 생성됩니다",
   "agent.group_id_help": "이름에서 자동 생성되며 이후 바뀌지 않습니다. 다른 기능은 이 ID로 묶음을 참조합니다.",
-  "agent.chat_title": "Pod",
+  "agent.chat_title": "팟",
   "agent.chat_sessions": "세션",
   "agent.chat_resident": "Pod",
   "agent.chat_repository": "레포지토리 에이전트",
