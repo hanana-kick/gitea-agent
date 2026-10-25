@@ -5,13 +5,7 @@
 		<div class="flex-container-nav agent-chat-nav agent-list-nav" aria-label="{{ctx.Locale.Tr "agent.chat_sessions"}}">
 			{{template "agent/chat_list" .}}
 		</div>
-		<div class="flex-container-main agent-chat-main agent-list-empty" aria-label="{{ctx.Locale.Tr "agent.chat_title"}}">
-			<div class="agent-chat-empty-main">
-				{{svg "gitea-pod-outline" 56}}
-				<p class="agent-chat-empty-title">{{ctx.Locale.Tr "agent.chat_select_session"}}</p>
-				<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_select_session_help"}}</p>
-			</div>
-		</div>
+		{{template "agent/chat_ui" .}}
 	</div>
 	{{template "agent/chat_modals" .}}
 </div>

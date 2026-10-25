@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	actions_model "gitea.dev/models/actions"
@@ -20,15 +21,20 @@ import (
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/optional"
 	"gitea.dev/modules/setting"
+	"gitea.dev/modules/templates"
 	agent_service "gitea.dev/services/agent"
 	"gitea.dev/services/context"
 )
 
 const (
-	tplChat    = "agent/chat"
-	tplList    = "agent/list"
-	tplRepoPod = "agent/repo_pod_page"
-	chatURL    = "/-/agent"
+	tplChat       = "agent/chat"
+	tplList       = "agent/list"
+	tplRepoPod    = "agent/repo_pod_page"
+	tplChatPanel  = "agent/chat_panel"
+	tplChatDraft  = "agent/chat_draft"
+	tplPodBody    = "agent/repo_pod"
+	tplEmptyPanel = "agent/chat_empty"
+	chatURL       = "/-/agent"
 
 	// chatMessagePageSize is how much of a transcript the chat screen loads at once.
 	chatMessagePageSize = 50
@@ -64,12 +70,14 @@ func chatError(ctx *context.Context, err error) {
 // use this as the session list page.
 func Chat(ctx *context.Context) {
 	prepareList(ctx)
+	preparePanel(ctx, tplEmptyPanel, "agent-list-empty")
 	ctx.HTML(http.StatusOK, tplChat)
 }
 
 // ChatList renders the session list as its own page.
 func ChatList(ctx *context.Context) {
 	prepareList(ctx)
+	preparePanel(ctx, tplEmptyPanel, "agent-list-empty")
 	ctx.HTML(http.StatusOK, tplList)
 }
 
@@ -81,12 +89,58 @@ func ChatSession(ctx *context.Context) {
 		return
 	}
 	prepareChat(ctx, session, nil)
+	lastID := int64(0)
+	if last, ok := ctx.Data["LastMessageID"].(int64); ok {
+		lastID = last
+	}
+	runID := int64(0)
+	if rid, ok := ctx.Data["PendingRunID"].(int64); ok {
+		runID = rid
+	}
+	prepareSessionPanel(ctx, session, lastID, runID)
+	preparePanel(ctx, tplChatPanel, "")
 	ctx.HTML(http.StatusOK, tplChat)
 }
 
 // prepareList fills the session list data that every agent screen shares.
 func prepareList(ctx *context.Context) {
 	prepareChat(ctx, nil, nil)
+}
+
+// preparePanel renders the body of the chat panel the page shows inside the shared
+// chat_ui component. The page names the body template; it renders with the same data.
+func preparePanel(ctx *context.Context, tpl templates.TplName, classes string) {
+	body, err := ctx.RenderToHTML(tpl, ctx.Data)
+	if err != nil {
+		ctx.ServerError("RenderToHTML", err)
+		return
+	}
+	ctx.Data["PanelClasses"] = classes
+	ctx.Data["BodyHTML"] = body
+}
+
+// prepareSessionPanel carries the attributes of a live conversation on the panel, which
+// the stream in the browser reads.
+func prepareSessionPanel(ctx *context.Context, session *agent_model.Conversation, lastMessageID, runID int64) {
+	base := fmt.Sprintf("%s/-/agent/%d", setting.AppSubURL, session.ID)
+	ctx.Data["PanelAttrs"] = map[string]string{
+		"ConversationID": strconv.FormatInt(session.ID, 10),
+		"LastMessageID":  strconv.FormatInt(lastMessageID, 10),
+		"EventsURL":      base + "/events",
+		"MessagesURL":    base + "/messages",
+		"CancelURL":      base + "/cancel",
+		"ApprovalsURL":   base + "/approvals",
+		"RunID":          strconv.FormatInt(runID, 10),
+		"ApprovalTitle":  string(ctx.Tr("agent.chat_approval_title", "%s")),
+		"ApprovalHelp":   string(ctx.Tr("agent.chat_approval_help")),
+		"ApprovalAllow":  string(ctx.Tr("agent.chat_approval_allow")),
+		"ApprovalRefuse": string(ctx.Tr("agent.chat_approval_refuse")),
+	}
+	if labels, ok := ctx.Data["LabelsJSON"].(string); ok {
+		if attrs, ok := ctx.Data["PanelAttrs"].(map[string]string); ok {
+			attrs["Labels"] = labels
+		}
+	}
 }
 
 // prepareSuggestions fills the block of things to ask a repository pod about: one chip per
@@ -348,6 +402,7 @@ func ChatDraft(ctx *context.Context) {
 	}
 	ctx.Data["RoleModelLabel"] = agent_service.ModelRefLabel(ctx, ref)
 	ctx.Data["CanAnswer"] = ref != ""
+	preparePanel(ctx, tplChatDraft, "")
 	ctx.HTML(http.StatusOK, tplChat)
 }
 
@@ -381,6 +436,7 @@ func RepoAgent(ctx *context.Context) {
 	}
 	ctx.Data["RoleModelLabel"] = agent_service.ModelRefLabel(ctx, ref)
 	ctx.Data["CanAnswer"] = ref != ""
+	preparePanel(ctx, tplPodBody, "agent-repo-pod-panel")
 	ctx.HTML(http.StatusOK, tplRepoPod)
 }
 

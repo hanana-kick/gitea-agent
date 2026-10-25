@@ -936,9 +936,26 @@ button.agent-chat-card {
   margin: 0;
 }
 
+/* the ask block floats in the space the repository header leaves, centred both ways: the
+   page stretches over the height the navbar and footer leave, and the body centres in it */
+.full.height:has(> .agent-repo-pod) {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-repo-pod.page-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1; /* .full.height is the flex parent, so the page claims the free height */
+  margin-bottom: 0; /* the natural page bottom margin would offset the centre */
+}
+
 .agent-repo-pod-body {
   display: flex;
+  flex: 1;
+  align-items: center;
   justify-content: center;
+  min-height: 0;
 }
 
 /* the ask block sits under the repository header: the page scrolls normally, so the panel
