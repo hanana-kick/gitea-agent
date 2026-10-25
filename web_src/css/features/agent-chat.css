@@ -19,8 +19,15 @@
 /* the pod mark is wider than it is tall: it is drawn larger with tighter side padding,
    so the navbar item keeps the same size as the other icon buttons */
 #navbar .agent-pod-nav {
-  padding-left: 10px !important; /* 22px icon + 2 * 10px = the 42px of the other items */
+  padding-left: 10px !important; /* 22px icon + 2 * 10px = 42px, the width of the other items */
   padding-right: 10px !important;
+}
+
+/* next to the square icons of a menu the pod keeps its own box: as wide as the navbar mark,
+   as tall as the icons beside it, so it neither towers over them nor shrinks away */
+svg.agent-pod-menu {
+  width: 22px;
+  height: 16px;
 }
 
 @media (max-width: 767.98px) {
