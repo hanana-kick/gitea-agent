@@ -91,13 +91,19 @@ func ChatEvents(ctx *context.Context) {
 
 	events, unsubscribe := agent_service.Subscribe(conversation.ID)
 	defer unsubscribe()
-	// the run changes of every conversation drive the busy marks in the session list
-	allRuns, unsubscribeAll := agent_service.SubscribeRunEvents()
+	// one stream carries both what this conversation does and the run changes of the
+	// reader's other conversations, so the session list beside it stays live
+	allRuns, unsubscribeAll := agent_service.SubscribeRunEvents(ctx.Doer.ID)
 	defer unsubscribeAll()
 
 	// catch the client up on what it missed, then report the current run
 	replayEvents(ctx, conversation, eventsSince(ctx))
 	if err := writeEvent(ctx, agent_service.EventRun, agent_service.RunStateOf(latestRunState(ctx, conversation.ID))); err != nil {
+		return
+	}
+	// the other sessions of the list are reported once, so a client that just connected
+	// marks them without waiting for their next change
+	if err := writeBusyRuns(ctx, conversation.ID); err != nil {
 		return
 	}
 	// a client that comes back finds the calls still waiting for its answer
@@ -137,6 +143,10 @@ func ChatEvents(ctx *context.Context) {
 			if !ok {
 				return
 			}
+			// this conversation's own run already came down its own channel
+			if state, ok := event.Data.(agent_service.RunState); ok && state.ConversationID == conversation.ID {
+				continue
+			}
 			if err := writeEvent(ctx, event.Name, event.Data); err != nil {
 				return
 			}
@@ -145,8 +155,8 @@ func ChatEvents(ctx *context.Context) {
 	}
 }
 
-// ChatEventsAll streams the run changes of every conversation, so a page without an open
-// conversation still marks the sessions that are answering.
+// ChatEventsAll streams the run changes of the reader's conversations, so a page without an
+// open conversation still marks the sessions that are answering.
 func ChatEventsAll(ctx *context.Context) {
 	flusher, ok := ctx.Resp.(http.Flusher)
 	if !ok {
@@ -161,8 +171,15 @@ func ChatEventsAll(ctx *context.Context) {
 	ctx.Resp.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	runs, unsubscribe := agent_service.SubscribeRunEvents()
+	runs, unsubscribe := agent_service.SubscribeRunEvents(ctx.Doer.ID)
 	defer unsubscribe()
+
+	// what is answering right now, so a client that just connected marks it without
+	// waiting for the next change
+	if err := writeBusyRuns(ctx, 0); err != nil {
+		return
+	}
+	flusher.Flush()
 
 	heartbeat := time.NewTicker(eventsHeartbeat)
 	defer heartbeat.Stop()
@@ -187,6 +204,25 @@ func ChatEventsAll(ctx *context.Context) {
 			flusher.Flush()
 		}
 	}
+}
+
+// writeBusyRuns reports the runs of the reader's conversations that are answering, leaving
+// out the conversation a chat stream already reported.
+func writeBusyRuns(ctx *context.Context, skipConversationID int64) error {
+	busy, err := agent_service.BusyRuns(ctx, ctx.Doer)
+	if err != nil {
+		log.Error("agent events: unable to list busy runs: %v", err)
+		return nil
+	}
+	for _, state := range busy {
+		if state.ConversationID == skipConversationID {
+			continue
+		}
+		if err := writeEvent(ctx, agent_service.EventRun, state); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // eventsSince reads the resume cursor: the query parameter wins over Last-Event-ID.

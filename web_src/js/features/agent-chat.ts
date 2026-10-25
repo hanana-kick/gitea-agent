@@ -3,14 +3,10 @@ import {copyToClipboardWithFeedback} from '../modules/clipboard.ts';
 import {svg} from '../svg.ts';
 import {errorMessage} from '../modules/errors.ts';
 import {addDelegatedEventListener, createElementFromHTML, toggleElem} from '../utils/dom.ts';
+import {followAgentLive, markSessionBusy, runIsBusy} from '../modules/agent-live.ts';
+import type {AgentApproval, AgentConversation, AgentDelta, AgentMessage, AgentRun} from '../modules/agent-live.ts';
 
 type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string, thought: string};
-type AgentChatDelta = {runId: number, content?: string, reasoning?: string, reset?: boolean};
-type AgentChatAttachment = {id: number, name: string, sizeText: string, url: string, isPicture: boolean};
-type AgentChatMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, reasoning?: string, attachments?: AgentChatAttachment[], tool?: {name: string, args: string, result: string}};
-type AgentChatRun = {id: number, conversationId: number, status: string, error: string, cancelable: boolean};
-type AgentChatConversation = {id: number, title: string, summary: string, icon: string};
-type AgentChatApproval = {id: number, runID: number, tool: string, arguments: string};
 
 // how many files of one kind a list shows before the rest waits behind a single button;
 // keep in step with chatAttachmentLimit in routers/web/agent/chat.go
@@ -169,7 +165,6 @@ function initDraftComposer() {
   });
 }
 
-const reconnectDelay = 2000; // ms, the browser's own reconnect would replay the cursor from the first connect
 const bottomThreshold = 80; // px
 
 // the panel fills the space between the navbar and the footer, both of which depend on
@@ -197,63 +192,17 @@ export function initAgentChat() {
   // the session list marks the conversations that are answering right now
   const chatEl = document.querySelector<HTMLElement>('.agent-chat');
   const sessionBusyLabel = chatEl?.getAttribute('data-busy-label') ?? '';
-  function setSessionBusy(conversationID: string, isBusy: boolean) {
-    const card = document.querySelector<HTMLElement>(`.agent-chat-card[data-session-id="${CSS.escape(conversationID)}"]`);
-    if (!card) return;
-    const existing = card.querySelector<HTMLElement>('.agent-chat-card-busy');
-    if (!isBusy) {
-      existing?.remove();
-      return;
-    }
-    if (existing) return;
-    const dot = createElementFromHTML(`<span class="agent-chat-card-busy" data-tooltip-content="${sessionBusyLabel}"><i></i><i></i><i></i></span>`);
-    (card.querySelector('.agent-chat-card-main') ?? card).append(dot);
-  }
-
-  // without an open conversation the list still follows the runs of every conversation
-  let listStream: EventSource | null = null;
-  function followAllRuns() {
-    const url = chatEl?.getAttribute('data-runs-url');
-    if (!url || !window.EventSource || !document.querySelector('.agent-chat-card[data-session-id]')) return;
-    listStream?.close();
-    const source = new EventSource(url);
-    listStream = source;
-    source.addEventListener('run', (event: MessageEvent) => {
-      const run = JSON.parse(event.data) as AgentChatRun;
-      setSessionBusy(String(run.conversationId), run.status === 'queued' || run.status === 'running');
-    });
-    source.addEventListener('error', () => {
-      if (listStream === source) listStream = null;
-      if (source.readyState === EventSource.CLOSED) return;
-      source.close();
-      if (document.visibilityState === 'hidden') return;
-      setTimeout(followAllRuns, reconnectDelay);
-    });
-  }
-
-  function stopListStream() {
-    listStream?.close();
-    listStream = null;
-  }
 
   // `data-conversation-id` marks the page as a live chat, all URLs and labels are rendered by the server
   const mainEl = document.querySelector<HTMLElement>('.agent-chat-main[data-conversation-id]');
   if (!mainEl) {
-    followAllRuns();
-    // a stream holds one of the few connections a browser opens per origin, and a page that is
-    // left behind keeps holding it, so a reader who switches tabs a few times starves the page
-    // that comes next. The stream is handed back on the way out and picked up when shown again.
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') {
-        stopListStream();
-      } else if (!listStream) {
-        followAllRuns();
-      }
-    });
-    window.addEventListener('pagehide', stopListStream);
-    window.addEventListener('pageshow', () => {
-      if (!listStream) followAllRuns();
-    });
+    // a page without an open conversation still follows the runs of the reader's sessions
+    const runsUrl = chatEl?.getAttribute('data-runs-url');
+    if (runsUrl && document.querySelector('.agent-chat-card[data-session-id]')) {
+      followAgentLive(runsUrl, {
+        onRun: (run) => markSessionBusy(String(run.conversationId), runIsBusy(run), sessionBusyLabel),
+      });
+    }
     return;
   }
 
@@ -311,7 +260,7 @@ export function initAgentChat() {
     return detailsEl;
   }
 
-  function buildMessage(message: AgentChatMessage): HTMLElement {
+  function buildMessage(message: AgentMessage): HTMLElement {
     const messageEl = document.createElement('div');
     messageEl.className = `agent-chat-message ${message.role}`;
     messageEl.setAttribute('data-message-id', String(message.id));
@@ -419,7 +368,7 @@ export function initAgentChat() {
   // the run of this session: approvals and the tool records they answer belong to it
   let currentRunID = Number(mainEl.getAttribute('data-run-id') ?? 0);
 
-  function appendMessage(message: AgentChatMessage) {
+  function appendMessage(message: AgentMessage) {
     if (messagesEl.querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`)) return;
     dropPending();
     // the answer to a tool call has arrived, so its card has served its purpose
@@ -454,7 +403,7 @@ export function initAgentChat() {
     const url = `${button.getAttribute('data-messages-url')}?before=${button.getAttribute('data-oldest')}`;
     try {
       const resp = await GET(url);
-      const older = await resp.json() as AgentChatMessage[];
+      const older = await resp.json() as AgentMessage[];
       const anchor = messagesEl.scrollHeight - messagesEl.scrollTop;
       const first = messagesEl.querySelector('.agent-chat-message');
       for (const message of older) {
@@ -555,7 +504,7 @@ export function initAgentChat() {
     toggleElem(el.querySelector<HTMLElement>('.agent-chat-pending-status')!, state !== 'streaming');
   }
 
-  function applyDelta(delta: AgentChatDelta) {
+  function applyDelta(delta: AgentDelta) {
     if (delta.reset) {
       dropPending();
       pendingRunID = 0;
@@ -584,7 +533,7 @@ export function initAgentChat() {
   }
 
   // a tool call the pod is waiting for: the card posts the decision, so the page reloads
-  function buildApproval(approval: AgentChatApproval): HTMLElement {
+  function buildApproval(approval: AgentApproval): HTMLElement {
     const el = document.createElement('div');
     el.className = 'agent-chat-approval';
     el.setAttribute('data-approval-id', String(approval.id));
@@ -640,7 +589,7 @@ export function initAgentChat() {
     }
   }
 
-  function appendApproval(approval: AgentChatApproval) {
+  function appendApproval(approval: AgentApproval) {
     if (messagesEl.querySelector(`[data-approval-id="${CSS.escape(String(approval.id))}"]`)) return;
     const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= bottomThreshold;
     for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
@@ -649,9 +598,9 @@ export function initAgentChat() {
     if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  function applyRun(run: AgentChatRun) {
+  function applyRun(run: AgentRun) {
     currentRunID = run.id;
-    setSessionBusy(elConversationID, run.status === 'queued' || run.status === 'running');
+    markSessionBusy(elConversationID, runIsBusy(run), sessionBusyLabel);
     if (run.status === 'queued' || run.status === 'running') {
       setBusy(true);
       const state = pendingEl?.getAttribute('data-state');
@@ -728,7 +677,7 @@ export function initAgentChat() {
   }
 
   // a renamed session shows its new title in the list and in the chat header
-  function applyConversation(conversation: AgentChatConversation) {
+  function applyConversation(conversation: AgentConversation) {
     const header = document.querySelector<HTMLElement>('.agent-chat-head-title');
     if (header && elConversationID === String(conversation.id)) header.textContent = conversation.title;
     const id = String(conversation.id);
@@ -741,63 +690,22 @@ export function initAgentChat() {
     }
   }
 
-  let stream: EventSource | null = null;
-
-  function connect() {
-    stream?.close();
-    const source = new EventSource(`${eventsUrl}?since=${mainEl!.getAttribute('data-last-message-id')!}`);
-    stream = source;
-
-    source.addEventListener('message', (event: MessageEvent) => {
-      appendMessage(JSON.parse(event.data) as AgentChatMessage);
-    });
-    source.addEventListener('approval', (event: MessageEvent) => {
-      appendApproval(JSON.parse(event.data) as AgentChatApproval);
-    });
-    source.addEventListener('delta', (event: MessageEvent) => {
-      applyDelta(JSON.parse(event.data) as AgentChatDelta);
-    });
-    source.addEventListener('run', (event: MessageEvent) => {
-      const run = JSON.parse(event.data) as AgentChatRun;
+  // the stream carries this conversation and the run changes of the reader's other sessions,
+  // so the list beside the transcript stays live; the cursor it reopens with brings back
+  // whatever arrived while the page was hidden
+  followAgentLive(() => `${eventsUrl}?since=${mainEl.getAttribute('data-last-message-id')}`, {
+    onMessage: (message) => appendMessage(message),
+    onApproval: (approval) => appendApproval(approval),
+    onDelta: (delta) => applyDelta(delta),
+    onConversation: (conversation) => applyConversation(conversation),
+    onRun: (run) => {
       if (String(run.conversationId) === elConversationID) {
         applyRun(run);
       } else {
-        setSessionBusy(String(run.conversationId), run.status === 'queued' || run.status === 'running');
+        markSessionBusy(String(run.conversationId), runIsBusy(run), sessionBusyLabel);
       }
-    });
-    source.addEventListener('conversation', (event: MessageEvent) => {
-      applyConversation(JSON.parse(event.data) as AgentChatConversation);
-    });
-    source.addEventListener('error', () => {
-      if (stream === source) stream = null;
-      if (source.readyState === EventSource.CLOSED) return;
-      source.close();
-      if (document.visibilityState === 'hidden') return;
-      // reconnect ourself with the latest cursor instead of letting the browser replay the stale one
-      setTimeout(connect, reconnectDelay);
-    });
-  }
-
-  // the stream is handed back while the page is hidden, and the cursor it reconnects with
-  // brings back whatever arrived in the meantime
-  function stopStream() {
-    stream?.close();
-    stream = null;
-  }
-
-  function resumeStream() {
-    if (!stream && document.visibilityState !== 'hidden') connect();
-  }
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      stopStream();
-    } else {
-      resumeStream(); // the page may come back from the back/forward cache, not just from being shown
-    }
+    },
   });
-  window.addEventListener('pagehide', stopStream);
-  window.addEventListener('pageshow', resumeStream);
 
   initTranscript();
   initMessageActions();
@@ -828,6 +736,4 @@ export function initAgentChat() {
       setBusy(false, `${labels.error} (${errorMessage(error)})`);
     }
   });
-
-  connect();
 }

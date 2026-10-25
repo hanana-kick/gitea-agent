@@ -185,7 +185,7 @@ func SubmitUserMessage(ctx context.Context, conversation *agent_model.Conversati
 	if err != nil {
 		return nil, nil, err
 	}
-	engine.broker.publish(conversation.ID, Event{Name: EventMessage, Data: message.ID})
+	engine.broker.publish(conversation.ID, 0, Event{Name: EventMessage, Data: message.ID})
 
 	run, err := StartRun(ctx, conversation, userID)
 	if err != nil {
@@ -252,6 +252,29 @@ func ActiveRun(ctx context.Context, conversationID int64) (*agent_model.Run, err
 	return run, nil
 }
 
+// BusyRuns returns the runs the doer's pages should mark as answering: a page that has just
+// connected learns the current state instead of waiting for the next change.
+func BusyRuns(ctx context.Context, doer *user_model.User) ([]RunState, error) {
+	runs := make([]*agent_model.Run, 0, 8)
+	if err := db.GetEngine(ctx).Table("agent_run").
+		In("status", []string{agent_model.RunStatusQueued, agent_model.RunStatusRunning}).
+		OrderBy("id ASC").Find(&runs); err != nil {
+		return nil, fmt.Errorf("find busy runs: %w", err)
+	}
+	states := make([]RunState, 0, len(runs))
+	for _, run := range runs {
+		conversation, exist, err := db.GetByID[agent_model.Conversation](ctx, run.ConversationID)
+		if err != nil || !exist {
+			continue
+		}
+		if ok, err := CanUseConversation(ctx, doer, conversation); err != nil || !ok {
+			continue
+		}
+		states = append(states, RunStateOf(run))
+	}
+	return states, nil
+}
+
 // BusyConversationIDs returns the conversations that wait for or write an answer.
 func BusyConversationIDs(ctx context.Context) (map[int64]bool, error) {
 	ids := make([]int64, 0, 8)
@@ -282,7 +305,7 @@ func LatestRun(ctx context.Context, conversationID int64) (*agent_model.Run, err
 
 // NotifyConversation publishes the current title and icon of a session.
 func NotifyConversation(conversation *agent_model.Conversation) {
-	engine.broker.publish(conversation.ID, Event{Name: EventConversation, Data: State(conversation)})
+	engine.broker.publish(conversation.ID, 0, Event{Name: EventConversation, Data: State(conversation)})
 }
 
 // Subscribe attaches to the updates of a conversation. The returned function detaches.
@@ -290,9 +313,9 @@ func Subscribe(conversationID int64) (<-chan Event, func()) {
 	return engine.broker.subscribe(conversationID)
 }
 
-// SubscribeRunEvents attaches to the run changes of every conversation.
-func SubscribeRunEvents() (<-chan Event, func()) {
-	return engine.broker.subscribeAll()
+// SubscribeRunEvents attaches to the run changes of one user's conversations.
+func SubscribeRunEvents(userID int64) (<-chan Event, func()) {
+	return engine.broker.subscribeRuns(userID)
 }
 
 func (e *Engine) enqueue(runID int64) {
@@ -377,7 +400,7 @@ func (e *Engine) execute(runID int64) {
 		e.finishRun(ctx, run, agent_model.RunStatusFailed, err.Error())
 		return
 	}
-	e.broker.publish(conversation.ID, Event{Name: EventMessage, Data: message.ID})
+	e.broker.publish(conversation.ID, 0, Event{Name: EventMessage, Data: message.ID})
 
 	run.Model = result.Model
 	e.finishRun(ctx, run, agent_model.RunStatusSucceeded, "")
@@ -445,7 +468,7 @@ func (e *Engine) nameConversation(ctx context.Context, conversation *agent_model
 		log.Warn("Agent engine: unable to store name of session %d: %v", conversation.ID, err)
 		return
 	}
-	e.broker.publish(conversation.ID, Event{Name: EventConversation, Data: State(conversation)})
+	e.broker.publish(conversation.ID, 0, Event{Name: EventConversation, Data: State(conversation)})
 }
 
 // conversationExcerpt renders a transcript excerpt for the summary request. Conversation
@@ -581,7 +604,7 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 			return err // stop reading when the run was cancelled
 		}
 		reasoning.WriteString(delta.Reasoning)
-		e.broker.publish(conversation.ID, Event{Name: EventDelta, Data: DeltaState{
+		e.broker.publish(conversation.ID, 0, Event{Name: EventDelta, Data: DeltaState{
 			RunID:     run.ID,
 			Content:   delta.Content,
 			Reasoning: delta.Reasoning,
@@ -618,7 +641,7 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 			return answerResult{Content: message.Content, Reasoning: reasoning.String(), Model: model}, nil
 		}
 		// the calls are what the reader watches happen; the answer starts after them
-		e.broker.publish(conversation.ID, Event{Name: EventDelta, Data: DeltaState{RunID: run.ID, Reset: true}})
+		e.broker.publish(conversation.ID, 0, Event{Name: EventDelta, Data: DeltaState{RunID: run.ID, Reset: true}})
 		messages = append(messages, *message)
 		for _, call := range message.ToolCalls {
 			messages = append(messages, llm.Message{
@@ -683,7 +706,7 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 func (e *Engine) recordTool(ctx context.Context, conversation *agent_model.Conversation, call llm.ToolCall, result string) string {
 	args := strings.Join(strings.Fields(call.Function.Arguments), " ")
 	if message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleTool, argsLine(call.Function.Name, args)+"\n"+result, ""); err == nil {
-		e.broker.publish(conversation.ID, Event{Name: EventMessage, Data: message.ID})
+		e.broker.publish(conversation.ID, 0, Event{Name: EventMessage, Data: message.ID})
 	} else {
 		log.Error("Agent engine: unable to record tool %s: %v", call.Function.Name, err)
 	}
@@ -722,7 +745,7 @@ func (e *Engine) awaitApproval(ctx context.Context, conversation *agent_model.Co
 		delete(e.approvals, approval.ID)
 		e.mu.Unlock()
 	}()
-	e.broker.publish(conversation.ID, Event{Name: EventApproval, Data: approval})
+	e.broker.publish(conversation.ID, 0, Event{Name: EventApproval, Data: approval})
 
 	select {
 	case allowed := <-answer:
@@ -834,7 +857,7 @@ func (e *Engine) finishRun(ctx context.Context, run *agent_model.Run, status, re
 }
 
 func (e *Engine) publishRun(conversationID int64, run *agent_model.Run) {
-	e.broker.publish(conversationID, Event{Name: EventRun, Data: RunStateOf(run)})
+	e.broker.publish(conversationID, run.UserID, Event{Name: EventRun, Data: RunStateOf(run)})
 }
 
 func (e *Engine) setCancel(conversationID int64, cancel context.CancelFunc) {
@@ -862,15 +885,18 @@ func (e *Engine) conversationLock(conversationID int64) *sync.Mutex {
 
 // eventBroker fans conversation updates out to the clients currently watching them.
 type eventBroker struct {
-	mu     sync.Mutex
-	subs   map[int64]map[chan Event]struct{}
-	global map[chan Event]struct{} // every run change, for the session list
+	mu sync.Mutex
+	// subs are the watchers of one conversation: its transcript and its own run.
+	subs map[int64]map[chan Event]struct{}
+	// runs are the watchers of the run changes of one user's conversations, so a page
+	// can mark the sessions that are answering without seeing anybody else's.
+	runs map[int64]map[chan Event]struct{}
 }
 
 func newEventBroker() *eventBroker {
 	return &eventBroker{
-		subs:   make(map[int64]map[chan Event]struct{}),
-		global: make(map[chan Event]struct{}),
+		subs: make(map[int64]map[chan Event]struct{}),
+		runs: make(map[int64]map[chan Event]struct{}),
 	}
 }
 
@@ -894,7 +920,9 @@ func (b *eventBroker) subscribe(conversationID int64) (<-chan Event, func()) {
 }
 
 // publish never blocks: a slow client misses the event and catches up from the transcript.
-func (b *eventBroker) publish(conversationID int64, event Event) {
+// owner is the user whose page follows the run changes of every one of its conversations;
+// zero when the caller has no owner to hand them to.
+func (b *eventBroker) publish(conversationID, owner int64, event Event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for ch := range b.subs[conversationID] {
@@ -903,11 +931,10 @@ func (b *eventBroker) publish(conversationID int64, event Event) {
 		default:
 		}
 	}
-	// run changes reach every page: the session list marks which conversation is answering
-	if event.Name != EventRun {
+	if event.Name != EventRun || owner == 0 {
 		return
 	}
-	for ch := range b.global {
+	for ch := range b.runs[owner] {
 		select {
 		case ch <- event:
 		default:
@@ -915,19 +942,25 @@ func (b *eventBroker) publish(conversationID int64, event Event) {
 	}
 }
 
-// subscribeAll listens to the run changes of every conversation.
-func (b *eventBroker) subscribeAll() (<-chan Event, func()) {
+// subscribeRuns listens to the run changes of one user's conversations.
+func (b *eventBroker) subscribeRuns(userID int64) (<-chan Event, func()) {
 	ch := make(chan Event, 64)
 	b.mu.Lock()
-	b.global[ch] = struct{}{}
+	if b.runs[userID] == nil {
+		b.runs[userID] = make(map[chan Event]struct{})
+	}
+	b.runs[userID][ch] = struct{}{}
 	b.mu.Unlock()
 
 	return ch, func() {
 		b.mu.Lock()
 		defer b.mu.Unlock()
-		if _, ok := b.global[ch]; ok {
-			delete(b.global, ch)
+		if _, ok := b.runs[userID][ch]; ok {
+			delete(b.runs[userID], ch)
 			close(ch)
+			if len(b.runs[userID]) == 0 {
+				delete(b.runs, userID)
+			}
 		}
 	}
 }
