@@ -13,17 +13,5 @@
 	<div class="agent-chat-empty">{{ctx.Locale.Tr "agent.chat_draft_help"}}</div>
 </div>
 
-<form class="ui form agent-chat-composer agent-chat-draft" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/new" data-draft-url="{{AppSubUrl}}/-/agent/new">
-	<div class="agent-chat-attach-list tw-hidden"></div>
-	<input type="hidden" name="kind" value="{{.DraftKind}}">
-	{{if .Repo}}<input type="hidden" name="repo_id" value="{{.Repo.ID}}">{{end}}
-	<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"{{if not .CanAnswer}} disabled{{end}}></textarea>
-	<label class="agent-chat-attach" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_attach"}}">
-		{{svg "octicon-paperclip" 16}}
-		<input type="file" name="files" multiple>
-	</label>
-	<button type="submit" class="ui primary button"{{if not .CanAnswer}} disabled{{end}}>{{ctx.Locale.Tr "agent.chat_send"}}</button>
-</form>
-{{if not .CanAnswer}}
-	<p class="agent-chat-hint agent-chat-hint-block">{{ctx.Locale.Tr "agent.chat_model_required"}}</p>
-{{end}}
+{{template "agent/chat_suggestions" .}}
+{{template "agent/chat_composer" .}}

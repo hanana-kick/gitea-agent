@@ -925,6 +925,69 @@ button.agent-chat-card {
   object-fit: cover;
 }
 
+/* the block of things to ask this pod: cards above the composer of the repo screen */
+.agent-chat-suggestions {
+  padding: 8px 12px 0;
+  border-top: 1px solid var(--color-secondary);
+}
+
+.agent-chat-suggestions-title {
+  margin-bottom: 6px;
+  color: var(--color-text-light-2);
+  font-size: 12px;
+}
+
+.agent-chat-suggestions-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.agent-chat-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  background: var(--color-secondary-alpha-40);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-suggestion:hover {
+  background: var(--color-hover);
+}
+
+.agent-chat-suggestion-icon {
+  flex-shrink: 0;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-suggestion-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.agent-chat-suggestion-label {
+  font-weight: var(--font-weight-medium);
+}
+
+.agent-chat-suggestion-subject {
+  color: var(--color-text-light-2);
+  font-size: 12px;
+}
+
+.agent-chat-suggestion-link {
+  flex-shrink: 0;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-suggestion-link:hover {
+  color: var(--color-text);
+}
+
 .agent-chat-composer {
   display: flex;
   flex-wrap: wrap; /* the list of chosen files takes its own line above the row */

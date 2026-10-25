@@ -10,10 +10,15 @@ import (
 	"os"
 	"strings"
 
+	actions_model "gitea.dev/models/actions"
 	agent_model "gitea.dev/models/agent"
+	"gitea.dev/models/db"
+	issues_model "gitea.dev/models/issues"
 	repo_model "gitea.dev/models/repo"
+	"gitea.dev/models/unit"
 	"gitea.dev/modules/httplib"
 	"gitea.dev/modules/json"
+	"gitea.dev/modules/optional"
 	"gitea.dev/modules/setting"
 	agent_service "gitea.dev/services/agent"
 	"gitea.dev/services/context"
@@ -81,6 +86,94 @@ func ChatSession(ctx *context.Context) {
 // prepareList fills the session list data that every agent screen shares.
 func prepareList(ctx *context.Context) {
 	prepareChat(ctx, nil, nil)
+}
+
+// prepareSuggestions fills the block of things to ask a repository pod about. The reader
+// sends one as the first message: the prompt is prefilled, the files stay theirs to add.
+func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
+	suggestions := make([]podSuggestion, 0, 5)
+	suggestions = append(suggestions, podSuggestion{
+		Key:    "review_code",
+		Icon:   "octicon-code-review",
+		Prompt: string(ctx.Tr("agent.suggest_review_code_prompt")),
+	})
+	if ctx.Repo.Permission.CanRead(unit.TypePullRequests) {
+		opts := issues_model.IssuesOptions{
+			RepoIDs:   []int64{repo.ID},
+			IsPull:    optional.Some(true),
+			IsClosed:  optional.Some(false),
+			Doer:      ctx.Doer,
+			SortType:  "recentupdate",
+			Paginator: &db.ListOptions{Page: 1, PageSize: 5},
+		}
+		if issues, err := issues_model.Issues(ctx, &opts); err == nil && len(issues) > 0 {
+			if err := issues.LoadPullRequests(ctx); err != nil {
+				ctx.ServerError("LoadPullRequests", err)
+				return
+			}
+			for _, issue := range issues {
+				suggestions = append(suggestions, podSuggestion{
+					Key:    "review_pr",
+					Icon:   "octicon-git-pull-request",
+					Title:  fmt.Sprintf("#%d %s", issue.Index, issue.Title),
+					URL:    fmt.Sprintf("%s/pulls/%d", repo.Link(), issue.Index),
+					Prompt: string(ctx.Tr("agent.suggest_review_pr_prompt", issue.Index, issue.Title)),
+				})
+			}
+		}
+	}
+	if ctx.Repo.Permission.CanRead(unit.TypeActions) {
+		runs, _, err := db.FindAndCount[actions_model.ActionRun](ctx, actions_model.FindRunOptions{
+			RepoID:      repo.ID,
+			Status:      []actions_model.Status{actions_model.StatusFailure},
+			ListOptions: db.ListOptions{Page: 1, PageSize: 3},
+		})
+		if err != nil {
+			ctx.ServerError("FindAndCount", err)
+			return
+		}
+		for _, run := range runs {
+			suggestions = append(suggestions, podSuggestion{
+				Key:    "check_actions",
+				Icon:   "octicon-play",
+				Title:  fmt.Sprintf("#%d %s", run.Index, run.Title),
+				URL:    fmt.Sprintf("%s/actions/runs/%d", repo.Link(), run.Index),
+				Prompt: string(ctx.Tr("agent.suggest_check_actions_prompt", run.Index, run.Title)),
+			})
+		}
+	}
+	if ctx.Repo.Permission.CanRead(unit.TypeIssues) {
+		opts := issues_model.IssuesOptions{
+			RepoIDs:   []int64{repo.ID},
+			IsPull:    optional.Some(false),
+			IsClosed:  optional.Some(false),
+			Doer:      ctx.Doer,
+			SortType:  "recentupdate",
+			Paginator: &db.ListOptions{Page: 1, PageSize: 5},
+		}
+		if issues, err := issues_model.Issues(ctx, &opts); err == nil {
+			for _, issue := range issues {
+				suggestions = append(suggestions, podSuggestion{
+					Key:    "triage_issue",
+					Icon:   "octicon-issue-opened",
+					Title:  fmt.Sprintf("#%d %s", issue.Index, issue.Title),
+					URL:    fmt.Sprintf("%s/issues/%d", repo.Link(), issue.Index),
+					Prompt: string(ctx.Tr("agent.suggest_triage_issue_prompt", issue.Index, issue.Title)),
+				})
+			}
+		}
+	}
+	ctx.Data["Suggestions"] = suggestions
+}
+
+// podSuggestion is one card of the block the repository pod shows above the composer: what
+// the reader can ask this pod to do, and the message that asks it.
+type podSuggestion struct {
+	Key    string // the locale key of the card's own label
+	Icon   string
+	Title  string // the subject the card names (an empty one means the card has no subject)
+	URL    string // where the subject lives
+	Prompt string // the message the card puts into the composer
 }
 
 // prepareChat fills the page data of the chat screen. The caller renders once.
@@ -278,6 +371,7 @@ func RepoAgent(ctx *context.Context) {
 	prepareChat(ctx, nil, repo)
 	ctx.Data["IsDraft"] = true
 	ctx.Data["DraftKind"] = agent_model.ConversationKindRepository
+	prepareSuggestions(ctx, repo)
 	ref, err := agent_service.ModelRoleRef(ctx, agent_service.ModelRoleForKind(agent_model.ConversationKindRepository))
 	if err != nil {
 		ctx.ServerError("ModelRoleRef", err)

@@ -1,0 +1,17 @@
+{{if .Suggestions}}
+	<div class="agent-chat-suggestions">
+		<div class="agent-chat-suggestions-title">{{ctx.Locale.Tr "agent.suggest_title"}}</div>
+		<div class="agent-chat-suggestions-grid">
+			{{range .Suggestions}}
+				<button type="button" class="agent-chat-suggestion" data-prompt="{{.Prompt}}">
+					<span class="agent-chat-suggestion-icon">{{svg .Icon 16}}</span>
+					<span class="agent-chat-suggestion-body">
+						<span class="agent-chat-suggestion-label">{{ctx.Locale.Tr (printf "agent.suggest_%s" .Key)}}</span>
+						{{if .Title}}<span class="agent-chat-suggestion-subject gt-ellipsis">{{.Title}}</span>{{end}}
+					</span>
+					{{if .URL}}<a class="agent-chat-suggestion-link" href="{{AppSubUrl}}{{.URL}}" target="_blank" rel="noreferrer noopener" data-tooltip-content="{{ctx.Locale.Tr "agent.suggest_open"}}">{{svg "octicon-link-external" 14}}</a>{{end}}
+				</button>
+			{{end}}
+		</div>
+	</div>
+{{end}}

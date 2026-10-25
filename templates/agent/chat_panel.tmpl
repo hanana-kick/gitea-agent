@@ -143,17 +143,5 @@
 </div>
 
 <p class="agent-chat-composer-error{{if not .ComposerError}} tw-hidden{{end}}">{{.ComposerError}}</p>
-<form class="ui form agent-chat-composer" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages">
-	<div class="agent-chat-attach-list tw-hidden"></div>
-	<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"{{if not .CanAnswer}} disabled{{end}}></textarea>
-	<label class="agent-chat-attach" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_attach"}}">
-		{{svg "octicon-paperclip" 16}}
-		<input type="file" name="files" multiple>
-	</label>
-	<button type="submit" class="ui primary button agent-chat-send"{{if not .CanAnswer}} disabled{{end}}
-		data-idle-label="{{ctx.Locale.Tr "agent.chat_send"}}" data-busy-label="{{ctx.Locale.Tr "agent.chat_cancel"}}"
-		{{if .RunActive}}data-busy{{end}}>{{if .RunActive}}{{ctx.Locale.Tr "agent.chat_cancel"}}{{else}}{{ctx.Locale.Tr "agent.chat_send"}}{{end}}</button>
-</form>
-{{if not .CanAnswer}}
-	<p class="agent-chat-hint agent-chat-hint-block">{{ctx.Locale.Tr "agent.chat_model_required"}}</p>
-{{end}}
+{{template "agent/chat_composer" .}}
+
