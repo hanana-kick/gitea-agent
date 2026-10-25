@@ -1,0 +1,159 @@
+<header class="agent-chat-head">
+	<a class="agent-chat-back" href="{{AppSubUrl}}/-/agent" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_sessions"}}">{{svg "octicon-chevron-left"}}</a>
+	<div class="agent-chat-head-icon">
+		{{if eq .Session.Kind "resident"}}{{svg "gitea-pod-outline" 20}}{{else if eq .Session.Kind "server"}}{{svg "octicon-server" 20}}{{else}}{{svg "octicon-repo" 20}}{{end}}
+	</div>
+	<div class="agent-chat-head-text">
+		<div class="agent-chat-head-title gt-ellipsis">{{.Session.Title}}</div>
+		<div class="agent-chat-meta">
+			{{if .Repo}}<a href="{{.Repo.Link}}">{{.Repo.FullName}}</a>{{end}}
+			{{if .RoleModelLabel}}<span class="agent-chat-model-label">{{.RoleModelLabel}}</span>{{end}}
+		</div>
+	</div>
+	<a class="ui basic icon button" href="{{AppSubUrl}}/-/agent/{{.Session.ID}}/export" download="conversation.md"
+		data-tooltip-content="{{ctx.Locale.Tr "agent.chat_download"}}">{{svg "octicon-download"}}</a>
+	{{if ne .Session.Kind "resident"}}
+		<form method="post" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/delete">
+			<button type="submit" class="ui basic icon button" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_delete"}}">{{svg "octicon-trash"}}</button>
+		</form>
+	{{end}}
+</header>
+
+<div class="agent-chat-messages">
+	{{if .HasOlderMessages}}
+		<button type="button" class="ui basic button agent-chat-load-older"
+			data-messages-url="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages"
+			data-oldest="{{.OldestMessageID}}">{{ctx.Locale.Tr "agent.chat_load_older"}}</button>
+	{{end}}
+	{{range .Messages}}
+		{{if eq .Role "tool"}}
+			{{$record := index $.ToolRecords .ID}}
+			{{/* a tool call and its result is a log line of the transcript, not a message */}}
+			<div class="agent-chat-message tool agent-chat-tool" data-message-id="{{.ID}}">
+				<details class="agent-chat-fold">
+					<summary class="agent-chat-fold-summary">
+						{{svg "octicon-chevron-right" 12 "agent-chat-fold-chevron"}}
+						<code class="agent-chat-tool-name">{{$record.Name}}</code>
+						{{if $record.Args}}<span class="agent-chat-tool-args gt-ellipsis">{{$record.Args}}</span>{{end}}
+						<span class="agent-chat-message-meta">{{DateUtils.TimeSince .CreatedUnix}}</span>
+					</summary>
+					<div class="agent-chat-fold-body"><pre>{{.Content}}</pre></div>
+				</details>
+			</div>
+		{{else}}
+			{{$group := index $.MessageAttachments .ID}}
+			<div class="agent-chat-message {{.Role}}" data-message-id="{{.ID}}">
+				<div class="agent-chat-message-meta{{if hasAttachments $group}} gt-ellipsis{{end}}">
+					{{if eq .Role "user"}}
+						{{ctx.Locale.Tr "agent.chat_you"}}
+					{{else if eq .Role "assistant"}}
+						{{ctx.Locale.Tr "agent.chat_agent"}}
+					{{else}}
+						{{ctx.Locale.Tr "agent.chat_system"}}
+					{{end}}
+					{{if hasAttachments $group}}<span class="agent-chat-message-time">{{DateUtils.TimeSince .CreatedUnix}}</span>{{else}}· {{DateUtils.TimeSince .CreatedUnix}}{{end}}
+				</div>
+				{{if .Reasoning}}
+					{{/* what the model thought before it answered: a log line the reader opens */}}
+					<details class="agent-chat-fold agent-chat-thought">
+						<summary class="agent-chat-fold-summary">
+							{{svg "octicon-chevron-right" 12 "agent-chat-fold-chevron"}}
+							<span>{{ctx.Locale.Tr "agent.chat_thought"}}</span>
+						</summary>
+						<div class="agent-chat-fold-body"><pre>{{.Reasoning}}</pre></div>
+					</details>
+				{{end}}
+				<div class="agent-chat-bubble">
+					<div class="render-content markup">{{ctx.RenderUtils.MarkdownToHtml .Content}}</div>
+				</div>
+			{{if $group}}
+				{{/* pictures read as a row of thumbnails, files as a list below them */}}
+				<div class="agent-chat-attachments">
+					{{if $group.Pictures.Files}}
+						<div class="agent-chat-attach-group agent-chat-attach-pictures">
+							{{range $index, $picture := $group.Pictures.Files}}
+								<a class="agent-chat-attachment-image{{if ge $index $group.Pictures.Shown}} tw-hidden{{end}}" href="{{AppSubUrl}}{{$picture.URL}}" target="_blank" rel="noreferrer noopener">
+									<img src="{{AppSubUrl}}{{$picture.URL}}" alt="{{$picture.Name}}" loading="lazy">
+								</a>
+							{{end}}
+							{{if $group.Pictures.Rest}}
+								<button type="button" class="agent-chat-attach-more agent-chat-attach-count">+{{$group.Pictures.Rest}}</button>
+							{{end}}
+						</div>
+					{{end}}
+					{{if $group.Files.Files}}
+						<div class="agent-chat-attach-group agent-chat-attach-files">
+							{{range $index, $file := $group.Files.Files}}
+								<a class="agent-chat-attachment{{if ge $index $group.Files.Shown}} tw-hidden{{end}}" href="{{AppSubUrl}}{{$file.URL}}" download>
+									{{svg "octicon-paperclip" 14}}
+									<span class="gt-ellipsis">{{$file.Name}}</span>
+									<span class="agent-chat-attachment-size">{{$file.SizeText}}</span>
+								</a>
+							{{end}}
+							{{if $group.Files.Rest}}
+								<button type="button" class="agent-chat-attach-more">{{ctx.Locale.Tr "agent.chat_more"}}</button>
+							{{end}}
+						</div>
+					{{end}}
+				</div>
+			{{end}}
+				<div class="agent-chat-message-actions">
+					<button type="button" class="agent-chat-copy-message" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_copy"}}">{{svg "octicon-copy" 14}}</button>
+					{{if eq .Role "user"}}
+						<button type="button" class="agent-chat-edit-message show-modal"
+							data-modal="#agent-chat-edit-modal"
+							data-modal-form.url="{{AppSubUrl}}/-/agent/{{$.Session.ID}}/messages/{{.ID}}"
+							data-tooltip-content="{{ctx.Locale.Tr "agent.chat_edit"}}">{{svg "octicon-pencil" 14}}</button>
+					{{end}}
+				</div>
+				<div class="agent-chat-source tw-hidden">{{.Content}}</div>
+			</div>
+		{{end}}
+	{{else}}
+		<div class="agent-chat-empty">{{ctx.Locale.Tr "agent.chat_no_messages"}}</div>
+	{{end}}
+	{{if .PendingText}}
+		{{/* what the answer to the last message is doing: queued, running, failed, canceled */}}
+		<div class="agent-chat-message assistant agent-chat-pending" data-state="{{.PendingState}}" data-run-id="{{.PendingRunID}}">
+			<div class="agent-chat-bubble">
+				<div class="agent-chat-pending-status"><span class="agent-chat-reasoning-dots"><i></i><i></i><i></i></span><span class="agent-chat-pending-label">{{.PendingText}}</span></div>
+				<div class="agent-chat-live-text"></div>
+			</div>
+		</div>
+	{{end}}
+	{{range .PendingApprovals}}
+		{{/* the run waits for this reader: the card posts the decision and the transcript reloads */}}
+		<div class="agent-chat-approval" data-approval-id="{{.ID}}" data-run-id="{{.RunID}}">
+			<div class="agent-chat-approval-title">{{ctx.Locale.Tr "agent.chat_approval_title" .Tool}}</div>
+			<div class="agent-chat-approval-tool">
+				<span class="agent-chat-approval-name">{{.Tool}}</span>
+				{{if .Arguments}}<span class="agent-chat-approval-args">{{.Arguments}}</span>{{end}}
+			</div>
+			<p class="agent-chat-approval-help">{{ctx.Locale.Tr "agent.chat_approval_help"}}</p>
+			<div class="agent-chat-approval-actions">
+				<form method="post" action="{{AppSubUrl}}/-/agent/{{$.Session.ID}}/approvals/{{.ID}}/allow">
+					<button type="submit" class="ui small primary button">{{ctx.Locale.Tr "agent.chat_approval_allow"}}</button>
+				</form>
+				<form method="post" action="{{AppSubUrl}}/-/agent/{{$.Session.ID}}/approvals/{{.ID}}/refuse">
+					<button type="submit" class="ui small button">{{ctx.Locale.Tr "agent.chat_approval_refuse"}}</button>
+				</form>
+			</div>
+		</div>
+	{{end}}
+</div>
+
+<p class="agent-chat-composer-error{{if not .ComposerError}} tw-hidden{{end}}">{{.ComposerError}}</p>
+<form class="ui form agent-chat-composer" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages">
+	<div class="agent-chat-attach-list tw-hidden"></div>
+	<textarea name="content" class="agent-chat-input" rows="3" required placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}"{{if not .CanAnswer}} disabled{{end}}></textarea>
+	<label class="agent-chat-attach" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_attach"}}">
+		{{svg "octicon-paperclip" 16}}
+		<input type="file" name="files" multiple>
+	</label>
+	<button type="submit" class="ui primary button agent-chat-send"{{if not .CanAnswer}} disabled{{end}}
+		data-idle-label="{{ctx.Locale.Tr "agent.chat_send"}}" data-busy-label="{{ctx.Locale.Tr "agent.chat_cancel"}}"
+		{{if .RunActive}}data-busy{{end}}>{{if .RunActive}}{{ctx.Locale.Tr "agent.chat_cancel"}}{{else}}{{ctx.Locale.Tr "agent.chat_send"}}{{end}}</button>
+</form>
+{{if not .CanAnswer}}
+	<p class="agent-chat-hint agent-chat-hint-block">{{ctx.Locale.Tr "agent.chat_model_required"}}</p>
+{{end}}

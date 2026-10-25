@@ -21,6 +21,7 @@ import (
 
 const (
 	tplChat = "agent/chat"
+	tplList = "agent/list"
 	chatURL = "/-/agent"
 
 	// chatMessagePageSize is how much of a transcript the chat screen loads at once.
@@ -56,8 +57,14 @@ func chatError(ctx *context.Context, err error) {
 // Chat renders the chat screen with the session list and no session open. Small screens
 // use this as the session list page.
 func Chat(ctx *context.Context) {
-	prepareChat(ctx, nil, nil)
+	prepareList(ctx)
 	ctx.HTML(http.StatusOK, tplChat)
+}
+
+// ChatList renders the session list as its own page.
+func ChatList(ctx *context.Context) {
+	prepareList(ctx)
+	ctx.HTML(http.StatusOK, tplList)
 }
 
 // ChatSession renders the chat screen with one session open.
@@ -69,6 +76,11 @@ func ChatSession(ctx *context.Context) {
 	}
 	prepareChat(ctx, session, nil)
 	ctx.HTML(http.StatusOK, tplChat)
+}
+
+// prepareList fills the session list data that every agent screen shares.
+func prepareList(ctx *context.Context) {
+	prepareChat(ctx, nil, nil)
 }
 
 // prepareChat fills the page data of the chat screen. The caller renders once.

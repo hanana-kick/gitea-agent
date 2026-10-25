@@ -1,0 +1,168 @@
+<div class="ui two item menu agent-chat-tabs">
+	<a class="item{{if eq .Scope "pod"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=pod">{{ctx.Locale.Tr "agent.chat_tab_pod"}}</a>
+	<a class="item{{if eq .Scope "repository"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=repository">{{ctx.Locale.Tr "agent.chat_tab_repository"}}</a>
+</div>
+
+{{if eq .Scope "pod"}}
+	<h4 class="ui top attached header tw-flex tw-items-center">
+		<div class="tw-flex-1 tw-flex tw-items-center">
+			{{ctx.Locale.Tr "agent.chat_resident"}}
+			<span class="ui grey label tw-ml-2">{{index .ScopeCounts "pod"}}</span>
+		</div>
+	</h4>
+	<form class="ui attached segment agent-chat-search" method="get" action="{{.ScopeBaseURL}}">
+		<input type="hidden" name="scope" value="pod">
+		<div class="ui small fluid left icon input">
+			<input type="search" name="q" value="{{.Keyword}}" spellcheck="false" maxlength="255" placeholder="{{ctx.Locale.Tr "agent.chat_search_placeholder"}}">
+			<i class="icon">{{svg "octicon-search"}}</i>
+		</div>
+	</form>
+	<div class="ui attached segment agent-chat-list">
+		{{/* the resident session is the entry to the global bot, so it always comes first */}}
+		{{with .Sessions.Resident}}
+			<div class="agent-chat-group-title">
+				{{svg "gitea-pod-outline"}}
+				<span>{{.Title}}</span>
+			</div>
+			<a class="agent-chat-card agent-chat-card-resident{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}" data-session-id="{{.ID}}">
+				<span class="agent-chat-card-text">
+					<span class="agent-chat-card-name gt-ellipsis">{{if .Summary}}{{.Summary}}{{else}}{{.Title}}{{end}}</span>
+					<span class="agent-chat-card-desc">{{ctx.Locale.Tr "agent.chat_resident_desc"}}</span>
+				</span>
+				{{if index $.BusySessions .ID}}<span class="agent-chat-card-busy" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_busy"}}"><i></i><i></i><i></i></span>{{end}}
+			</a>
+		{{end}}
+
+		<div class="agent-chat-divider"></div>
+
+		<div class="agent-chat-group-title">
+			{{svg "octicon-comment-discussion"}}
+			<span>{{ctx.Locale.Tr "agent.chat_conversations"}}</span>
+			{{if .SignedUser.IsAdmin}}
+				<button type="button" class="btn agent-chat-group-action show-modal"
+					data-modal="#agent-chat-folder-modal"
+					data-modal-form.url="{{AppSubUrl}}/-/agent/folders/new"
+					data-tooltip-content="{{ctx.Locale.Tr "agent.chat_folder_new"}}">
+					{{svg "octicon-file-directory" 16}}<span class="agent-chat-group-action-plus">{{svg "octicon-plus" 10}}</span>
+				</button>
+			{{end}}
+		</div>
+
+		<a class="agent-chat-card agent-chat-card-new{{if .IsDraft}} active{{end}}" href="{{AppSubUrl}}/-/agent/new">
+			<span class="agent-chat-card-main">
+				<span class="agent-chat-card-name">{{ctx.Locale.Tr "agent.chat_new_conversation"}}</span>
+			</span>
+			<span class="agent-chat-card-icon">{{svg "octicon-plus" 16}}</span>
+		</a>
+
+		{{range .Sessions.Servers}}
+			{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" "" "Folders" $.Sessions.Folders "Busy" (index $.BusySessions .ID)}}
+		{{else}}
+
+		{{end}}
+
+		{{range .Sessions.Folders}}
+			<div class="agent-chat-folder">
+				<div class="agent-chat-card agent-chat-card-folder">
+					<span class="agent-chat-card-main">
+						<span class="agent-chat-card-icon">{{if .Folder.Icon}}{{svg .Folder.Icon 18}}{{else}}{{svg "octicon-file-directory" 18}}{{end}}</span>
+						<span class="agent-chat-card-name gt-ellipsis">{{.Folder.Name}}</span>
+					</span>
+					<button type="button" class="agent-chat-more" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_more"}}" aria-haspopup="true">
+						{{svg "octicon-kebab-horizontal"}}
+					</button>
+					<div class="agent-chat-more-menu" popover="auto" role="menu">
+						<div class="item agent-chat-more-item show-modal"
+							data-modal="#agent-chat-folder-modal"
+							data-modal-form.url="{{AppSubUrl}}/-/agent/folders/{{.Folder.ID}}"
+							data-modal-name.value="{{.Folder.Name}}"
+							data-icon="{{.Folder.Icon}}">{{ctx.Locale.Tr "agent.chat_folder_edit"}}</div>
+						<div class="divider"></div>
+						<div class="item agent-chat-more-item tw-text-red link-action"
+							data-url="{{AppSubUrl}}/-/agent/folders/{{.Folder.ID}}/delete"
+							data-modal-confirm-header="{{ctx.Locale.Tr "agent.chat_folder_delete"}}"
+							data-modal-confirm-content="{{ctx.Locale.Tr "agent.chat_folder_delete_confirm" .Folder.Name}}">{{ctx.Locale.Tr "agent.delete"}}</div>
+					</div>
+				</div>
+				<div class="agent-chat-folder-items">
+					{{range .Sessions}}
+						{{template "agent/chat_session_row" dict "Session" . "Selected" $.Session "FallbackIcon" "" "Folders" $.Sessions.Folders "Busy" (index $.BusySessions .ID)}}
+					{{end}}
+				</div>
+			</div>
+		{{end}}
+	</div>
+{{else}}
+	<h4 class="ui top attached header tw-flex tw-items-center">
+		<div class="tw-flex-1 tw-flex tw-items-center">
+			{{if .FilterRepo}}
+				{{/* the pod of a repository lists that repository's sessions */}}
+				<span class="gt-ellipsis">{{.FilterRepo.FullName}}</span>
+				<span class="ui grey label tw-ml-2">{{len .Sessions.Repositories}}</span>
+			{{else}}
+				{{ctx.Locale.Tr "agent.chat_repository"}}
+				<span class="ui grey label tw-ml-2">{{index .ScopeCounts "repository"}}</span>
+			{{end}}
+		</div>
+	</h4>
+	<form class="ui attached segment agent-chat-search" method="get" action="{{.ScopeBaseURL}}">
+		<input type="hidden" name="scope" value="repository">
+		{{if .FilterRepo}}<input type="hidden" name="repo_id" value="{{.FilterRepo.ID}}">{{end}}
+		{{if .AllRepositories}}<input type="hidden" name="all" value="1">{{end}}
+		<div class="ui small fluid left icon input">
+			<input type="search" name="q" value="{{.Keyword}}" spellcheck="false" maxlength="255" placeholder="{{ctx.Locale.Tr "agent.chat_search_placeholder"}}">
+			<i class="icon">{{svg "octicon-search"}}</i>
+		</div>
+	</form>
+	{{if .FilterRepo}}
+		{{/* the way out of the one repository this pod lists */}}
+		<div class="ui attached segment agent-chat-filter-all-row">
+			<a class="agent-chat-filter-all" href="{{.ScopeBaseURL}}?scope=repository&all=1">{{ctx.Locale.Tr "agent.chat_all_repositories"}}</a>
+		</div>
+	{{end}}
+	<div class="ui attached segment agent-chat-list">
+		<div class="agent-chat-group-title">
+			{{svg "octicon-comment-discussion"}}
+			<span>{{ctx.Locale.Tr "agent.chat_conversations"}}</span>
+		</div>
+		{{if .WritableRepos}}
+			<button type="button" class="agent-chat-card show-modal" data-modal="#agent-chat-repository-modal">
+				<span class="agent-chat-card-main">
+					<span class="agent-chat-card-icon">{{svg "octicon-plus" 18}}</span>
+					<span class="agent-chat-card-name">{{ctx.Locale.Tr "agent.chat_new_conversation"}}</span>
+				</span>
+			</button>
+		{{end}}
+		{{$showRepo := not .FilterRepo}}
+		{{range .Sessions.Repositories}}
+			{{$subtitle := ""}}
+			{{if $showRepo}}{{$subtitle = .Repo.FullName}}{{end}}
+			{{template "agent/chat_session_row" dict "Session" .Session "Subtitle" $subtitle "Selected" $.Session "FallbackIcon" "" "Busy" (index $.BusySessions .Session.ID)}}
+		{{else}}
+			<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_repository"}}</p>
+		{{end}}
+		<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_repository_help"}}</p>
+	</div>
+
+	{{if .WritableRepos}}
+		<div class="ui modal" id="agent-chat-repository-modal">
+			<div class="header">{{ctx.Locale.Tr "agent.chat_new_conversation"}}</div>
+			<form class="ui form" method="get" action="{{AppSubUrl}}/-/agent/new">
+				<div class="content">
+					<div class="required field">
+						<label for="repo_id">{{ctx.Locale.Tr "agent.chat_repository"}}</label>
+						<select id="repo_id" name="repo_id" class="ui dropdown" required>
+							{{range .WritableRepos}}
+								<option value="{{.ID}}"{{if and $.FilterRepo (eq .ID $.FilterRepo.ID)}} selected{{end}}>{{.FullName}}</option>
+							{{end}}
+						</select>
+					</div>
+				</div>
+				<div class="actions">
+					<button class="ui cancel button" type="button">{{ctx.Locale.Tr "cancel"}}</button>
+					<button class="ui primary button" type="submit">{{ctx.Locale.Tr "agent.chat_new_conversation"}}</button>
+				</div>
+			</form>
+		</div>
+	{{end}}
+{{end}}

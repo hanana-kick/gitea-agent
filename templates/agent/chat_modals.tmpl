@@ -1,0 +1,84 @@
+<div class="ui modal" id="agent-chat-title-modal">
+	<div class="header">{{ctx.Locale.Tr "agent.chat_title_change"}}</div>
+	<form class="ui form" method="post" id="agent-chat-title-form">
+		<div class="content">
+			<div class="required field">
+				<label for="agent-chat-title-input">{{ctx.Locale.Tr "agent.chat_conversation_title"}}</label>
+				<input id="agent-chat-title-input" name="title" maxlength="100" required>
+			</div>
+		</div>
+		<div class="actions">
+			<button class="ui cancel button" type="button">{{ctx.Locale.Tr "cancel"}}</button>
+			<button class="ui primary button" type="submit">{{ctx.Locale.Tr "save"}}</button>
+		</div>
+	</form>
+</div>
+
+<div class="ui modal" id="agent-chat-edit-modal">
+	<div class="header">{{ctx.Locale.Tr "agent.chat_edit"}}</div>
+	<form class="ui form" method="post" id="agent-chat-edit-form">
+		<div class="content">
+			<div class="required field">
+				<label for="agent-chat-edit-input">{{ctx.Locale.Tr "agent.chat_message"}}</label>
+				<textarea id="agent-chat-edit-input" name="content" rows="6" required></textarea>
+			</div>
+			<p class="help">{{ctx.Locale.Tr "agent.chat_edit_confirm"}}</p>
+		</div>
+		<div class="actions">
+			<button class="ui cancel button" type="button">{{ctx.Locale.Tr "cancel"}}</button>
+			<button class="ui primary button" type="submit">{{ctx.Locale.Tr "agent.chat_edit"}}</button>
+		</div>
+	</form>
+</div>
+
+<div class="ui modal" id="agent-chat-folder-modal">
+	<div class="header">{{ctx.Locale.Tr "agent.chat_folder"}}</div>
+	<form class="ui form" method="post" id="agent-chat-folder-form">
+		<div class="content">
+			<div class="required field">
+				<label for="agent-chat-folder-name">{{ctx.Locale.Tr "agent.chat_folder_name"}}</label>
+				<input id="agent-chat-folder-name" name="name" maxlength="100" required>
+			</div>
+			<div class="field">
+				<label>{{ctx.Locale.Tr "agent.chat_icon"}}</label>
+				<div class="agent-chat-icon-picker">
+					<label class="agent-chat-icon-option">
+						<input type="radio" name="icon" value="">
+						<span class="agent-chat-icon-none">{{ctx.Locale.Tr "agent.chat_icon_none"}}</span>
+					</label>
+					{{range .ConversationIcons}}
+						<label class="agent-chat-icon-option" data-tooltip-content="{{.}}">
+							<input type="radio" name="icon" value="{{.}}">
+							{{svg . 20}}
+						</label>
+					{{end}}
+				</div>
+			</div>
+		</div>
+		<div class="actions">
+			<button class="ui cancel button" type="button">{{ctx.Locale.Tr "cancel"}}</button>
+			<button class="ui primary button" type="submit">{{ctx.Locale.Tr "save"}}</button>
+		</div>
+	</form>
+</div>
+
+<div class="ui modal" id="agent-chat-folder-pick-modal">
+	<div class="header">{{ctx.Locale.Tr "agent.chat_folder_move"}}</div>
+	<form class="ui form" method="post" id="agent-chat-folder-pick-form">
+		<div class="content">
+			<div class="required field">
+				<label for="agent-chat-folder-pick">{{ctx.Locale.Tr "agent.chat_folder"}}</label>
+				<select id="agent-chat-folder-pick" name="folder_id" class="ui dropdown" required>
+					<option value="">{{ctx.Locale.Tr "agent.chat_folder_none"}}</option>
+					{{range .Sessions.Folders}}
+						<option value="{{.Folder.ID}}">{{.Folder.Name}}</option>
+					{{end}}
+				</select>
+			</div>
+		</div>
+		<div class="actions">
+			<button class="ui cancel button" type="button">{{ctx.Locale.Tr "cancel"}}</button>
+			<button class="ui primary button" type="submit">{{ctx.Locale.Tr "save"}}</button>
+		</div>
+	</form>
+</div>

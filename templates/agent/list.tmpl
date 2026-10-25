@@ -1,0 +1,18 @@
+{{template "base/head" .}}
+<div role="main" aria-label="{{.Title}}" class="page-content agent-chat-page agent-list-page">
+	{{template "base/alert" ctx.RootData}}
+	<div class="ui container fluid padded flex-container agent-chat agent-list" data-runs-url="{{AppSubUrl}}/-/agent/events" data-busy-label="{{ctx.Locale.Tr "agent.chat_busy"}}" data-attach-remove-label="{{ctx.Locale.Tr "agent.chat_attach_remove"}}" data-attach-more-label="{{ctx.Locale.Tr "agent.chat_more"}}">
+		<div class="flex-container-nav agent-chat-nav agent-list-nav" aria-label="{{ctx.Locale.Tr "agent.chat_sessions"}}">
+			{{template "agent/chat_list" .}}
+		</div>
+		<div class="flex-container-main agent-chat-main agent-list-empty" aria-label="{{ctx.Locale.Tr "agent.chat_title"}}">
+			<div class="agent-chat-empty-main">
+				{{svg "gitea-pod-outline" 56}}
+				<p class="agent-chat-empty-title">{{ctx.Locale.Tr "agent.chat_select_session"}}</p>
+				<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_select_session_help"}}</p>
+			</div>
+		</div>
+	</div>
+	{{template "agent/chat_modals" .}}
+</div>
+{{template "base/footer" .}}

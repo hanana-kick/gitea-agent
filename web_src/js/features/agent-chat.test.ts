@@ -1,4 +1,4 @@
-import {formatFileSize, initAttachmentList} from './agent-chat.ts';
+import {formatFileSize, initAttachmentList} from './agent-chat/composer.ts';
 
 test('formatFileSize', () => {
   expect(formatFileSize(0)).toBe('0 B');
@@ -34,13 +34,13 @@ test('attachment list appends picks, removes and clears without duplicating', ()
   expect(list.querySelectorAll('img.agent-chat-attach-thumb')).toHaveLength(0);
 
   pick(new File([new Uint8Array([137, 80, 78, 71])], 'c.png', {type: 'image/png'}));
-  expect(chips()).toEqual(['a.txt', 'b.txt', 'c.png']); // a second pick adds to the message
+  expect(chips()).toEqual(['c.png', 'a.txt', 'b.txt']); // a second pick adds to the message, pictures before files
   expect(sent()).toEqual(['a.txt', 'b.txt', 'c.png']);
   expect(list.querySelectorAll('img.agent-chat-attach-thumb')).toHaveLength(1); // pictures get a thumbnail
 
   list.querySelectorAll<HTMLButtonElement>('.agent-chat-attach-remove')[1].click();
-  expect(chips()).toEqual(['a.txt', 'c.png']);
-  expect(sent()).toEqual(['a.txt', 'c.png']); // taking one back keeps the rest
+  expect(chips()).toEqual(['c.png', 'b.txt']);
+  expect(sent()).toEqual(['b.txt', 'c.png']); // taking one back keeps the rest
 
   clear();
   expect(chips()).toEqual([]);
