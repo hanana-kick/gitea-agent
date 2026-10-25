@@ -245,6 +245,37 @@ func ChatDraft(ctx *context.Context) {
 	ctx.HTML(http.StatusOK, tplChat)
 }
 
+// RepoAgent renders the pod of one repository: its sessions and the composer for the next one.
+// It is the screen the repository menu opens, so the reader stays in the repository's own path.
+func RepoAgent(ctx *context.Context) {
+	repo := ctx.Repo.Repository
+	// an agent of one repository is for the users who may drive it, as in the picker
+	if !ctx.Doer.IsAdmin {
+		ctx.NotFound(nil)
+		return
+	}
+	allowed, err := agent_service.CanUseRepository(ctx, ctx.Doer, repo)
+	if err != nil {
+		ctx.ServerError("CanUseRepository", err)
+		return
+	}
+	if !allowed {
+		ctx.NotFound(nil)
+		return
+	}
+	prepareChat(ctx, nil, repo)
+	ctx.Data["IsDraft"] = true
+	ctx.Data["DraftKind"] = agent_model.ConversationKindRepository
+	ref, err := agent_service.ModelRoleRef(ctx, agent_service.ModelRoleForKind(agent_model.ConversationKindRepository))
+	if err != nil {
+		ctx.ServerError("ModelRoleRef", err)
+		return
+	}
+	ctx.Data["RoleModelLabel"] = agent_service.ModelRefLabel(ctx, ref)
+	ctx.Data["CanAnswer"] = ref != ""
+	ctx.HTML(http.StatusOK, tplChat)
+}
+
 // ChatDraftCreate stores the conversation of a draft along with its first message.
 func ChatDraftCreate(ctx *context.Context) {
 	kind := ctx.FormString("kind")
@@ -399,12 +430,12 @@ func groupAttachments(attachments map[int64][]*agent_model.Attachment) map[int64
 }
 
 // attachmentFit reports how many files a row shows and how many are left. A row that fits
-// shows everything; a longer one stops at cap, one earlier when its last slot is the count.
-func attachmentFit(count, cap int, counted bool) (int, int) {
-	if count <= cap {
+// shows everything; a longer one stops at limit, one earlier when its last slot is the count.
+func attachmentFit(count, limit int, counted bool) (int, int) {
+	if count <= limit {
 		return count, 0
 	}
-	shown := cap
+	shown := limit
 	if counted {
 		shown--
 	}
