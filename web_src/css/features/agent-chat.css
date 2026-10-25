@@ -937,12 +937,15 @@ button.agent-chat-card {
 }
 
 .agent-repo-pod-body {
-  max-width: 900px;
+  display: flex;
+  justify-content: center;
 }
 
-.agent-repo-pod-panel {
-  max-width: none;
+/* the ask block sits under the repository header: the page scrolls normally, so the panel
+   keeps its natural height instead of the viewport-filling height the chat page uses */
+.agent-repo-pod .agent-repo-pod-panel {
   margin-inline: 0;
+  overflow: visible;
 }
 
 /* the block of things to ask this pod: prompt chips above the composer, the way the
