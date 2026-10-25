@@ -88,8 +88,8 @@ func prepareList(ctx *context.Context) {
 	prepareChat(ctx, nil, nil)
 }
 
-// prepareSuggestions fills the block of things to ask a repository pod about. The reader
-// sends one as the first message: the prompt is prefilled, the files stay theirs to add.
+// prepareSuggestions fills the block of things to ask a repository pod about: one chip per
+// thing, its prompt prefilled into the composer when picked, its subject in the tooltip.
 func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 	suggestions := make([]podSuggestion, 0, 5)
 	suggestions = append(suggestions, podSuggestion{
@@ -166,7 +166,7 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 	ctx.Data["Suggestions"] = suggestions
 }
 
-// podSuggestion is one card of the block the repository pod shows above the composer: what
+// podSuggestion is one chip of the block the repository pod shows above the composer: what
 // the reader can ask this pod to do, and the message that asks it.
 type podSuggestion struct {
 	Key    string // the locale key of the card's own label

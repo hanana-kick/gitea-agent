@@ -925,67 +925,46 @@ button.agent-chat-card {
   object-fit: cover;
 }
 
-/* the block of things to ask this pod: cards above the composer of the repo screen */
+/* the block of things to ask this pod: prompt chips above the composer, the way the
+   GitHub agents panel lists sample prompts over its input */
 .agent-chat-suggestions {
-  padding: 8px 12px 0;
+  padding: 10px 12px 0;
   border-top: 1px solid var(--color-secondary);
 }
 
-.agent-chat-suggestions-title {
-  margin-bottom: 6px;
-  color: var(--color-text-light-2);
-  font-size: 12px;
-}
-
-.agent-chat-suggestions-grid {
-  display: grid;
+.agent-chat-suggestions-chips {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .agent-chat-suggestion {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  text-align: left;
-  background: var(--color-secondary-alpha-40);
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-button);
   border: 1px solid var(--color-secondary);
-  border-radius: var(--border-radius);
+  border-radius: var(--border-radius-full, 999px);
 }
 
 .agent-chat-suggestion:hover {
   background: var(--color-hover);
+  border-color: var(--color-secondary-dark-2);
 }
 
-.agent-chat-suggestion-icon {
+.agent-chat-suggestion svg {
   flex-shrink: 0;
   color: var(--color-text-light-2);
 }
 
-.agent-chat-suggestion-body {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-.agent-chat-suggestion-label {
-  font-weight: var(--font-weight-medium);
-}
-
-.agent-chat-suggestion-subject {
-  color: var(--color-text-light-2);
-  font-size: 12px;
-}
-
-.agent-chat-suggestion-link {
-  flex-shrink: 0;
-  color: var(--color-text-light-2);
-}
-
-.agent-chat-suggestion-link:hover {
-  color: var(--color-text);
+.agent-chat-suggestion span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-chat-composer {

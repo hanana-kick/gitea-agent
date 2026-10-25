@@ -161,18 +161,16 @@ export function initDraftComposer() {
     button.classList.remove('disabled');
   });
 
-  // a suggestion card asks the pod to do something: its message goes into the input, so
-  // the reader can extend it before sending; the card then has served its purpose
+  // a chip asks the pod to do something: its message goes into the input, so the reader
+  // can extend it before sending; the chips then have served their purpose
   const suggestions = form.closest('.agent-chat-main')!.querySelectorAll<HTMLElement>('.agent-chat-suggestion[data-prompt]');
-  for (const card of suggestions) {
-    card.addEventListener('click', (event) => {
-      const target = event.target as HTMLElement;
-      if (target.closest('.agent-chat-suggestion-link')) return; // the link opens the subject, it does not ask
+  for (const chip of suggestions) {
+    chip.addEventListener('click', () => {
       const input = form.querySelector<HTMLTextAreaElement>('.agent-chat-input')!;
-      input.value = card.getAttribute('data-prompt')!;
+      input.value = chip.getAttribute('data-prompt')!;
       input.dispatchEvent(new Event('input', {bubbles: true}));
       input.focus({preventScroll: true});
-      card.closest('.agent-chat-suggestions')?.remove();
+      chip.closest('.agent-chat-suggestions')?.remove();
     });
   }
 }
