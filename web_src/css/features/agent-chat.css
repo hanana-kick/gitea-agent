@@ -1105,10 +1105,16 @@ button.agent-chat-card {
     margin-inline: 0;
   }
 
-  /* one panel at a time: the list, or the chat with its draft */
+  /* one panel at a time: the list, or the chat with its draft. The repository pod has no
+     list beside it, so its ask block keeps showing (its selector is kept at parity so the
+     later rule can win) */
   .agent-chat-page.has-panel .agent-chat-nav,
   .agent-chat-page:not(.has-panel) .agent-chat-main {
     display: none !important;
+  }
+
+  .agent-chat-page.agent-repo-pod:not(.has-panel) .agent-repo-pod-panel {
+    display: flex !important;
   }
 
   .agent-chat-back {
