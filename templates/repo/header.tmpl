@@ -127,9 +127,9 @@
 					{{end}}
 
 					{{if .IsSigned}}
-						{{/* the pod works inside the repository, so the draft of it opens with this repository in scope */}}
-						<a class="item" href="{{AppSubUrl}}/-/agent/new?repo_id={{.Repository.ID}}">
-							{{svg "gitea-pod-outline" 16 "agent-pod-menu"}} {{ctx.Locale.Tr "agent.chat_title"}}
+						{{/* the pod of this repository has a screen of its own under the repository path */}}
+						<a class="item" href="{{.RepoLink}}/pod">
+							{{svg "gitea-pod-octicon" 16}} {{ctx.Locale.Tr "agent.chat_title"}}
 						</a>
 					{{end}}
 

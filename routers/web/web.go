@@ -603,6 +603,11 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		m.Post("/folders/{id}", agent_web.ChatFolderUpdate)
 		m.Post("/folders/{id}/delete", agent_web.ChatFolderDelete)
 	}, reqSignIn)
+
+	// the pod of one repository, under the repository's own path
+	m.Group("/{username}/{reponame}", func() {
+		m.Get("/pod", agent_web.RepoAgent)
+	}, reqSignIn, context.RepoAssignment)
 	// ***** END: Agent *****
 
 	// ***** START: User *****
