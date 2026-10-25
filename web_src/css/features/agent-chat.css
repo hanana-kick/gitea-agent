@@ -23,6 +23,13 @@
   padding-right: 10px !important;
 }
 
+/* the pod name is one short Latin word while its neighbours are Korean, whose line box is a
+   hair taller; the pointing menu aligns its items to the bottom edge, which would push this one
+   down, so it is centred like the row's middles (the selector has to outrank the menu's own) */
+.ui.secondary.pointing.menu .overflow-menu-items > a.item.agent-pod-item {
+  align-self: center;
+}
+
 /* the pod mark is wider than it is tall and its ink sits a hair above the middle, so beside
    square icons it is drawn at their size and nudged down until it reads centred with them */
 svg.agent-pod-menu {
