@@ -126,6 +126,13 @@
 						</a>
 					{{end}}
 
+					{{if .IsSigned}}
+						{{/* the pod works inside the repository, so the draft of it opens with this repository in scope */}}
+						<a class="item" href="{{AppSubUrl}}/-/agent/new?repo_id={{.Repository.ID}}">
+							{{svg "gitea-pod-outline" 18}} {{ctx.Locale.Tr "agent.chat_title"}}
+						</a>
+					{{end}}
+
 					{{if and .EnableActions (.Permission.CanRead ctx.Consts.RepoUnitTypeActions) (not .IsEmptyRepo)}}
 						<a class="{{if .PageIsActions}}active {{end}}item" href="{{.RepoLink}}/actions">
 							{{svg "octicon-play"}} {{ctx.Locale.Tr "actions.actions"}}
