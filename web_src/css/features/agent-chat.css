@@ -96,6 +96,21 @@ svg.agent-pod-menu {
   padding: 8px !important;
 }
 
+/* the way back from the one repository a pod lists to every repository */
+.agent-chat-filter-all-row {
+  padding: 6px 8px !important;
+  text-align: right;
+}
+
+.agent-chat-filter-all {
+  font-size: 12px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-filter-all:hover {
+  color: var(--color-text);
+}
+
 .agent-chat-list {
   flex: 1;
   min-height: 0;

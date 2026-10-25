@@ -84,6 +84,26 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 		return
 	}
 
+	// a repository session, and the draft of one, belong to that repository: the list beside
+	// them shows its sessions, and "all=1" asks for every repository instead
+	if session != nil && session.Kind == agent_model.ConversationKindRepository {
+		sessionRepo, err := repo_model.GetRepositoryByID(ctx, session.RepoID)
+		if err != nil {
+			ctx.ServerError("GetRepositoryByID", err)
+			return
+		}
+		repo = sessionRepo
+	}
+	if repo != nil {
+		ctx.Data["Repo"] = repo
+		if ctx.FormString("all") != "1" {
+			list = keepRepository(list, repo.ID)
+			ctx.Data["FilterRepo"] = repo
+		} else {
+			ctx.Data["AllRepositories"] = true
+		}
+	}
+
 	ctx.Data["Title"] = ctx.Tr("agent.chat_title")
 	ctx.Data["PageIsAgentChat"] = true
 	scope, scopeBaseURL := chatScope(ctx, session, repo)
@@ -109,19 +129,7 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 	ctx.Data["Session"] = session
 	ctx.Data["WritableRepos"] = repos
 	ctx.Data["ConversationIcons"] = agent_service.ConversationIcons()
-	if repo != nil {
-		// a draft belongs to the repository it was started from, so the sidebar stays there
-		ctx.Data["Repo"] = repo
-	}
 	if session != nil {
-		if session.Kind == agent_model.ConversationKindRepository {
-			sessionRepo, err := repo_model.GetRepositoryByID(ctx, session.RepoID)
-			if err != nil {
-				ctx.ServerError("GetRepositoryByID", err)
-				return
-			}
-			ctx.Data["Repo"] = sessionRepo
-		}
 		messages, err := agent_service.ListMessages(ctx, session.ID, chatMessagePageSize)
 		if err != nil {
 			ctx.ServerError("ListMessages", err)
@@ -701,6 +709,20 @@ func chatScope(ctx *context.Context, session *agent_model.Conversation, repo *re
 		return "repository", baseURL
 	}
 	return "pod", baseURL
+}
+
+// keepRepository narrows a list to the sessions of one repository, which is what the sidebar
+// of that repository's pod shows.
+func keepRepository(list *agent_service.ConversationList, repoID int64) *agent_service.ConversationList {
+	kept := make([]*agent_service.RepositoryConversation, 0, len(list.Repositories))
+	for _, entry := range list.Repositories {
+		if entry.Repo.ID == repoID {
+			kept = append(kept, entry)
+		}
+	}
+	narrowed := *list
+	narrowed.Repositories = kept
+	return &narrowed
 }
 
 // filterConversations keeps the sessions whose title matches, and the repositories whose

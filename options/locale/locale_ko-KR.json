@@ -4132,6 +4132,7 @@
   "agent.chat_sessions": "세션",
   "agent.chat_resident": "Pod",
   "agent.chat_repository": "레포지토리 에이전트",
+  "agent.chat_all_repositories": "모든 레포지토리",
   "agent.chat_repository_help": "코드 수정, PR, CI 등 레포지토리에 직접 관여하는 에이전트입니다. 코드 쓰기 권한이 필요합니다.",
   "agent.chat_delete": "세션 삭제",
   "agent.chat_deleted": "세션을 삭제했습니다.",

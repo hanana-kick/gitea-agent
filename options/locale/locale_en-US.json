@@ -4133,6 +4133,7 @@
   "agent.chat_sessions": "Sessions",
   "agent.chat_resident": "Pod",
   "agent.chat_repository": "Repository agent",
+  "agent.chat_all_repositories": "All repositories",
   "agent.chat_repository_help": "Agents bound to one repository: code changes, pull requests and CI. Starting one needs code write access.",
   "agent.chat_delete": "Delete session",
   "agent.chat_deleted": "Session deleted.",
