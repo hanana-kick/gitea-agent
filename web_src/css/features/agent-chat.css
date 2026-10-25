@@ -23,11 +23,11 @@
   padding-right: 10px !important;
 }
 
-/* next to the square icons of a menu the pod keeps its own box: as wide as the navbar mark,
-   as tall as the icons beside it, so it neither towers over them nor shrinks away */
+/* the pod mark is wider than it is tall and its ink sits a hair above the middle, so beside
+   square icons it is drawn at their size and nudged down until it reads centred with them */
 svg.agent-pod-menu {
-  width: 22px;
-  height: 16px;
+  position: relative;
+  top: 0.5px;
 }
 
 @media (max-width: 767.98px) {
