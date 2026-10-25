@@ -1,0 +1,11 @@
+{{template "base/head" .}}
+<div role="main" aria-label="{{.Title}}" class="page-content agent-chat-page agent-repo-pod">
+	{{template "repo/header" .}}
+	{{template "base/alert" ctx.RootData}}
+	<div class="ui container fluid padded agent-repo-pod-body" data-runs-url="{{AppSubUrl}}/-/agent/events" data-busy-label="{{ctx.Locale.Tr "agent.chat_busy"}}" data-attach-remove-label="{{ctx.Locale.Tr "agent.chat_attach_remove"}}" data-attach-more-label="{{ctx.Locale.Tr "agent.chat_more"}}">
+		<div class="agent-chat-main agent-repo-pod-panel" aria-label="{{ctx.Locale.Tr "agent.chat_title"}}">
+			{{template "agent/repo_pod" .}}
+		</div>
+	</div>
+</div>
+{{template "base/footer" .}}

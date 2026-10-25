@@ -25,9 +25,10 @@ import (
 )
 
 const (
-	tplChat = "agent/chat"
-	tplList = "agent/list"
-	chatURL = "/-/agent"
+	tplChat    = "agent/chat"
+	tplList    = "agent/list"
+	tplRepoPod = "agent/repo_pod_page"
+	chatURL    = "/-/agent"
 
 	// chatMessagePageSize is how much of a transcript the chat screen loads at once.
 	chatMessagePageSize = 50
@@ -371,6 +372,7 @@ func RepoAgent(ctx *context.Context) {
 	prepareChat(ctx, nil, repo)
 	ctx.Data["IsDraft"] = true
 	ctx.Data["DraftKind"] = agent_model.ConversationKindRepository
+	ctx.Data["PageIsRepoPod"] = true
 	prepareSuggestions(ctx, repo)
 	ref, err := agent_service.ModelRoleRef(ctx, agent_service.ModelRoleForKind(agent_model.ConversationKindRepository))
 	if err != nil {
@@ -379,7 +381,7 @@ func RepoAgent(ctx *context.Context) {
 	}
 	ctx.Data["RoleModelLabel"] = agent_service.ModelRefLabel(ctx, ref)
 	ctx.Data["CanAnswer"] = ref != ""
-	ctx.HTML(http.StatusOK, tplChat)
+	ctx.HTML(http.StatusOK, tplRepoPod)
 }
 
 // ChatDraftCreate stores the conversation of a draft along with its first message.

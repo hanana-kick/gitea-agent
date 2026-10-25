@@ -925,6 +925,26 @@ button.agent-chat-card {
   object-fit: cover;
 }
 
+/* the pod of one repository: the repository page keeps its own chrome, so this screen is
+   only the ask block, dropped under the repository header */
+.agent-repo-pod .flash-message {
+  position: fixed;
+  top: 62px;
+  right: 16px;
+  z-index: 20;
+  max-width: min(420px, calc(100vw - 32px));
+  margin: 0;
+}
+
+.agent-repo-pod-body {
+  max-width: 900px;
+}
+
+.agent-repo-pod-panel {
+  max-width: none;
+  margin-inline: 0;
+}
+
 /* the block of things to ask this pod: prompt chips above the composer, the way the
    GitHub agents panel lists sample prompts over its input */
 .agent-chat-suggestions {
