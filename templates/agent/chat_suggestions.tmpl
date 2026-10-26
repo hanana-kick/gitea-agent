@@ -1,20 +1,25 @@
 {{if .Suggestions}}
 	<div class="agent-chat-presets" role="group" aria-label="{{ctx.Locale.Tr "agent.suggest_title"}}">
 		<div class="agent-chat-presets-title">{{ctx.Locale.Tr "agent.suggest_title"}}</div>
-		<div class="agent-chat-presets-list">
+		<div class="agent-chat-presets-grid">
 			{{range .Suggestions}}
-				<div class="agent-chat-preset">
-					<button type="button" class="agent-chat-preset-main" data-prompt="{{.Prompt}}">
+				<div class="agent-chat-preset" data-prompt="{{.Prompt}}"
+					{{if .Skill}}data-skill="{{.Skill}}"{{end}}>
+					<div class="agent-chat-preset-head">
 						<span class="agent-chat-preset-icon">{{svg .Icon 16}}</span>
-						<span class="agent-chat-preset-text">
-							<span class="agent-chat-preset-label">{{ctx.Locale.Tr (printf "agent.suggest_%s" .Key)}}</span>
-							{{if .Title}}<span class="agent-chat-preset-subject gt-ellipsis">{{.Title}}</span>{{end}}
-						</span>
-					</button>
-					{{if .URL}}
-						<a class="agent-chat-preset-link" href="{{AppSubUrl}}{{.URL}}" target="_blank" rel="noreferrer noopener"
-							data-tooltip-content="{{ctx.Locale.Tr "agent.suggest_open"}}">{{svg "octicon-link-external" 14}}</a>
+						<span class="agent-chat-preset-label">{{ctx.Locale.Tr (printf "agent.suggest_%s" .Key)}}</span>
+					</div>
+					<p class="agent-chat-preset-desc">{{ctx.Locale.Tr (printf "agent.suggest_%s_desc" .Key)}}</p>
+					{{if .Targets}}
+						<select class="ui dropdown agent-chat-preset-target" aria-label="{{ctx.Locale.Tr "agent.suggest_target"}}">
+							{{range .Targets}}<option data-prompt="{{.Prompt}}">{{.Label}}</option>{{end}}
+						</select>
+					{{else if .NeedsTarget}}
+						<p class="agent-chat-preset-empty">{{ctx.Locale.Tr "agent.suggest_no_target"}}</p>
 					{{end}}
+					<button type="button" class="ui primary button agent-chat-preset-run"{{if .NeedsTarget}} disabled{{end}}>
+						{{ctx.Locale.Tr "agent.suggest_run"}}
+					</button>
 				</div>
 			{{end}}
 		</div>

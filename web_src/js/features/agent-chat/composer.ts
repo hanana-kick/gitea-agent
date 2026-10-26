@@ -161,16 +161,15 @@ export function initDraftComposer() {
     button.classList.remove('disabled');
   });
 
-  // a preset asks the pod to do something: its message goes into the input, so the reader
-  // can extend it before sending; the card then has served its purpose
-  const presets = form.closest('.agent-chat-main')!.querySelectorAll<HTMLElement>('.agent-chat-preset-main[data-prompt]');
-  for (const preset of presets) {
-    preset.addEventListener('click', () => {
-      const input = form.querySelector<HTMLTextAreaElement>('.agent-chat-input')!;
-      input.value = preset.getAttribute('data-prompt')!;
-      input.dispatchEvent(new Event('input', {bubbles: true}));
-      input.focus({preventScroll: true});
-      preset.closest('.agent-chat-presets')?.remove();
+  // a preset runs its task right away: the card's chosen subject decides the message, and
+  // the message starts the conversation
+  for (const card of form.closest('.agent-chat-main')!.querySelectorAll<HTMLElement>('.agent-chat-preset')) {
+    const run = card.querySelector<HTMLButtonElement>('.agent-chat-preset-run');
+    if (!run) continue;
+    run.addEventListener('click', () => {
+      const option = card.querySelector<HTMLOptionElement>('.agent-chat-preset-target option:checked');
+      form.querySelector<HTMLTextAreaElement>('.agent-chat-input')!.value = option?.getAttribute('data-prompt') || card.getAttribute('data-prompt')!;
+      form.requestSubmit();
     });
   }
 }

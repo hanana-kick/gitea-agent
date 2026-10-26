@@ -978,8 +978,8 @@ button.agent-chat-card {
   border-radius: var(--border-radius-medium);
 }
 
-/* what this pod can be asked to do: one card holding the presets, standing apart from the
-   composer below it — each preset is the task, its subject, and the way to the subject */
+/* what this pod can be asked to do: one card per task, side by side, above the composer
+   that takes the pod's own questions */
 .agent-chat-presets {
   padding: 10px 12px 12px;
   background: var(--color-body);
@@ -988,45 +988,37 @@ button.agent-chat-card {
 }
 
 .agent-chat-presets-title {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   color: var(--color-text-light-2);
   font-size: 12px;
 }
 
-/* the presets share the card: a rule between them, no frame of their own */
-.agent-chat-presets-list {
+.agent-chat-presets-grid {
   display: grid;
-  border: 1px solid var(--color-secondary);
-  border-radius: var(--border-radius);
-  overflow: hidden;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
 }
 
 .agent-chat-preset {
   display: flex;
-  align-items: stretch;
+  flex-direction: column;
+  gap: 6px;
   min-width: 0;
+  padding: 10px;
   background: var(--color-secondary-alpha-40);
-}
-
-.agent-chat-preset + .agent-chat-preset {
-  border-top: 1px solid var(--color-secondary);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius);
 }
 
 .agent-chat-preset:hover {
-  background: var(--color-hover);
+  border-color: var(--color-secondary-dark-2);
 }
 
-.agent-chat-preset-main {
+.agent-chat-preset-head {
   display: flex;
-  flex: 1;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   min-width: 0;
-  padding: 8px 10px;
-  color: inherit;
-  text-align: left;
-  background: none;
-  border: 0;
 }
 
 .agent-chat-preset-icon {
@@ -1035,32 +1027,29 @@ button.agent-chat-card {
   color: var(--color-text-light-2);
 }
 
-.agent-chat-preset-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
 .agent-chat-preset-label {
   font-weight: var(--font-weight-medium);
 }
 
-.agent-chat-preset-subject {
+.agent-chat-preset-desc {
+  flex: 1; /* the card's controls line up, whatever the length of its description */
+  margin: 0;
   color: var(--color-text-light-2);
   font-size: 12px;
 }
 
-.agent-chat-preset-link {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  padding: 0 10px;
+.agent-chat-preset-empty {
+  margin: 0;
   color: var(--color-text-light-2);
-  border-left: 1px solid var(--color-secondary);
+  font-size: 12px;
 }
 
-.agent-chat-preset-link:hover {
-  color: var(--color-text);
+.agent-chat-preset-target {
+  width: 100%;
+}
+
+.agent-chat-preset-run {
+  margin: 0 !important; /* the form component gives buttons their own margin */
 }
 
 .agent-chat-composer {

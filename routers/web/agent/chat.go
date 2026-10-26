@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	actions_model "gitea.dev/models/actions"
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
 	issues_model "gitea.dev/models/issues"
@@ -23,6 +22,7 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
 	agent_service "gitea.dev/services/agent"
+	agent_skills "gitea.dev/services/agent/skills"
 	"gitea.dev/services/context"
 )
 
@@ -141,94 +141,6 @@ func prepareSessionPanel(ctx *context.Context, session *agent_model.Conversation
 			attrs["Labels"] = labels
 		}
 	}
-}
-
-// prepareSuggestions fills the block of things to ask a repository pod about: one chip per
-// thing, its prompt prefilled into the composer when picked, its subject in the tooltip.
-func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
-	suggestions := make([]podSuggestion, 0, 5)
-	suggestions = append(suggestions, podSuggestion{
-		Key:    "review_code",
-		Icon:   "octicon-code-review",
-		Prompt: string(ctx.Tr("agent.suggest_review_code_prompt")),
-	})
-	if ctx.Repo.Permission.CanRead(unit.TypePullRequests) {
-		opts := issues_model.IssuesOptions{
-			RepoIDs:   []int64{repo.ID},
-			IsPull:    optional.Some(true),
-			IsClosed:  optional.Some(false),
-			Doer:      ctx.Doer,
-			SortType:  "recentupdate",
-			Paginator: &db.ListOptions{Page: 1, PageSize: 5},
-		}
-		if issues, err := issues_model.Issues(ctx, &opts); err == nil && len(issues) > 0 {
-			if err := issues.LoadPullRequests(ctx); err != nil {
-				ctx.ServerError("LoadPullRequests", err)
-				return
-			}
-			for _, issue := range issues {
-				suggestions = append(suggestions, podSuggestion{
-					Key:    "review_pr",
-					Icon:   "octicon-git-pull-request",
-					Title:  fmt.Sprintf("#%d %s", issue.Index, issue.Title),
-					URL:    fmt.Sprintf("%s/pulls/%d", repo.Link(), issue.Index),
-					Prompt: string(ctx.Tr("agent.suggest_review_pr_prompt", issue.Index, issue.Title)),
-				})
-			}
-		}
-	}
-	if ctx.Repo.Permission.CanRead(unit.TypeActions) {
-		runs, _, err := db.FindAndCount[actions_model.ActionRun](ctx, actions_model.FindRunOptions{
-			RepoID:      repo.ID,
-			Status:      []actions_model.Status{actions_model.StatusFailure},
-			ListOptions: db.ListOptions{Page: 1, PageSize: 3},
-		})
-		if err != nil {
-			ctx.ServerError("FindAndCount", err)
-			return
-		}
-		for _, run := range runs {
-			suggestions = append(suggestions, podSuggestion{
-				Key:    "check_actions",
-				Icon:   "octicon-play",
-				Title:  fmt.Sprintf("#%d %s", run.Index, run.Title),
-				URL:    fmt.Sprintf("%s/actions/runs/%d", repo.Link(), run.Index),
-				Prompt: string(ctx.Tr("agent.suggest_check_actions_prompt", run.Index, run.Title)),
-			})
-		}
-	}
-	if ctx.Repo.Permission.CanRead(unit.TypeIssues) {
-		opts := issues_model.IssuesOptions{
-			RepoIDs:   []int64{repo.ID},
-			IsPull:    optional.Some(false),
-			IsClosed:  optional.Some(false),
-			Doer:      ctx.Doer,
-			SortType:  "recentupdate",
-			Paginator: &db.ListOptions{Page: 1, PageSize: 5},
-		}
-		if issues, err := issues_model.Issues(ctx, &opts); err == nil {
-			for _, issue := range issues {
-				suggestions = append(suggestions, podSuggestion{
-					Key:    "triage_issue",
-					Icon:   "octicon-issue-opened",
-					Title:  fmt.Sprintf("#%d %s", issue.Index, issue.Title),
-					URL:    fmt.Sprintf("%s/issues/%d", repo.Link(), issue.Index),
-					Prompt: string(ctx.Tr("agent.suggest_triage_issue_prompt", issue.Index, issue.Title)),
-				})
-			}
-		}
-	}
-	ctx.Data["Suggestions"] = suggestions
-}
-
-// podSuggestion is one chip of the block the repository pod shows above the composer: what
-// the reader can ask this pod to do, and the message that asks it.
-type podSuggestion struct {
-	Key    string // the locale key of the card's own label
-	Icon   string
-	Title  string // the subject the card names (an empty one means the card has no subject)
-	URL    string // where the subject lives
-	Prompt string // the message the card puts into the composer
 }
 
 // prepareChat fills the page data of the chat screen. The caller renders once.
@@ -363,6 +275,119 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 			ctx.Data["PendingRunID"] = run.ID
 		}
 	}
+}
+
+// prepareSuggestions fills the cards a repository pod offers: review the code, review one
+// of its pull requests, look into one of its issues. A card names the skill the pod should
+// open for the task when this instance has one, and carries the subjects the reader picks.
+func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
+	// the first skill of the list this instance has, so an instance that names its skills
+	// differently still finds the one that covers the card
+	skillFor := func(names ...string) string {
+		for _, name := range names {
+			if _, err := agent_skills.Get(ctx, agent_model.ConversationKindRepository, name); err == nil {
+				return name
+			}
+		}
+		return ""
+	}
+	// a card runs its task through the skill when there is one, and on its own otherwise
+	card := func(key, icon string, skillNames []string, prompt string, targets []podSuggestionTarget, takesSubject bool) podSuggestion {
+		skill := skillFor(skillNames...)
+		withSkill := func(text string) string {
+			if skill == "" {
+				return text
+			}
+			return text + " " + string(ctx.Tr("agent.suggest_use_skill", skill))
+		}
+		for i := range targets {
+			targets[i].Prompt = withSkill(targets[i].Prompt)
+		}
+		return podSuggestion{
+			Key:         key,
+			Icon:        icon,
+			Skill:       skill,
+			Prompt:      withSkill(prompt),
+			Targets:     targets,
+			NeedsTarget: takesSubject && len(targets) == 0,
+		}
+	}
+
+	cards := make([]podSuggestion, 0, 3)
+	cards = append(cards, card("review_code", "octicon-code-review",
+		[]string{"code-review", "code_review", "review"},
+		string(ctx.Tr("agent.suggest_review_code_prompt")), nil, false))
+
+	if ctx.Repo.Permission.CanRead(unit.TypePullRequests) {
+		targets := make([]podSuggestionTarget, 0, 10)
+		opts := issues_model.IssuesOptions{
+			RepoIDs:   []int64{repo.ID},
+			IsPull:    optional.Some(true),
+			IsClosed:  optional.Some(false),
+			Doer:      ctx.Doer,
+			SortType:  "recentupdate",
+			Paginator: &db.ListOptions{Page: 1, PageSize: 10},
+		}
+		if issues, err := issues_model.Issues(ctx, &opts); err == nil {
+			if err := issues.LoadPullRequests(ctx); err != nil {
+				ctx.ServerError("LoadPullRequests", err)
+				return
+			}
+			for _, issue := range issues {
+				targets = append(targets, podSuggestionTarget{
+					Label:  fmt.Sprintf("#%d %s", issue.Index, issue.Title),
+					Prompt: string(ctx.Tr("agent.suggest_review_pr_prompt", issue.Index, issue.Title)),
+				})
+			}
+		}
+		cards = append(cards, card("review_pr", "octicon-git-pull-request",
+			[]string{"pr-review", "pull-request-review", "review-pr"},
+			string(ctx.Tr("agent.suggest_review_pr_prompt", 0, "")), targets, true))
+	}
+
+	if ctx.Repo.Permission.CanRead(unit.TypeIssues) {
+		targets := make([]podSuggestionTarget, 0, 10)
+		opts := issues_model.IssuesOptions{
+			RepoIDs:   []int64{repo.ID},
+			IsPull:    optional.Some(false),
+			IsClosed:  optional.Some(false),
+			Doer:      ctx.Doer,
+			SortType:  "recentupdate",
+			Paginator: &db.ListOptions{Page: 1, PageSize: 10},
+		}
+		if issues, err := issues_model.Issues(ctx, &opts); err == nil {
+			for _, issue := range issues {
+				targets = append(targets, podSuggestionTarget{
+					Label:  fmt.Sprintf("#%d %s", issue.Index, issue.Title),
+					Prompt: string(ctx.Tr("agent.suggest_review_issue_prompt", issue.Index, issue.Title)),
+				})
+			}
+		}
+		cards = append(cards, card("review_issue", "octicon-issue-opened",
+			[]string{"issue-triage", "issue-review", "triage"},
+			string(ctx.Tr("agent.suggest_review_issue_prompt", 0, "")), targets, true))
+	}
+
+	ctx.Data["Suggestions"] = cards
+}
+
+// podSuggestion is one card of the block the repository pod shows above the composer: what
+// the reader can ask this pod to do, which skill runs it, and what it can be aimed at.
+type podSuggestion struct {
+	Key   string // the locale key suffix of the card's label and description
+	Icon  string
+	Skill string // the skill the card opens, empty when this instance has none
+	// Targets are the subjects the card can be aimed at; a card without any runs on the
+	// repository as a whole, or has nothing to offer yet
+	Targets     []podSuggestionTarget
+	NeedsTarget bool
+	Prompt      string // the message the card sends when it takes no subject
+}
+
+// podSuggestionTarget is one subject a card can be aimed at.
+type podSuggestionTarget struct {
+	Label  string
+	Prompt string
 }
 
 // ChatDraft renders the chat screen for a conversation that does not exist yet: the first
