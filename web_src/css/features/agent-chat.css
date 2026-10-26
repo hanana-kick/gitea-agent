@@ -959,16 +959,32 @@ button.agent-chat-card {
 }
 
 /* the ask block sits under the repository header: the page scrolls normally, so the panel
-   keeps its natural height instead of the viewport-filling height the chat page uses */
+   keeps its natural height, loses the frame the chat screen draws around its transcript, and
+   stacks its two cards with a clear gap between them */
 .agent-repo-pod .agent-repo-pod-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   margin-inline: 0;
+  background: none;
+  border: 0;
   overflow: visible;
 }
 
-/* what this pod can be asked to do: a card of presets standing above the composer, each one
-   the task, its subject and, where it has one, the way to the subject itself */
+/* the composer is a card of its own here, not the chat screen's bottom bar */
+.agent-repo-pod .agent-chat-composer {
+  background: var(--color-body);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+}
+
+/* what this pod can be asked to do: one card holding the presets, standing apart from the
+   composer below it — each preset is the task, its subject, and the way to the subject */
 .agent-chat-presets {
-  margin: 12px;
+  padding: 10px 12px 12px;
+  background: var(--color-body);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-medium);
 }
 
 .agent-chat-presets-title {
@@ -977,9 +993,12 @@ button.agent-chat-card {
   font-size: 12px;
 }
 
+/* the presets share the card: a rule between them, no frame of their own */
 .agent-chat-presets-list {
   display: grid;
-  gap: 6px;
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius);
+  overflow: hidden;
 }
 
 .agent-chat-preset {
@@ -987,12 +1006,13 @@ button.agent-chat-card {
   align-items: stretch;
   min-width: 0;
   background: var(--color-secondary-alpha-40);
-  border: 1px solid var(--color-secondary);
-  border-radius: var(--border-radius);
+}
+
+.agent-chat-preset + .agent-chat-preset {
+  border-top: 1px solid var(--color-secondary);
 }
 
 .agent-chat-preset:hover {
-  border-color: var(--color-secondary-dark-2);
   background: var(--color-hover);
 }
 
