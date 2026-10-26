@@ -968,7 +968,7 @@ button.agent-chat-card {
 /* the block of things to ask this pod: prompt chips above the composer, the way the
    GitHub agents panel lists sample prompts over its input */
 .agent-chat-suggestions {
-  padding: 10px 12px 0;
+  padding: 10px 12px;
   border-top: 1px solid var(--color-secondary);
 }
 
