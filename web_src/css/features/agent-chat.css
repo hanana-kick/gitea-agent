@@ -1062,6 +1062,49 @@ button.agent-chat-card {
   border-top: 1px solid var(--color-secondary);
 }
 
+/* the tasks the composer itself knows: "/pr", "/issue" open this list above the input */
+.agent-chat-commands {
+  order: -3; /* above the chosen files and the row itself */
+  flex: 0 1 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 6px;
+  background: var(--color-body);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-command {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 10px;
+  color: var(--color-text);
+  text-align: left;
+  background: none;
+  border: 0;
+}
+
+.agent-chat-command.active,
+.agent-chat-command:hover {
+  background: var(--color-hover);
+}
+
+.agent-chat-command-label {
+  font-family: var(--fonts-monospace);
+  font-size: 13px;
+}
+
+.agent-chat-command-hint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-light-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 /* what the message about to be sent will carry */
 .agent-chat-attach-list {
   order: -2; /* above the paperclip, which keeps order -1 */

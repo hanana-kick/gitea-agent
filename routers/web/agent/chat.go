@@ -14,6 +14,7 @@ import (
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
 	issues_model "gitea.dev/models/issues"
+	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	"gitea.dev/modules/httplib"
@@ -178,6 +179,9 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 
 	ctx.Data["Title"] = ctx.Tr("agent.chat_title")
 	ctx.Data["PageIsAgentChat"] = true
+	if repo != nil {
+		prepareSuggestions(ctx, repo)
+	}
 	scope, scopeBaseURL := chatScope(ctx, session, repo)
 	keyword := ctx.FormTrim("q")
 	if keyword != "" {
@@ -281,6 +285,14 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 // of its pull requests, look into one of its issues. A card names the skill the pod should
 // open for the task when this instance has one, and carries the subjects the reader picks.
 func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
+	// the screen the presets are built for is not always a repository page, so the reader's
+	// permission is looked up rather than read from the repository context
+	perm, err := access_model.GetDoerRepoPermission(ctx, repo, ctx.Doer)
+	if err != nil {
+		ctx.ServerError("GetDoerRepoPermission", err)
+		return
+	}
+
 	// the first skill of the list this instance has, so an instance that names its skills
 	// differently still finds the one that covers the card
 	skillFor := func(names ...string) string {
@@ -292,7 +304,7 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 		return ""
 	}
 	// a card runs its task through the skill when there is one, and on its own otherwise
-	card := func(key, icon string, skillNames []string, prompt string, targets []podSuggestionTarget, takesSubject bool) podSuggestion {
+	card := func(key, command, icon string, skillNames []string, prompt string, targets []podSuggestionTarget, takesSubject bool) podSuggestion {
 		skill := skillFor(skillNames...)
 		withSkill := func(text string) string {
 			if skill == "" {
@@ -305,6 +317,9 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 		}
 		return podSuggestion{
 			Key:         key,
+			Command:     command,
+			Title:       string(ctx.Tr("agent.suggest_" + key)),
+			Desc:        string(ctx.Tr("agent.suggest_" + key + "_desc")),
 			Icon:        icon,
 			Skill:       skill,
 			Prompt:      withSkill(prompt),
@@ -314,11 +329,11 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 	}
 
 	cards := make([]podSuggestion, 0, 3)
-	cards = append(cards, card("review_code", "octicon-code-review",
+	cards = append(cards, card("review_code", "code", "octicon-code-review",
 		[]string{"code-review", "code_review", "review"},
 		string(ctx.Tr("agent.suggest_review_code_prompt")), nil, false))
 
-	if ctx.Repo.Permission.CanRead(unit.TypePullRequests) {
+	if perm.CanRead(unit.TypePullRequests) {
 		targets := make([]podSuggestionTarget, 0, 10)
 		opts := issues_model.IssuesOptions{
 			RepoIDs:   []int64{repo.ID},
@@ -340,12 +355,12 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 				})
 			}
 		}
-		cards = append(cards, card("review_pr", "octicon-git-pull-request",
+		cards = append(cards, card("review_pr", "pr", "octicon-git-pull-request",
 			[]string{"pr-review", "pull-request-review", "review-pr"},
 			string(ctx.Tr("agent.suggest_review_pr_prompt", 0, "")), targets, true))
 	}
 
-	if ctx.Repo.Permission.CanRead(unit.TypeIssues) {
+	if perm.CanRead(unit.TypeIssues) {
 		targets := make([]podSuggestionTarget, 0, 10)
 		opts := issues_model.IssuesOptions{
 			RepoIDs:   []int64{repo.ID},
@@ -363,31 +378,40 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 				})
 			}
 		}
-		cards = append(cards, card("review_issue", "octicon-issue-opened",
+		cards = append(cards, card("review_issue", "issue", "octicon-issue-opened",
 			[]string{"issue-triage", "issue-review", "triage"},
 			string(ctx.Tr("agent.suggest_review_issue_prompt", 0, "")), targets, true))
 	}
 
 	ctx.Data["Suggestions"] = cards
+	presets, err := json.Marshal(cards)
+	if err != nil {
+		ctx.ServerError("json.Marshal", err)
+		return
+	}
+	ctx.Data["PresetsJSON"] = string(presets)
 }
 
 // podSuggestion is one card of the block the repository pod shows above the composer: what
 // the reader can ask this pod to do, which skill runs it, and what it can be aimed at.
 type podSuggestion struct {
-	Key   string // the locale key suffix of the card's label and description
-	Icon  string
-	Skill string // the skill the card opens, empty when this instance has none
+	Key     string `json:"key"`     // the locale key suffix of the card's label and description
+	Command string `json:"command"` // what the same task is called when typed, without the /
+	Title   string `json:"title"`   // the card's label in the reader's language
+	Desc    string `json:"desc"`    // what the task does, in the reader's language
+	Icon    string `json:"icon"`
+	Skill   string `json:"skill"` // the skill the card opens, empty when this instance has none
 	// Targets are the subjects the card can be aimed at; a card without any runs on the
 	// repository as a whole, or has nothing to offer yet
-	Targets     []podSuggestionTarget
-	NeedsTarget bool
-	Prompt      string // the message the card sends when it takes no subject
+	Targets     []podSuggestionTarget `json:"targets"`
+	NeedsTarget bool                  `json:"needsTarget"`
+	Prompt      string                `json:"prompt"` // the message the card writes when it takes no subject
 }
 
 // podSuggestionTarget is one subject a card can be aimed at.
 type podSuggestionTarget struct {
-	Label  string
-	Prompt string
+	Label  string `json:"label"`
+	Prompt string `json:"prompt"`
 }
 
 // ChatDraft renders the chat screen for a conversation that does not exist yet: the first
@@ -453,7 +477,6 @@ func RepoAgent(ctx *context.Context) {
 	ctx.Data["IsDraft"] = true
 	ctx.Data["DraftKind"] = agent_model.ConversationKindRepository
 	ctx.Data["PageIsRepoPod"] = true
-	prepareSuggestions(ctx, repo)
 	ref, err := agent_service.ModelRoleRef(ctx, agent_service.ModelRoleForKind(agent_model.ConversationKindRepository))
 	if err != nil {
 		ctx.ServerError("ModelRoleRef", err)

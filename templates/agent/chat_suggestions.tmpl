@@ -8,6 +8,7 @@
 					<div class="agent-chat-preset-head">
 						<span class="agent-chat-preset-icon">{{svg .Icon 16}}</span>
 						<span class="agent-chat-preset-label">{{ctx.Locale.Tr (printf "agent.suggest_%s" .Key)}}</span>
+						<code class="agent-chat-preset-command">/{{.Command}}</code>
 					</div>
 					<p class="agent-chat-preset-desc">{{ctx.Locale.Tr (printf "agent.suggest_%s_desc" .Key)}}</p>
 					{{if .Targets}}

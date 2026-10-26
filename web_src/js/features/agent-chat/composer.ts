@@ -1,4 +1,5 @@
 import {POST} from '../../modules/fetch.ts';
+import {initPresets} from './presets.ts';
 import {svg} from '../../svg.ts';
 import {createElementFromHTML, toggleElem} from '../../utils/dom.ts';
 
@@ -120,9 +121,14 @@ export function initAttachmentList(form: HTMLFormElement): () => void {
 
 // ChatGPT and Claude send on Enter and grow the input while typing; a chat box that stays
 // three rows tall wastes half the panel.
-export function initComposerKeys(form: HTMLFormElement, input: HTMLTextAreaElement) {
+export function initComposerKeys(form: HTMLFormElement, input: HTMLTextAreaElement, presets?: {keyDown: (event: KeyboardEvent) => boolean}) {
   input.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+    if (event.isComposing) return;
+    if (presets?.keyDown(event)) { // the open palette owns the arrow keys and Enter
+      event.preventDefault();
+      return;
+    }
+    if (event.key !== 'Enter' || event.shiftKey) return;
     event.preventDefault();
     form.requestSubmit();
   });
@@ -140,7 +146,9 @@ export function initDraftComposer() {
   const form = document.querySelector<HTMLFormElement>('.agent-chat-composer[data-draft-url]');
   if (!form) return;
   const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+  const input = form.querySelector<HTMLTextAreaElement>('.agent-chat-input')!;
   initAttachmentList(form);
+  initComposerKeys(form, input, initPresets(form, input));
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -160,18 +168,6 @@ export function initDraftComposer() {
     }
     button.classList.remove('disabled');
   });
-
-  // a preset runs its task right away: the card's chosen subject decides the message, and
-  // the message starts the conversation
-  for (const card of form.closest('.agent-chat-main')!.querySelectorAll<HTMLElement>('.agent-chat-preset')) {
-    const run = card.querySelector<HTMLButtonElement>('.agent-chat-preset-run');
-    if (!run) continue;
-    run.addEventListener('click', () => {
-      const option = card.querySelector<HTMLOptionElement>('.agent-chat-preset-target option:checked');
-      form.querySelector<HTMLTextAreaElement>('.agent-chat-input')!.value = option?.getAttribute('data-prompt') || card.getAttribute('data-prompt')!;
-      form.requestSubmit();
-    });
-  }
 }
 
 export function fitLayout() {

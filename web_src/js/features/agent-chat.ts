@@ -7,6 +7,7 @@ import {toggleElem} from '../utils/dom.ts';
 import {followAgentLive, markSessionBusy, runIsBusy} from '../modules/agent-live.ts';
 import type {AgentApproval, AgentDelta, AgentMessage, AgentRun} from '../modules/agent-live.ts';
 import {initAttachmentList, initComposerKeys, initDraftComposer, fitLayout} from './agent-chat/composer.ts';
+import {initPresets} from './agent-chat/presets.ts';
 import {buildApproval, buildMessage, initMessageActions, initTranscriptActions, scrollToLastQuestion, scrollToTop} from './agent-chat/transcript.ts';
 import type {AgentChatLabels} from './agent-chat/transcript.ts';
 import {initMoreMenus, applyConversationTitle} from './agent-chat/list.ts';
@@ -265,7 +266,7 @@ export function initAgentChat() {
     image.removeAttribute('loading');
   }
   const clearAttachments = initAttachmentList(composerEl);
-  initComposerKeys(composerEl, inputEl);
+  initComposerKeys(composerEl, inputEl, initPresets(composerEl, inputEl));
 
   composerEl.addEventListener('submit', async (event) => {
     event.preventDefault();
