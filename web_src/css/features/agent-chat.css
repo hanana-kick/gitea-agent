@@ -968,7 +968,7 @@ button.agent-chat-card {
 /* what this pod can be asked to do: a card of presets standing above the composer, each one
    the task, its subject and, where it has one, the way to the subject itself */
 .agent-chat-presets {
-  margin: 12px 12px 0;
+  margin: 12px;
 }
 
 .agent-chat-presets-title {
