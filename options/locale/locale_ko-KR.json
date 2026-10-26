@@ -4211,6 +4211,8 @@
   "agent.chat_folder_missing": "폴더를 찾을 수 없습니다.",
   "agent.chat_icon": "아이콘",
   "agent.chat_draft_help": "메시지를 보내면 이 대화가 시작됩니다.",
+  "agent.suggest_title": "이 팟에게 무엇을 시킬까요?",
+  "agent.suggest_open": "새 탭에서 열기",
   "agent.suggest_review_code": "코드 검토",
   "agent.suggest_review_code_prompt": "이 레포지토리의 코드를 검토해줘: 최근 변경사항을 읽고 문제, 위험, 개선점을 짚어줘.",
   "agent.suggest_review_pr": "이 풀 리퀘스트 검토",

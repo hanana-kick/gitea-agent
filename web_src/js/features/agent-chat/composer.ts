@@ -161,16 +161,16 @@ export function initDraftComposer() {
     button.classList.remove('disabled');
   });
 
-  // a chip asks the pod to do something: its message goes into the input, so the reader
-  // can extend it before sending; the chips then have served their purpose
-  const suggestions = form.closest('.agent-chat-main')!.querySelectorAll<HTMLElement>('.agent-chat-suggestion[data-prompt]');
-  for (const chip of suggestions) {
-    chip.addEventListener('click', () => {
+  // a preset asks the pod to do something: its message goes into the input, so the reader
+  // can extend it before sending; the card then has served its purpose
+  const presets = form.closest('.agent-chat-main')!.querySelectorAll<HTMLElement>('.agent-chat-preset-main[data-prompt]');
+  for (const preset of presets) {
+    preset.addEventListener('click', () => {
       const input = form.querySelector<HTMLTextAreaElement>('.agent-chat-input')!;
-      input.value = chip.getAttribute('data-prompt')!;
+      input.value = preset.getAttribute('data-prompt')!;
       input.dispatchEvent(new Event('input', {bubbles: true}));
       input.focus({preventScroll: true});
-      chip.closest('.agent-chat-suggestions')?.remove();
+      preset.closest('.agent-chat-presets')?.remove();
     });
   }
 }

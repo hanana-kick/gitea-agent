@@ -1,12 +1,21 @@
 {{if .Suggestions}}
-	<div class="agent-chat-suggestions">
-		<div class="agent-chat-suggestions-chips">
+	<div class="agent-chat-presets" role="group" aria-label="{{ctx.Locale.Tr "agent.suggest_title"}}">
+		<div class="agent-chat-presets-title">{{ctx.Locale.Tr "agent.suggest_title"}}</div>
+		<div class="agent-chat-presets-list">
 			{{range .Suggestions}}
-				<button type="button" class="agent-chat-suggestion" data-prompt="{{.Prompt}}"
-					{{if .Title}}data-tooltip-content="{{.Title}}"{{end}}>
-					{{svg .Icon 14}}
-					<span>{{ctx.Locale.Tr (printf "agent.suggest_%s" .Key)}}</span>
-				</button>
+				<div class="agent-chat-preset">
+					<button type="button" class="agent-chat-preset-main" data-prompt="{{.Prompt}}">
+						<span class="agent-chat-preset-icon">{{svg .Icon 16}}</span>
+						<span class="agent-chat-preset-text">
+							<span class="agent-chat-preset-label">{{ctx.Locale.Tr (printf "agent.suggest_%s" .Key)}}</span>
+							{{if .Title}}<span class="agent-chat-preset-subject gt-ellipsis">{{.Title}}</span>{{end}}
+						</span>
+					</button>
+					{{if .URL}}
+						<a class="agent-chat-preset-link" href="{{AppSubUrl}}{{.URL}}" target="_blank" rel="noreferrer noopener"
+							data-tooltip-content="{{ctx.Locale.Tr "agent.suggest_open"}}">{{svg "octicon-link-external" 14}}</a>
+					{{end}}
+				</div>
 			{{end}}
 		</div>
 	</div>
