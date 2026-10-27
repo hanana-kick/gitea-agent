@@ -10,7 +10,7 @@ import {initAttachmentList, initComposerKeys, initDraftComposer, fitLayout} from
 import {initPresets} from './agent-chat/presets.ts';
 import {buildApproval, buildMessage, initMessageActions, initTranscriptActions, scrollToLastQuestion, scrollToTop} from './agent-chat/transcript.ts';
 import type {AgentChatLabels} from './agent-chat/transcript.ts';
-import {initMoreMenus, applyConversationTitle} from './agent-chat/list.ts';
+import {initMoreMenus, initRepoGroups, applyConversationTitle} from './agent-chat/list.ts';
 
 export function initAgentChat() {
   fitLayout();
@@ -21,6 +21,7 @@ export function initAgentChat() {
   if (footer) observer.observe(footer);
   initDraftComposer();
   initMoreMenus();
+  initRepoGroups();
 
   // the session list marks the conversations that are answering right now
   const chatEl = document.querySelector<HTMLElement>('.agent-chat');

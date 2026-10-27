@@ -90,13 +90,31 @@
 			</button>
 		{{end}}
 	{{end}}
-	{{$showRepo := not $page.FilterRepo}}
-	{{range $page.Sessions.Repositories}}
-		{{$subtitle := ""}}
-		{{if $showRepo}}{{$subtitle = .Repo.FullName}}{{end}}
-		{{template "agent/chat_session_row" dict "Session" .Session "Subtitle" $subtitle "Selected" $page.Session "FallbackIcon" "" "Busy" (index $page.BusySessions .Session.ID)}}
+	{{if .Groups}}
+		{{/* one row per repository: opening it lists the sessions it holds */}}
+		{{range $page.RepoGroups}}
+			<div class="agent-chat-folder agent-repo-group{{if .Open}} open{{end}}">
+				<button type="button" class="agent-chat-card agent-chat-card-folder agent-repo-group-head" aria-expanded="{{if .Open}}true{{else}}false{{end}}">
+					<span class="agent-chat-card-icon">{{svg "octicon-repo" 18}}</span>
+					<span class="agent-chat-card-name gt-ellipsis">{{.Repo.FullName}}</span>
+					<span class="ui grey label">{{len .Sessions}}</span>
+					<span class="agent-repo-group-chevron">{{svg "octicon-chevron-right" 14}}</span>
+				</button>
+				<div class="agent-chat-folder-items">
+					{{range .Sessions}}
+						{{template "agent/chat_session_row" dict "Session" . "Selected" $page.Session "FallbackIcon" "" "Busy" (index $page.BusySessions .ID)}}
+					{{end}}
+				</div>
+			</div>
+		{{else}}
+			<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_repository"}}</p>
+		{{end}}
 	{{else}}
-		<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_repository"}}</p>
+		{{range $page.Sessions.Repositories}}
+			{{template "agent/chat_session_row" dict "Session" .Session "Selected" $page.Session "FallbackIcon" "" "Busy" (index $page.BusySessions .Session.ID)}}
+		{{else}}
+			<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_repository"}}</p>
+		{{end}}
 	{{end}}
 	{{if $help}}<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_repository_help"}}</p>{{end}}
 {{end}}

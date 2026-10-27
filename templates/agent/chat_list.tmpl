@@ -49,7 +49,7 @@
 		</div>
 	{{end}}
 	<div class="ui attached segment agent-chat-list">
-		{{template "agent/session_list" dict "Page" . "New" true "Help" true}}
+		{{template "agent/session_list" dict "Page" . "New" true "Help" true "Groups" (not .FilterRepo)}}
 	</div>
 
 	{{if .WritableRepos}}

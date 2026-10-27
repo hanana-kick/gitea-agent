@@ -157,18 +157,23 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 		return
 	}
 
-	// a repository session, and the draft of one, belong to that repository: the list beside
-	// them shows its sessions, and "all=1" asks for every repository instead
+	// the list is grouped by repository, so an open session only opens the group it belongs
+	// to; a screen that is about one repository narrows the list to it instead
+	promptRepo := repo
 	if session != nil && session.Kind == agent_model.ConversationKindRepository {
 		sessionRepo, err := repo_model.GetRepositoryByID(ctx, session.RepoID)
 		if err != nil {
 			ctx.ServerError("GetRepositoryByID", err)
 			return
 		}
-		repo = sessionRepo
+		promptRepo = sessionRepo
+	}
+	openRepoID := int64(0)
+	if promptRepo != nil {
+		ctx.Data["Repo"] = promptRepo
+		openRepoID = promptRepo.ID
 	}
 	if repo != nil {
-		ctx.Data["Repo"] = repo
 		if ctx.FormString("all") != "1" {
 			list = keepRepository(list, repo.ID)
 			ctx.Data["FilterRepo"] = repo
@@ -176,11 +181,11 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 			ctx.Data["AllRepositories"] = true
 		}
 	}
-
+	ctx.Data["RepoGroups"] = groupRepositories(list, openRepoID)
 	ctx.Data["Title"] = ctx.Tr("agent.chat_title")
 	ctx.Data["PageIsAgentChat"] = true
-	if repo != nil {
-		prepareSuggestions(ctx, repo)
+	if promptRepo != nil {
+		prepareSuggestions(ctx, promptRepo)
 	}
 	scope, scopeBaseURL := chatScope(ctx, session, repo)
 	keyword := ctx.FormTrim("q")
@@ -966,6 +971,30 @@ func keepRepository(list *agent_service.ConversationList, repoID int64) *agent_s
 	narrowed := *list
 	narrowed.Repositories = kept
 	return &narrowed
+}
+
+// repositoryGroup is one repository of the session list with the sessions it holds.
+type repositoryGroup struct {
+	Repo     *repo_model.Repository
+	Sessions []*agent_model.Conversation
+	Open     bool // the group the reader is inside shows itself open
+}
+
+// groupRepositories gathers the repository sessions under their repository, in the order the
+// list gives them, so the sidebar shows one row per repository instead of one per session.
+func groupRepositories(list *agent_service.ConversationList, openRepoID int64) []*repositoryGroup {
+	groups := make([]*repositoryGroup, 0, len(list.Repositories))
+	byRepo := make(map[int64]*repositoryGroup, len(list.Repositories))
+	for _, entry := range list.Repositories {
+		group, ok := byRepo[entry.Repo.ID]
+		if !ok {
+			group = &repositoryGroup{Repo: entry.Repo, Open: openRepoID == entry.Repo.ID}
+			byRepo[entry.Repo.ID] = group
+			groups = append(groups, group)
+		}
+		group.Sessions = append(group.Sessions, entry.Session)
+	}
+	return groups
 }
 
 // filterConversations keeps the sessions whose title matches, and the repositories whose

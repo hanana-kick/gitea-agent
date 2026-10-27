@@ -44,6 +44,20 @@ export function initMoreMenus() {
   addDelegatedEventListener(document, 'click', '.agent-chat-more-item', () => {}); // keep the delegated bus alive for the items above
 }
 
+// a repository row of the session list opens and closes the sessions under it, the way a
+// folder does, so the reader picks the repository before the session
+export function initRepoGroups() {
+  for (const head of document.querySelectorAll<HTMLElement>('.agent-repo-group-head')) {
+    head.addEventListener('click', () => {
+      const group = head.closest<HTMLElement>('.agent-repo-group');
+      if (!group) return;
+      const open = !group.classList.contains('open');
+      group.classList.toggle('open', open);
+      head.setAttribute('aria-expanded', String(open));
+    });
+  }
+}
+
 // a renamed session shows its new title in the list and in the chat header
 export function applyConversationTitle(conversation: {id: number, title: string, summary: string}, elConversationID: string) {
   const header = document.querySelector<HTMLElement>('.agent-chat-head-title');

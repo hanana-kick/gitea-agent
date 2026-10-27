@@ -344,6 +344,40 @@
   margin-top: 2px;
 }
 
+/* a repository of the session list: closed it is one row, open it holds its sessions */
+.agent-repo-group-head {
+  cursor: pointer;
+}
+
+.agent-repo-group-head .agent-chat-card-icon {
+  flex-shrink: 0;
+  color: var(--color-text-light-2);
+}
+
+.agent-repo-group-head .ui.grey.label {
+  margin-left: 6px;
+}
+
+.agent-repo-group-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: 4px;
+  color: var(--color-text-light-2);
+  transition: transform 0.1s ease;
+}
+
+.agent-repo-group.open .agent-repo-group-chevron {
+  transform: rotate(90deg);
+}
+
+.agent-repo-group .agent-chat-folder-items {
+  display: none;
+}
+
+.agent-repo-group.open .agent-chat-folder-items {
+  display: block;
+}
+
 /* a folder card is a button, and its conversations are indented below it */
 button.agent-chat-card {
   width: 100%;
