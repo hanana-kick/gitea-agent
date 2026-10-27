@@ -1,0 +1,102 @@
+{{/* the session list, shared by the sidebar of the agent screens and by the agent of one
+	repository. Page carries the data; New and Help drop the parts only the sidebar wants. */}}
+{{- $page := .Page -}}
+{{- $new := .New -}}
+{{- $help := .Help -}}
+{{if eq $page.Scope "agent"}}
+	{{/* the resident session is the entry to the global bot, so it always comes first */}}
+	{{with $page.Sessions.Resident}}
+		<div class="agent-chat-group-title">
+			{{svg "octicon-agent"}}
+			<span>{{.Title}}</span>
+		</div>
+		<a class="agent-chat-card agent-chat-card-resident{{if and $page.Session (eq $page.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}" data-session-id="{{.ID}}">
+			<span class="agent-chat-card-text">
+				<span class="agent-chat-card-name gt-ellipsis">{{if .Summary}}{{.Summary}}{{else}}{{.Title}}{{end}}</span>
+				<span class="agent-chat-card-desc">{{ctx.Locale.Tr "agent.chat_resident_desc"}}</span>
+			</span>
+			{{if index $page.BusySessions .ID}}<span class="agent-chat-card-busy" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_busy"}}"><i></i><i></i><i></i></span>{{end}}
+		</a>
+	{{end}}
+
+	<div class="agent-chat-divider"></div>
+
+	<div class="agent-chat-group-title">
+		{{svg "octicon-comment-discussion"}}
+		<span>{{ctx.Locale.Tr "agent.chat_conversations"}}</span>
+		{{if and $new $page.SignedUser.IsAdmin}}
+			<button type="button" class="btn agent-chat-group-action show-modal"
+				data-modal="#agent-chat-folder-modal"
+				data-modal-form.url="{{AppSubUrl}}/-/agent/folders/new"
+				data-tooltip-content="{{ctx.Locale.Tr "agent.chat_folder_new"}}">
+				{{svg "octicon-file-directory" 16}}<span class="agent-chat-group-action-plus">{{svg "octicon-plus" 10}}</span>
+			</button>
+		{{end}}
+	</div>
+
+	{{if $new}}
+		<a class="agent-chat-card agent-chat-card-new{{if $page.IsDraft}} active{{end}}" href="{{AppSubUrl}}/-/agent/new">
+			<span class="agent-chat-card-main">
+				<span class="agent-chat-card-name">{{ctx.Locale.Tr "agent.chat_new_conversation"}}</span>
+			</span>
+			<span class="agent-chat-card-icon">{{svg "octicon-plus" 16}}</span>
+		</a>
+	{{end}}
+
+	{{range $page.Sessions.Servers}}
+		{{template "agent/chat_session_row" dict "Session" . "Selected" $page.Session "FallbackIcon" "" "Folders" $page.Sessions.Folders "Busy" (index $page.BusySessions .ID)}}
+	{{else}}
+
+	{{end}}
+
+	{{range $page.Sessions.Folders}}
+		<div class="agent-chat-folder">
+			<div class="agent-chat-card agent-chat-card-folder">
+				<span class="agent-chat-card-main">
+					<span class="agent-chat-card-icon">{{if .Folder.Icon}}{{svg .Folder.Icon 18}}{{else}}{{svg "octicon-file-directory" 18}}{{end}}</span>
+					<span class="agent-chat-card-name gt-ellipsis">{{.Folder.Name}}</span>
+				</span>
+				<button type="button" class="agent-chat-more" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_more"}}" aria-haspopup="true">
+					{{svg "octicon-kebab-horizontal"}}
+				</button>
+				<div class="agent-chat-more-menu" popover="auto" role="menu">
+					<div class="item agent-chat-more-item show-modal"
+						data-modal="#agent-chat-folder-modal"
+						data-modal-form.url="{{AppSubUrl}}/-/agent/folders/{{.Folder.ID}}"
+						data-modal-name.value="{{.Folder.Name}}"
+						data-icon="{{.Folder.Icon}}">{{ctx.Locale.Tr "agent.chat_folder_edit"}}</div>
+					<div class="divider"></div>
+					<div class="item agent-chat-more-item tw-text-red link-action"
+						data-url="{{AppSubUrl}}/-/agent/folders/{{.Folder.ID}}/delete"
+						data-modal-confirm-header="{{ctx.Locale.Tr "agent.chat_folder_delete"}}"
+						data-modal-confirm-content="{{ctx.Locale.Tr "agent.chat_folder_delete_confirm" .Folder.Name}}">{{ctx.Locale.Tr "agent.delete"}}</div>
+				</div>
+			</div>
+			<div class="agent-chat-folder-items">
+				{{range .Sessions}}
+					{{template "agent/chat_session_row" dict "Session" . "Selected" $page.Session "FallbackIcon" "" "Folders" $page.Sessions.Folders "Busy" (index $page.BusySessions .ID)}}
+				{{end}}
+			</div>
+		</div>
+	{{end}}
+{{else}}
+	{{if $new}}
+		{{if $page.WritableRepos}}
+			<button type="button" class="agent-chat-card show-modal" data-modal="#agent-chat-repository-modal">
+				<span class="agent-chat-card-main">
+					<span class="agent-chat-card-icon">{{svg "octicon-plus" 18}}</span>
+					<span class="agent-chat-card-name">{{ctx.Locale.Tr "agent.chat_new_conversation"}}</span>
+				</span>
+			</button>
+		{{end}}
+	{{end}}
+	{{$showRepo := not $page.FilterRepo}}
+	{{range $page.Sessions.Repositories}}
+		{{$subtitle := ""}}
+		{{if $showRepo}}{{$subtitle = .Repo.FullName}}{{end}}
+		{{template "agent/chat_session_row" dict "Session" .Session "Subtitle" $subtitle "Selected" $page.Session "FallbackIcon" "" "Busy" (index $page.BusySessions .Session.ID)}}
+	{{else}}
+		<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_no_repository"}}</p>
+	{{end}}
+	{{if $help}}<p class="agent-chat-hint">{{ctx.Locale.Tr "agent.chat_repository_help"}}</p>{{end}}
+{{end}}

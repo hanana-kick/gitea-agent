@@ -1,3 +1,9 @@
 {{/* the body of the repository agent screen: what to ask it, and the composer */}}
 {{template "agent/chat_suggestions" .}}
 {{template "agent/chat_composer" .}}
+
+{{/* what this repository already asked its agent: the same list the sidebar shows, one repo */}}
+<div class="agent-repo-sessions">
+	<div class="agent-repo-sessions-title">{{ctx.Locale.Tr "agent.repo_sessions"}}</div>
+	{{template "agent/session_list" dict "Page" . "New" false "Help" false}}
+</div>

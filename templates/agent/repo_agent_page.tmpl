@@ -5,5 +5,6 @@
 	<div class="ui container fluid padded agent-repo-body" data-runs-url="{{AppSubUrl}}/-/agent/events" data-busy-label="{{ctx.Locale.Tr "agent.chat_busy"}}" data-attach-remove-label="{{ctx.Locale.Tr "agent.chat_attach_remove"}}" data-attach-more-label="{{ctx.Locale.Tr "agent.chat_more"}}">
 		{{template "agent/chat_ui" .}}
 	</div>
+	{{template "agent/chat_modals" .}}
 </div>
 {{template "base/footer" .}}

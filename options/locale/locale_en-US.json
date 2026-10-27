@@ -4213,6 +4213,7 @@
   "agent.chat_icon": "Icon",
   "agent.chat_draft_help": "Sending a message starts this conversation.",
   "agent.suggest_title": "What should this agent do?",
+  "agent.repo_sessions": "Sessions of this repository",
   "agent.commands": "Tasks this agent knows",
   "agent.suggest_run": "Run",
   "agent.suggest_target": "Subject",

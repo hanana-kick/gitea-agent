@@ -4212,6 +4212,7 @@
   "agent.chat_icon": "아이콘",
   "agent.chat_draft_help": "메시지를 보내면 이 대화가 시작됩니다.",
   "agent.suggest_title": "이 에이전트에게 무엇을 시킬까요?",
+  "agent.repo_sessions": "이 레포지토리의 세션",
   "agent.commands": "이 에이전트가 아는 작업",
   "agent.suggest_run": "실행",
   "agent.suggest_target": "대상",

@@ -963,6 +963,34 @@ button.agent-chat-card {
   border-radius: var(--border-radius-medium);
 }
 
+/* the sessions this repository ran, under the composer: the same rows the sidebar draws */
+.agent-repo-sessions {
+  padding: 10px 12px 12px;
+  background: var(--color-body);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-repo-sessions-title {
+  margin-bottom: 8px;
+  color: var(--color-text-light-2);
+  font-size: 12px;
+}
+
+/* the rows of that list read as one block, ruled like the sidebar's list */
+.agent-repo-sessions .agent-chat-card + .agent-chat-card {
+  margin-top: 2px;
+}
+
+.agent-repo-sessions .agent-chat-card {
+  padding: 8px 4px;
+}
+
+/* the menu of a row sits at the far edge of the card, not of a narrow sidebar */
+.agent-repo-sessions .agent-chat-more {
+  margin-left: auto;
+}
+
 /* what this agent can be asked to do: one card per task, side by side, above the composer
    that takes the reader's own message */
 .agent-chat-presets {
