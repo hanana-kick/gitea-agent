@@ -354,6 +354,12 @@
   color: var(--color-text-light-2);
 }
 
+/* the name takes what is left, so the count and the chevron sit at the right edge with the
+   menus of the session rows below them */
+.agent-repo-group-head .agent-chat-card-name {
+  flex: 1;
+}
+
 .agent-repo-group-head .ui.grey.label {
   margin-left: 6px;
 }
@@ -361,7 +367,8 @@
 .agent-repo-group-chevron {
   display: inline-flex;
   flex-shrink: 0;
-  margin-left: 4px;
+  justify-content: flex-end;
+  width: 16px;
   color: var(--color-text-light-2);
   transition: transform 0.1s ease;
 }
