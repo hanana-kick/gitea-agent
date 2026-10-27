@@ -4214,6 +4214,7 @@
   "agent.chat_draft_help": "Sending a message starts this conversation.",
   "agent.suggest_title": "What should this pod do?",
   "agent.commands": "Tasks this pod knows",
+  "agent.command_help": "Show what this pod can do",
   "agent.suggest_run": "Run",
   "agent.suggest_target": "Subject",
   "agent.suggest_no_target": "Nothing to choose from yet.",
