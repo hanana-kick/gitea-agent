@@ -1,17 +1,17 @@
 <div class="ui two item menu agent-chat-tabs">
-	<a class="item{{if eq .Scope "pod"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=pod">{{ctx.Locale.Tr "agent.chat_tab_pod"}}</a>
+	<a class="item{{if eq .Scope "agent"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=agent">{{ctx.Locale.Tr "agent.chat_tab_agent"}}</a>
 	<a class="item{{if eq .Scope "repository"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=repository">{{ctx.Locale.Tr "agent.chat_tab_repository"}}</a>
 </div>
 
-{{if eq .Scope "pod"}}
+{{if eq .Scope "agent"}}
 	<h4 class="ui top attached header tw-flex tw-items-center">
 		<div class="tw-flex-1 tw-flex tw-items-center">
 			{{ctx.Locale.Tr "agent.chat_resident"}}
-			<span class="ui grey label tw-ml-2">{{index .ScopeCounts "pod"}}</span>
+			<span class="ui grey label tw-ml-2">{{index .ScopeCounts "agent"}}</span>
 		</div>
 	</h4>
 	<form class="ui attached segment agent-chat-search" method="get" action="{{.ScopeBaseURL}}">
-		<input type="hidden" name="scope" value="pod">
+		<input type="hidden" name="scope" value="agent">
 		<div class="ui small fluid left icon input">
 			<input type="search" name="q" value="{{.Keyword}}" spellcheck="false" maxlength="255" placeholder="{{ctx.Locale.Tr "agent.chat_search_placeholder"}}">
 			<i class="icon">{{svg "octicon-search"}}</i>
@@ -21,7 +21,7 @@
 		{{/* the resident session is the entry to the global bot, so it always comes first */}}
 		{{with .Sessions.Resident}}
 			<div class="agent-chat-group-title">
-				{{svg "gitea-pod-outline"}}
+				{{svg "octicon-agent"}}
 				<span>{{.Title}}</span>
 			</div>
 			<a class="agent-chat-card agent-chat-card-resident{{if and $.Session (eq $.Session.ID .ID)}} active{{end}}" href="{{AppSubUrl}}/-/agent/{{.ID}}" data-session-id="{{.ID}}">
@@ -96,7 +96,7 @@
 	<h4 class="ui top attached header tw-flex tw-items-center">
 		<div class="tw-flex-1 tw-flex tw-items-center">
 			{{if .FilterRepo}}
-				{{/* the pod of a repository lists that repository's sessions */}}
+				{{/* the agent of a repository lists that repository's sessions */}}
 				<span class="gt-ellipsis">{{.FilterRepo.FullName}}</span>
 				<span class="ui grey label tw-ml-2">{{len .Sessions.Repositories}}</span>
 			{{else}}
@@ -115,7 +115,7 @@
 		</div>
 	</form>
 	{{if .FilterRepo}}
-		{{/* the way out of the one repository this pod lists */}}
+		{{/* the way out of the one repository this agent lists */}}
 		<div class="ui attached segment agent-chat-filter-all-row">
 			<a class="agent-chat-filter-all" href="{{.ScopeBaseURL}}?scope=repository&all=1">{{ctx.Locale.Tr "agent.chat_all_repositories"}}</a>
 		</div>

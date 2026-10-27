@@ -127,9 +127,9 @@
 					{{end}}
 
 					{{if .IsSigned}}
-						{{/* the pod of this repository has a screen of its own under the repository path */}}
-						<a class="{{if .PageIsRepoPod}}active {{end}}item" href="{{.RepoLink}}/pod">
-							{{svg "gitea-pod-octicon" 16}} {{ctx.Locale.Tr "agent.chat_title"}}
+						{{/* the agent of this repository has a screen of its own under the repository path */}}
+						<a class="{{if .PageIsRepoAgent}}active {{end}}item" href="{{.RepoLink}}/agent">
+							{{svg "octicon-agent" 16}} {{ctx.Locale.Tr "agent.chat_title"}}
 						</a>
 					{{end}}
 

@@ -1,7 +1,7 @@
 <header class="agent-chat-head">
 	<a class="agent-chat-back" href="{{AppSubUrl}}/-/agent" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_sessions"}}">{{svg "octicon-chevron-left"}}</a>
 	<div class="agent-chat-head-icon">
-		{{if eq .Session.Kind "resident"}}{{svg "gitea-pod-outline" 20}}{{else if eq .Session.Kind "server"}}{{svg "octicon-server" 20}}{{else}}{{svg "octicon-repo" 20}}{{end}}
+		{{if eq .Session.Kind "resident"}}{{svg "octicon-agent" 20}}{{else if eq .Session.Kind "server"}}{{svg "octicon-server" 20}}{{else}}{{svg "octicon-repo" 20}}{{end}}
 	</div>
 	<div class="agent-chat-head-text">
 		<div class="agent-chat-head-title gt-ellipsis">{{.Session.Title}}</div>

@@ -28,14 +28,14 @@ import (
 )
 
 const (
-	tplChat       = "agent/chat"
-	tplList       = "agent/list"
-	tplRepoPod    = "agent/repo_pod_page"
-	tplChatPanel  = "agent/chat_panel"
-	tplChatDraft  = "agent/chat_draft"
-	tplPodBody    = "agent/repo_pod"
-	tplEmptyPanel = "agent/chat_empty"
-	chatURL       = "/-/agent"
+	tplChat          = "agent/chat"
+	tplList          = "agent/list"
+	tplRepoAgent     = "agent/repo_agent_page"
+	tplChatPanel     = "agent/chat_panel"
+	tplChatDraft     = "agent/chat_draft"
+	tplRepoAgentBody = "agent/repo_agent"
+	tplEmptyPanel    = "agent/chat_empty"
+	chatURL          = "/-/agent"
 
 	// chatMessagePageSize is how much of a transcript the chat screen loads at once.
 	chatMessagePageSize = 50
@@ -198,7 +198,7 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 	ctx.Data["Scope"] = scope
 	ctx.Data["ScopeBaseURL"] = scopeBaseURL
 	ctx.Data["ScopeCounts"] = map[string]int{
-		"pod":        boolInt(list.Resident != nil),
+		"agent":      boolInt(list.Resident != nil),
 		"server":     len(list.Servers),
 		"repository": repositorySessionCount(list),
 	}
@@ -281,8 +281,8 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 	}
 }
 
-// prepareSuggestions fills the cards a repository pod offers: review the code, review one
-// of its pull requests, look into one of its issues. A card names the skill the pod should
+// prepareSuggestions fills the cards a repository agent offers: review the code, review one
+// of its pull requests, look into one of its issues. A card names the skill the agent should
 // open for the task when this instance has one, and carries the subjects the reader picks.
 func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 	// the screen the presets are built for is not always a repository page, so the reader's
@@ -304,7 +304,7 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 		return ""
 	}
 	// a card runs its task through the skill when there is one, and on its own otherwise
-	card := func(key, command, icon string, skillNames []string, prompt string, targets []podSuggestionTarget, takesSubject bool) podSuggestion {
+	card := func(key, command, icon string, skillNames []string, prompt string, targets []agentPresetTarget, takesSubject bool) agentPreset {
 		skill := skillFor(skillNames...)
 		withSkill := func(text string) string {
 			if skill == "" {
@@ -315,7 +315,7 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 		for i := range targets {
 			targets[i].Prompt = withSkill(targets[i].Prompt)
 		}
-		return podSuggestion{
+		return agentPreset{
 			Key:         key,
 			Command:     command,
 			Title:       string(ctx.Tr("agent.suggest_" + key)),
@@ -328,13 +328,13 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 		}
 	}
 
-	cards := make([]podSuggestion, 0, 3)
+	cards := make([]agentPreset, 0, 3)
 	cards = append(cards, card("review_code", "code", "octicon-code-review",
 		[]string{"code-review", "code_review", "review"},
 		string(ctx.Tr("agent.suggest_review_code_prompt")), nil, false))
 
 	if perm.CanRead(unit.TypePullRequests) {
-		targets := make([]podSuggestionTarget, 0, 10)
+		targets := make([]agentPresetTarget, 0, 10)
 		opts := issues_model.IssuesOptions{
 			RepoIDs:   []int64{repo.ID},
 			IsPull:    optional.Some(true),
@@ -349,7 +349,7 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 				return
 			}
 			for _, issue := range issues {
-				targets = append(targets, podSuggestionTarget{
+				targets = append(targets, agentPresetTarget{
 					Label:  fmt.Sprintf("#%d %s", issue.Index, issue.Title),
 					Prompt: string(ctx.Tr("agent.suggest_review_pr_prompt", issue.Index, issue.Title)),
 				})
@@ -361,7 +361,7 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 	}
 
 	if perm.CanRead(unit.TypeIssues) {
-		targets := make([]podSuggestionTarget, 0, 10)
+		targets := make([]agentPresetTarget, 0, 10)
 		opts := issues_model.IssuesOptions{
 			RepoIDs:   []int64{repo.ID},
 			IsPull:    optional.Some(false),
@@ -372,7 +372,7 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 		}
 		if issues, err := issues_model.Issues(ctx, &opts); err == nil {
 			for _, issue := range issues {
-				targets = append(targets, podSuggestionTarget{
+				targets = append(targets, agentPresetTarget{
 					Label:  fmt.Sprintf("#%d %s", issue.Index, issue.Title),
 					Prompt: string(ctx.Tr("agent.suggest_review_issue_prompt", issue.Index, issue.Title)),
 				})
@@ -392,9 +392,9 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 	ctx.Data["PresetsJSON"] = string(presets)
 }
 
-// podSuggestion is one card of the block the repository pod shows above the composer: what
-// the reader can ask this pod to do, which skill runs it, and what it can be aimed at.
-type podSuggestion struct {
+// agentPreset is one card of the block the repository agent shows above the composer: what
+// the reader can ask this agent to do, which skill runs it, and what it can be aimed at.
+type agentPreset struct {
 	Key     string `json:"key"`     // the locale key suffix of the card's label and description
 	Command string `json:"command"` // what the same task is called when typed, without the /
 	Title   string `json:"title"`   // the card's label in the reader's language
@@ -403,13 +403,13 @@ type podSuggestion struct {
 	Skill   string `json:"skill"` // the skill the card opens, empty when this instance has none
 	// Targets are the subjects the card can be aimed at; a card without any runs on the
 	// repository as a whole, or has nothing to offer yet
-	Targets     []podSuggestionTarget `json:"targets"`
-	NeedsTarget bool                  `json:"needsTarget"`
-	Prompt      string                `json:"prompt"` // the message the card writes when it takes no subject
+	Targets     []agentPresetTarget `json:"targets"`
+	NeedsTarget bool                `json:"needsTarget"`
+	Prompt      string              `json:"prompt"` // the message the card writes when it takes no subject
 }
 
-// podSuggestionTarget is one subject a card can be aimed at.
-type podSuggestionTarget struct {
+// agentPresetTarget is one subject a card can be aimed at.
+type agentPresetTarget struct {
 	Label  string `json:"label"`
 	Prompt string `json:"prompt"`
 }
@@ -455,8 +455,8 @@ func ChatDraft(ctx *context.Context) {
 	ctx.HTML(http.StatusOK, tplChat)
 }
 
-// RepoAgent renders the pod of one repository: its sessions and the composer for the next one.
-// It is the screen the repository menu opens, so the reader stays in the repository's own path.
+// RepoAgent renders the agent of one repository: the tasks it can run and the composer for
+// the reader's own message. It is the screen the repository menu opens.
 func RepoAgent(ctx *context.Context) {
 	repo := ctx.Repo.Repository
 	// an agent of one repository is for the users who may drive it, as in the picker
@@ -476,7 +476,7 @@ func RepoAgent(ctx *context.Context) {
 	prepareChat(ctx, nil, repo)
 	ctx.Data["IsDraft"] = true
 	ctx.Data["DraftKind"] = agent_model.ConversationKindRepository
-	ctx.Data["PageIsRepoPod"] = true
+	ctx.Data["PageIsRepoAgent"] = true
 	ref, err := agent_service.ModelRoleRef(ctx, agent_service.ModelRoleForKind(agent_model.ConversationKindRepository))
 	if err != nil {
 		ctx.ServerError("ModelRoleRef", err)
@@ -484,8 +484,8 @@ func RepoAgent(ctx *context.Context) {
 	}
 	ctx.Data["RoleModelLabel"] = agent_service.ModelRefLabel(ctx, ref)
 	ctx.Data["CanAnswer"] = ref != ""
-	preparePanel(ctx, tplPodBody, "agent-repo-pod-panel")
-	ctx.HTML(http.StatusOK, tplRepoPod)
+	preparePanel(ctx, tplRepoAgentBody, "agent-repo-panel")
+	ctx.HTML(http.StatusOK, tplRepoAgent)
 }
 
 // ChatDraftCreate stores the conversation of a draft along with its first message.
@@ -934,7 +934,7 @@ func ChatTitlePost(ctx *context.Context) {
 }
 
 // chatScope returns the session group the sidebar shows: the one asked for, else the one
-// the open session or the draft belongs to, else Pod.
+// the open session or the draft belongs to, else the resident agent.
 func chatScope(ctx *context.Context, session *agent_model.Conversation, repo *repo_model.Repository) (string, string) {
 	baseURL := setting.AppSubURL + chatURL
 	if session != nil {
@@ -942,20 +942,20 @@ func chatScope(ctx *context.Context, session *agent_model.Conversation, repo *re
 	}
 
 	switch ctx.FormString("scope") {
-	case "pod", "server":
+	case "agent", "server":
 		// server agents are sessions of the global agent, so they live under Pod
-		return "pod", baseURL
+		return "agent", baseURL
 	case "repository":
 		return "repository", baseURL
 	}
 	if repo != nil || (session != nil && session.Kind == agent_model.ConversationKindRepository) {
 		return "repository", baseURL
 	}
-	return "pod", baseURL
+	return "agent", baseURL
 }
 
 // keepRepository narrows a list to the sessions of one repository, which is what the sidebar
-// of that repository's pod shows.
+// of that repository's agent shows.
 func keepRepository(list *agent_service.ConversationList, repoID int64) *agent_service.ConversationList {
 	kept := make([]*agent_service.RepositoryConversation, 0, len(list.Repositories))
 	for _, entry := range list.Repositories {

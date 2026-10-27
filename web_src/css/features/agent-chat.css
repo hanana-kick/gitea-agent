@@ -16,21 +16,6 @@
   overflow: hidden;
 }
 
-/* the pod mark is wider than it is tall: it is drawn larger with tighter side padding,
-   so the navbar item keeps the same size as the other icon buttons */
-#navbar .agent-pod-nav {
-  padding-left: 10px !important; /* 22px icon + 2 * 10px = 42px, the width of the other items */
-  padding-right: 10px !important;
-}
-
-@media (max-width: 767.98px) {
-  /* on narrow screens the item height follows the icon box, which is taller here */
-  #navbar .agent-pod-nav {
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
-  }
-}
-
 /* flashes float over the panel so they do not change the fixed height */
 .agent-chat-page .flash-message {
   position: fixed;
@@ -89,7 +74,7 @@
   padding: 8px !important;
 }
 
-/* the way back from the one repository a pod lists to every repository */
+/* the way back from the one repository an agent lists to every repository */
 .agent-chat-filter-all-row {
   padding: 6px 8px !important;
   text-align: right;
@@ -925,9 +910,9 @@ button.agent-chat-card {
   object-fit: cover;
 }
 
-/* the pod of one repository: the repository page keeps its own chrome, so this screen is
-   only the ask block, dropped under the repository header */
-.agent-repo-pod .flash-message {
+/* the agent of one repository: the repository page keeps its own chrome, so this screen
+   only holds the ask block, centred under the repository header */
+.agent-repo .flash-message {
   position: fixed;
   top: 62px;
   right: 16px;
@@ -938,19 +923,19 @@ button.agent-chat-card {
 
 /* the ask block floats in the space the repository header leaves, centred both ways: the
    page stretches over the height the navbar and footer leave, and the body centres in it */
-.full.height:has(> .agent-repo-pod) {
+.full.height:has(> .agent-repo) {
   display: flex;
   flex-direction: column;
 }
 
-.agent-repo-pod.page-content {
+.agent-repo.page-content {
   display: flex;
   flex-direction: column;
   flex: 1; /* .full.height is the flex parent, so the page claims the free height */
   margin-bottom: 0; /* the natural page bottom margin would offset the centre */
 }
 
-.agent-repo-pod-body {
+.agent-repo-body {
   display: flex;
   flex: 1;
   align-items: center;
@@ -961,7 +946,7 @@ button.agent-chat-card {
 /* the ask block sits under the repository header: the page scrolls normally, so the panel
    keeps its natural height, loses the frame the chat screen draws around its transcript, and
    stacks its two cards with a clear gap between them */
-.agent-repo-pod .agent-repo-pod-panel {
+.agent-repo .agent-repo-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -972,14 +957,14 @@ button.agent-chat-card {
 }
 
 /* the composer is a card of its own here, not the chat screen's bottom bar */
-.agent-repo-pod .agent-chat-composer {
+.agent-repo .agent-chat-composer {
   background: var(--color-body);
   border: 1px solid var(--color-secondary);
   border-radius: var(--border-radius-medium);
 }
 
-/* what this pod can be asked to do: one card per task, side by side, above the composer
-   that takes the pod's own questions */
+/* what this agent can be asked to do: one card per task, side by side, above the composer
+   that takes the reader's own message */
 .agent-chat-presets {
   padding: 10px 12px 12px;
   background: var(--color-body);
@@ -1210,7 +1195,7 @@ button.agent-chat-card {
     margin-inline: 0;
   }
 
-  /* one panel at a time: the list, or the chat with its draft. The repository pod has no
+  /* one panel at a time: the list, or the chat with its draft. The repository agent has no
      list beside it, so its ask block keeps showing (its selector is kept at parity so the
      later rule can win) */
   .agent-chat-page.has-panel .agent-chat-nav,
@@ -1218,7 +1203,7 @@ button.agent-chat-card {
     display: none !important;
   }
 
-  .agent-chat-page.agent-repo-pod:not(.has-panel) .agent-repo-pod-panel {
+  .agent-chat-page.agent-repo:not(.has-panel) .agent-repo-panel {
     display: flex !important;
   }
 

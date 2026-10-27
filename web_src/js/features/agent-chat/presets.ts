@@ -1,4 +1,4 @@
-// The tasks a repository pod knows, written once and reached two ways: the cards above the
+// The tasks a repository agent knows, written once and reached two ways: the cards above the
 // composer, and the commands the composer itself understands ("/pr", "/issue"). Either way
 // the chosen task lands in the input, so sending stays the reader's call.
 export type AgentPresetTarget = {label: string, prompt: string};
@@ -16,9 +16,6 @@ export type AgentPreset = {
 };
 
 const commandPrefix = '/';
-
-// the one command that is not a task: it lists the tasks this pod knows
-const helpCommand = 'help';
 
 // one row of the palette the reader walks through
 type AgentPresetEntry = {label: string, hint: string, apply: () => void};
@@ -60,10 +57,8 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement) {
     });
   }
 
-  const helpHint = form.getAttribute('data-help-hint') ?? '';
   let entries: AgentPresetEntry[] = [];
   let active = 0;
-  let showingHelp = false;
 
   // running a task from the palette: a task that takes a subject names itself first
   function runTask(preset: AgentPreset) {
@@ -73,18 +68,6 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement) {
     }
     input.value = `${commandPrefix}${preset.command} `;
     input.dispatchEvent(new Event('input', {bubbles: true}));
-  }
-
-  // what /help shows: every task with what it does
-  function helpEntries(): AgentPresetEntry[] {
-    return presets.map((preset) => ({
-      label: `${commandPrefix}${preset.command}`,
-      hint: `${preset.title} — ${preset.desc}`,
-      apply: () => {
-        showingHelp = false;
-        runTask(preset);
-      },
-    }));
   }
 
   function paint() {
@@ -116,7 +99,6 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement) {
   function close() {
     entries = [];
     active = 0;
-    showingHelp = false;
     paint();
   }
 
@@ -134,11 +116,6 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement) {
       close();
       return;
     }
-    if (showingHelp && value.trim() === `${commandPrefix}${helpCommand}`) {
-      show(helpEntries());
-      return;
-    }
-    showingHelp = false;
     const body = value.slice(commandPrefix.length);
     const split = body.indexOf(' ');
     const typed = (split === -1 ? body : body.slice(0, split)).toLowerCase();
@@ -159,16 +136,6 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement) {
     const commands = presets
       .filter((p) => split === -1 && p.command.startsWith(typed))
       .map((p) => ({label: `${commandPrefix}${p.command}`, hint: p.title, apply: () => runTask(p)}));
-    // "/help" itself is offered while the reader is still naming a command
-    if (split === -1 && helpCommand.startsWith(typed)) {
-      commands.push({
-        label: `${commandPrefix}${helpCommand}`,
-        hint: helpHint,
-        apply: () => {
-          showingHelp = true;
-        },
-      });
-    }
     show(commands);
   }
 
