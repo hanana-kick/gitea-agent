@@ -8,7 +8,7 @@
 // the first deletion inside the line it sits on hands the whole line back as plain text.
 export type AgentTask = {
   command: string, // the skill the line calls, without the slash
-  commandTitle: string, // what that skill is called in the reader's language
+  commandTitle: string, // what that skill is called in the reader's language, and what is read
   subject: string, // the reference the message needs, without the at-sign
   subjectLabel: string, // what the reader reads instead
   request: string, // the reader's own words
@@ -22,7 +22,7 @@ type Token = {display: string, canonical: string};
 
 // the line the tokens take, and the shape the box keeps while the task stands
 export function tokenLine(task: AgentTask) {
-  return [task.command === '' ? '' : `/${task.command}`, task.subject === '' ? '' : `@${task.subjectLabel}`]
+  return [task.command === '' ? '' : `/${task.commandTitle}`, task.subject === '' ? '' : `@${task.subjectLabel}`]
     .filter((part) => part !== '').join(' ');
 }
 
@@ -54,7 +54,7 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
 
   const tokensOf = (kept: AgentTask): Token[] => {
     const tokens: Token[] = [];
-    if (kept.command !== '') tokens.push({display: `/${kept.command}`, canonical: `/${kept.command}`});
+    if (kept.command !== '') tokens.push({display: `/${kept.commandTitle}`, canonical: `/${kept.command}`});
     if (kept.subject !== '') tokens.push({display: `@${kept.subjectLabel}`, canonical: `@${kept.subject}`});
     return tokens;
   };
