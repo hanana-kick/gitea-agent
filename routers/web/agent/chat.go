@@ -309,22 +309,11 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 		}
 		return ""
 	}
-	// a task is written the way every agent is told to write it: "/command @subject", then
-	// what the reader wants in their own words
-	compose := func(command, subject, task string) string {
-		if task == "" {
-			return fmt.Sprintf("/%s @%s", command, subject)
-		}
-		return fmt.Sprintf("/%s @%s %s", command, subject, task)
-	}
 	card := func(key, fallback, icon string, skillNames []string, task string, targets []agentPresetTarget, takesSubject bool) agentPreset {
 		skill := skillFor(skillNames...)
 		command := skill
 		if command == "" {
 			command = fallback
-		}
-		for i := range targets {
-			targets[i].Prompt = compose(command, targets[i].Subject, targets[i].Task)
 		}
 		return agentPreset{
 			Key:         key,
@@ -333,7 +322,8 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 			Desc:        string(ctx.Tr("agent.suggest_" + key + "_desc")),
 			Icon:        icon,
 			Skill:       skill,
-			Prompt:      compose(command, repo.FullName(), task),
+			Subject:     repo.FullName(),
+			Task:        task,
 			Targets:     targets,
 			NeedsTarget: takesSubject && len(targets) == 0,
 		}
@@ -412,11 +402,12 @@ type agentPreset struct {
 	Desc    string `json:"desc"`    // what the task does, in the reader's language
 	Icon    string `json:"icon"`
 	Skill   string `json:"skill"` // the skill the card's command names, empty when it is a plain task
-	// Targets are the subjects the card can be aimed at; a card without any runs on the
-	// repository as a whole, or has nothing to offer yet
+	// Subject and Task are the task the card runs on the repository itself; a card that
+	// takes a subject carries the subjects it can be aimed at instead
+	Subject     string              `json:"subject"`
+	Task        string              `json:"task"`
 	Targets     []agentPresetTarget `json:"targets"`
 	NeedsTarget bool                `json:"needsTarget"`
-	Prompt      string              `json:"prompt"` // the message the card writes when it takes no subject
 }
 
 // agentPresetTarget is one subject a card can be aimed at: what the reader picks, the
@@ -424,8 +415,7 @@ type agentPreset struct {
 type agentPresetTarget struct {
 	Label   string `json:"label"`
 	Subject string `json:"subject"`
-	Task    string `json:"-"`
-	Prompt  string `json:"prompt"`
+	Task    string `json:"task"`
 }
 
 // ChatDraft renders the chat screen for a conversation that does not exist yet: the first

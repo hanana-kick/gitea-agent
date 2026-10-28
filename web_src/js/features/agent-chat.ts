@@ -7,7 +7,7 @@ import {toggleElem} from '../utils/dom.ts';
 import {followAgentLive, markSessionBusy, runIsBusy} from '../modules/agent-live.ts';
 import type {AgentApproval, AgentDelta, AgentMessage, AgentRun} from '../modules/agent-live.ts';
 import {initAttachmentList, initComposerKeys, initDraftComposer, fitLayout} from './agent-chat/composer.ts';
-import {initPresets, readPresets} from './agent-chat/presets.ts';
+import {initPresets} from './agent-chat/presets.ts';
 import {initTaskTokens} from './agent-chat/task-tokens.ts';
 import {buildApproval, buildMessage, initMessageActions, initTranscriptActions, scrollToLastQuestion, scrollToTop} from './agent-chat/transcript.ts';
 import type {AgentChatLabels} from './agent-chat/transcript.ts';
@@ -268,8 +268,12 @@ export function initAgentChat() {
     image.removeAttribute('loading');
   }
   const clearAttachments = initAttachmentList(composerEl);
-  initTaskTokens(composerEl, inputEl, readPresets(composerEl));
-  initComposerKeys(composerEl, inputEl, initPresets(composerEl, inputEl));
+  const tasks = initTaskTokens(composerEl, inputEl);
+  if (tasks) {
+    // the task is written as its command before the form is read for sending
+    composerEl.addEventListener('submit', () => tasks.apply(), {capture: true});
+  }
+  initComposerKeys(composerEl, inputEl, initPresets(composerEl, inputEl, tasks ?? {set: () => {}}));
 
   composerEl.addEventListener('submit', async (event) => {
     event.preventDefault();

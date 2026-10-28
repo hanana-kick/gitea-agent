@@ -1,7 +1,9 @@
 // The tasks a repository agent knows, written once and reached two ways: the cards above the
-// composer, and the commands the composer itself understands ("/pr", "/issue"). Either way
-// the chosen task lands in the input, so sending stays the reader's call.
-export type AgentPresetTarget = {label: string, prompt: string};
+// composer, and the commands the composer itself understands ("/pr", "/issue"). Either way the
+// chosen task lands in the composer as a task, so sending stays the reader's call.
+import type {AgentTask} from './task-tokens.ts';
+
+export type AgentPresetTarget = {label: string, subject: string, task: string};
 
 export type AgentPreset = {
   key: string,
@@ -10,10 +12,18 @@ export type AgentPreset = {
   desc: string,
   icon: string,
   skill: string,
+  subject: string,
+  task: string,
   targets: AgentPresetTarget[],
   needsTarget: boolean,
-  prompt: string,
 };
+
+// what a task runs on: the subject a card is aimed at, read as the label it stands for
+type AgentTaskHost = {set: (task: AgentTask) => void};
+
+function taskOf(preset: AgentPreset, subject: string, label: string, task: string): AgentTask {
+  return {command: preset.command, subject, label, task};
+}
 
 const commandPrefix = '/';
 
@@ -32,27 +42,30 @@ export function readPresets(form: HTMLFormElement): AgentPreset[] {
   }
 }
 
-// writes the task into the composer: the reader finishes or edits it, then sends
-function writeTask(input: HTMLTextAreaElement, prompt: string) {
-  input.value = prompt;
-  input.dispatchEvent(new Event('input', {bubbles: true})); // the box grows to fit it
-  input.focus({preventScroll: true});
+// the subject a card runs on when the reader picks none: the repository itself
+function repositoryLabel(subject: string) {
+  return subject;
 }
 
 // initPresets wires the cards and the "/" palette of one composer. Its keyDown reports the
 // keys the open palette took, so the composer's Enter-to-send leaves them alone.
-export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement) {
+export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, tasks: AgentTaskHost) {
   const presets = readPresets(form);
-  const palette = form.querySelector<HTMLElement>('.agent-chat-commands');
-  if (presets.length === 0 || !palette) return {keyDown: (_event: KeyboardEvent) => false};
+  const paletteEl = form.querySelector<HTMLElement>('.agent-chat-commands');
+  if (presets.length === 0 || !paletteEl) return {keyDown: (_event: KeyboardEvent) => false};
+  const palette = paletteEl; // the palette is there from here on
 
-  // the cards: pick a subject, then put that task in the input
+  // the cards: pick a subject, then hand that task to the composer
   for (const card of form.closest('.agent-chat-main')!.querySelectorAll<HTMLElement>('.agent-chat-preset')) {
     const run = card.querySelector<HTMLButtonElement>('.agent-chat-preset-run');
     if (!run) continue;
     run.addEventListener('click', () => {
       const option = card.querySelector<HTMLOptionElement>('.agent-chat-preset-target option:checked');
-      writeTask(input, option?.getAttribute('data-prompt') || card.getAttribute('data-prompt')!);
+      const preset = presets.find((p) => p.command === card.getAttribute('data-command'));
+      if (!preset) return;
+      const subject = option?.getAttribute('data-subject') ?? card.getAttribute('data-subject')!;
+      const label = option?.textContent?.trim() ?? repositoryLabel(card.getAttribute('data-subject')!);
+      tasks.set(taskOf(preset, subject, label, option?.getAttribute('data-task') ?? card.getAttribute('data-task')!));
       close();
     });
   }
@@ -63,7 +76,7 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement) {
   // running a task from the palette: a task that takes a subject names itself first
   function runTask(preset: AgentPreset) {
     if (preset.targets.length === 0) {
-      writeTask(input, preset.prompt); // nothing to pick: the task is ready to send
+      tasks.set(taskOf(preset, preset.subject, repositoryLabel(preset.subject), preset.task));
       return;
     }
     input.value = `${commandPrefix}${preset.command} `;
@@ -129,7 +142,11 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement) {
       }
       show(preset.targets
         .filter((target) => target.label.toLowerCase().includes(keyword))
-        .map((target) => ({label: `@${target.label}`, hint: preset.title, apply: () => writeTask(input, target.prompt)})));
+        .map((target) => ({
+          label: `@${target.label}`,
+          hint: preset.title,
+          apply: () => tasks.set(taskOf(preset, target.subject, target.label, target.task)),
+        })));
       return;
     }
 

@@ -1,5 +1,5 @@
 import {POST} from '../../modules/fetch.ts';
-import {initPresets, readPresets} from './presets.ts';
+import {initPresets} from './presets.ts';
 import {initTaskTokens} from './task-tokens.ts';
 import {svg} from '../../svg.ts';
 import {createElementFromHTML, toggleElem} from '../../utils/dom.ts';
@@ -148,10 +148,13 @@ export function initDraftComposer() {
   if (!form) return;
   const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
   const input = form.querySelector<HTMLTextAreaElement>('.agent-chat-input')!;
-  const presets = readPresets(form);
   initAttachmentList(form);
-  initTaskTokens(form, input, presets);
-  initComposerKeys(form, input, initPresets(form, input));
+  const tasks = initTaskTokens(form, input);
+  if (tasks) {
+    // a task is sent as the command it stands for, not as the line the reader read
+    form.addEventListener('submit', () => tasks.apply(), {capture: true});
+  }
+  initComposerKeys(form, input, initPresets(form, input, tasks ?? {set: () => {}}));
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();

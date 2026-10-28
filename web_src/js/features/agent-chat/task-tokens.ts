@@ -1,57 +1,24 @@
-// A task reads as "/skill @subject" followed by the reader's own words. The composer marks
-// those two as the tokens they are, without giving up the plain textarea that editing, IME
-// and the browser's own caret rely on: a mirror over the textarea tints the tokens and lets
-// the textarea keep every glyph.
-import type {AgentPreset} from './presets.ts';
+// A task is a command and a subject, and the reader's own request under them. The composer
+// shows it as such: a line of two tokens, then the request. What the reader sees is not what
+// is sent — the command travels with the subject it needs ("@owner/repo#2") rather than the
+// label the reader reads — so the task is kept here and written into the message on submit.
+//
+// The plate is tied to that task, not to the shape of the text: editing the token line ends
+// the task, and whatever is in the box from then on is an ordinary message.
+export type AgentTask = {
+  command: string, // "/pr" runs as "/pr @owner/repo#2 ..."
+  subject: string, // the "@..." the command needs
+  label: string, // what the reader reads in its place
+  task: string, // the request the task comes with, and the reader may rewrite
+};
 
-type Token = {kind: 'command' | 'subject', text: string};
-
-// which tokens a value carries: a command this pod knows, and the subject it names
-function taskTokens(value: string, commands: Set<string>): Token[] | null {
-  const match = /^\/([a-z0-9][a-z0-9_-]*)(?:\s+@(\S+))?/.exec(value);
-  if (!match || !commands.has(match[1])) return null;
-  const tokens: Token[] = [{kind: 'command', text: match[0].slice(0, match[1].length + 1)}];
-  if (match[2]) tokens.push({kind: 'subject', text: `@${match[2]}`});
-  return tokens;
-}
-
-// the mirror draws the value with the tokens wrapped; everything else stays as it was typed
-function paint(mirror: HTMLElement, value: string, tokens: Token[]) {
-  const parts: Node[] = [];
-  let rest = value;
-  for (const token of tokens) {
-    const at = rest.indexOf(token.text);
-    if (at > 0) parts.push(document.createTextNode(rest.slice(0, at)));
-    const el = document.createElement('span');
-    el.className = `agent-chat-token agent-chat-token-${token.kind}`;
-    el.textContent = token.text;
-    parts.push(el);
-    rest = rest.slice(at + token.text.length);
-  }
-  parts.push(document.createTextNode(rest));
-  mirror.replaceChildren(...parts);
-  // a trailing newline is invisible in a block, and the caret still needs its line
-  if (rest.endsWith('\n')) mirror.append(document.createTextNode(' '));
-}
-
-// initTaskTokens keeps the mirror in step with the textarea of one composer. Composing an
-// IME entry leaves the value untouched, so nothing is painted on top of it.
-export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement, presets: AgentPreset[]) {
+export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement) {
   const mirror = form.querySelector<HTMLElement>('.agent-chat-input-mirror');
-  if (!mirror || presets.length === 0) return;
-  const commands = new Set(presets.map((preset) => preset.command));
+  if (!mirror) return null;
 
-  const sync = () => {
-    const tokens = input.value.startsWith('/') ? taskTokens(input.value, commands) : null;
-    if (!tokens) {
-      mirror.replaceChildren(); // no tokens: nothing to tint
-      return;
-    }
-    paint(mirror, input.value, tokens);
-    mirror.scrollTop = input.scrollTop; // a value taller than the box scrolls with it
-  };
+  let task: AgentTask | null = null;
 
-  // the mirror has to lay its text on the very box the textarea uses, or the tint lands
+  // the mirror has to lay its text on the very box the textarea uses, or the plate lands
   // beside the words instead of behind them: take the metrics from the textarea itself
   const copyBox = () => {
     const style = getComputedStyle(input);
@@ -60,9 +27,67 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
       'fontWeight', 'lineHeight', 'letterSpacing', 'textIndent'] as const;
     for (const property of from) mirror.style[property] = style[property];
   };
-  copyBox();
 
-  input.addEventListener('input', sync); // a task written by a card or the palette lands here too
+  // the token line the task shows, and the shape the box has to keep for the task to stand
+  const tokenLine = (kept: AgentTask) => `/${kept.command} ${kept.label}`;
+  const bodyOf = (kept: AgentTask, value: string) => value.slice(tokenLine(kept).length).replace(/^\n/, '');
+
+  const paint = (value: string, plates: AgentTask) => {
+    const command = document.createElement('span');
+    command.className = 'agent-chat-token agent-chat-token-command';
+    command.textContent = `/${plates.command}`;
+    const label = document.createElement('span');
+    label.className = 'agent-chat-token agent-chat-token-subject';
+    label.textContent = plates.label;
+    const rest = document.createTextNode(value.slice(tokenLine(plates).length));
+    mirror.replaceChildren(command, document.createTextNode(' '), label, rest);
+    if (value.endsWith('\n')) mirror.append(document.createTextNode(' '));
+  };
+
+  const sync = () => {
+    if (!task) {
+      mirror.replaceChildren();
+      return;
+    }
+    // the task stands only while its own token line is untouched
+    if (!input.value.startsWith(tokenLine(task))) {
+      task = null;
+      mirror.replaceChildren();
+      return;
+    }
+    paint(input.value, task);
+    mirror.scrollTop = input.scrollTop; // a value taller than the box scrolls with it
+  };
+
+  // what the reader sent is not what they read: the command carries the subject it needs
+  const payload = (kept: AgentTask, value: string) => {
+    const body = bodyOf(kept, value).trim();
+    return body === '' ? `/${kept.command} @${kept.subject}` : `/${kept.command} @${kept.subject} ${body}`;
+  };
+
+  copyBox();
+  input.addEventListener('input', sync);
   input.addEventListener('scroll', sync);
   sync();
+
+  return {
+    // puts a task in the box: the reader reads it, edits the request, and sends
+    set(next: AgentTask) {
+      task = next;
+      input.value = next.task === '' ? tokenLine(next) : `${tokenLine(next)}\n${next.task}`;
+      input.dispatchEvent(new Event('input', {bubbles: true})); // the box grows to fit it
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.focus({preventScroll: true});
+    },
+    // writes the message a task stands for, and hands the box back to the reader
+    apply(): string | null {
+      if (!task) return null;
+      const kept = task;
+      const value = payload(kept, input.value);
+      task = null;
+      mirror.replaceChildren();
+      input.value = value;
+      return value;
+    },
+  };
 }

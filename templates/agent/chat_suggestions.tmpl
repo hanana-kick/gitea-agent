@@ -3,7 +3,8 @@
 		<div class="agent-chat-presets-title">{{ctx.Locale.Tr "agent.suggest_title"}}</div>
 		<div class="agent-chat-presets-grid">
 			{{range .Suggestions}}
-				<div class="agent-chat-preset" data-prompt="{{.Prompt}}"
+				<div class="agent-chat-preset" data-command="{{.Command}}" data-subject="{{.Subject}}"
+					data-task="{{.Task}}" data-title="{{.Title}}"
 					{{if .Skill}}data-skill="{{.Skill}}"{{end}}>
 					<div class="agent-chat-preset-head">
 						<span class="agent-chat-preset-icon">{{svg .Icon 16}}</span>
@@ -13,7 +14,7 @@
 					<p class="agent-chat-preset-desc">{{ctx.Locale.Tr (printf "agent.suggest_%s_desc" .Key)}}</p>
 					{{if .Targets}}
 						<select class="ui dropdown agent-chat-preset-target" aria-label="{{ctx.Locale.Tr "agent.suggest_target"}}">
-							{{range .Targets}}<option data-prompt="{{.Prompt}}">{{.Label}}</option>{{end}}
+							{{range .Targets}}<option data-subject="{{.Subject}}" data-task="{{.Task}}">{{.Label}}</option>{{end}}
 						</select>
 					{{else if .NeedsTarget}}
 						<p class="agent-chat-preset-empty">{{ctx.Locale.Tr "agent.suggest_no_target"}}</p>
