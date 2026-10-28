@@ -129,7 +129,8 @@ export function initComposerKeys(form: HTMLFormElement, input: HTMLTextAreaEleme
       event.preventDefault();
       return;
     }
-    if (event.key !== 'Enter' || event.shiftKey) return;
+    if (event.key !== 'Enter') return;
+    if (event.shiftKey) return; // shift breaks the line, which is how a task is read as one
     event.preventDefault();
     form.requestSubmit();
   });
@@ -154,7 +155,7 @@ export function initDraftComposer() {
     // a task is sent as the command it stands for, not as the line the reader read
     form.addEventListener('submit', () => tasks.apply(), {capture: true});
   }
-  initComposerKeys(form, input, initPresets(form, input, tasks ?? {set: () => {}}));
+  if (tasks) initComposerKeys(form, input, initPresets(form, input, tasks));
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();

@@ -1,16 +1,40 @@
-// A task is a command and a subject, and the reader's own request under them. The composer
-// shows it as such: a line of two tokens, then the request. What the reader sees is not what
-// is sent — the command travels with the subject it needs ("@owner/repo#2") rather than the
-// label the reader reads — so the task is kept here and written into the message on submit.
+// The composer writes tasks: "/" calls a skill, "@" names a subject, and they are separate —
+// either may stand alone. What the reader reads is not what is sent: the box shows the skill's
+// name and the subject's own name ("@#2 CI 타임아웃 재발 조사"), while the message carries the
+// command and the reference it needs ("/pr @acme/widgets#2").
 //
-// The plate is tied to that task, not to the shape of the text: editing the token line ends
-// the task, and whatever is in the box from then on is an ordinary message.
+// A token is parsed when the reader completes it from the palette or breaks the line after
+// typing it, and it is not an object in the box: the caret moves through it like any text, and
+// the first deletion inside the line it sits on hands the whole line back as plain text.
 export type AgentTask = {
-  command: string, // "/pr" runs as "/pr @owner/repo#2 ..."
-  subject: string, // the "@..." the command needs
-  label: string, // what the reader reads in its place
-  task: string, // the request the task comes with, and the reader may rewrite
+  command: string, // the skill the line calls, without the slash
+  commandTitle: string, // what that skill is called in the reader's language
+  subject: string, // the reference the message needs, without the at-sign
+  subjectLabel: string, // what the reader reads instead
+  request: string, // the reader's own words
 };
+
+// what a card or a palette row hands over: a task with no request yet
+export type AgentTaskSource = Omit<AgentTask, 'request'>;
+
+// one token of the line, as it is read and as it is sent
+type Token = {display: string, canonical: string};
+
+// the line the tokens take, and the shape the box keeps while the task stands
+export function tokenLine(task: AgentTask) {
+  return [task.command === '' ? '' : `/${task.command}`, task.subject === '' ? '' : `@${task.subjectLabel}`]
+    .filter((part) => part !== '').join(' ');
+}
+
+// the message a task stands for: the command, the subject it needs, and the request
+export function taskPayload(task: AgentTask) {
+  const parts = [
+    task.command === '' ? '' : `/${task.command}`,
+    task.subject === '' ? '' : `@${task.subject}`,
+  ].filter((part) => part !== '');
+  if (task.request.trim() !== '') parts.push(task.request.trim());
+  return parts.join(' ');
+}
 
 export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement) {
   const mirror = form.querySelector<HTMLElement>('.agent-chat-input-mirror');
@@ -28,20 +52,37 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
     for (const property of from) mirror.style[property] = style[property];
   };
 
-  // the token line the task shows, and the shape the box has to keep for the task to stand
-  const tokenLine = (kept: AgentTask) => `/${kept.command} ${kept.label}`;
-  const bodyOf = (kept: AgentTask, value: string) => value.slice(tokenLine(kept).length).replace(/^\n/, '');
+  const tokensOf = (kept: AgentTask): Token[] => {
+    const tokens: Token[] = [];
+    if (kept.command !== '') tokens.push({display: `/${kept.command}`, canonical: `/${kept.command}`});
+    if (kept.subject !== '') tokens.push({display: `@${kept.subjectLabel}`, canonical: `@${kept.subject}`});
+    return tokens;
+  };
 
-  const paint = (value: string, plates: AgentTask) => {
-    const command = document.createElement('span');
-    command.className = 'agent-chat-token agent-chat-token-command';
-    command.textContent = `/${plates.command}`;
-    const label = document.createElement('span');
-    label.className = 'agent-chat-token agent-chat-token-subject';
-    label.textContent = plates.label;
-    const rest = document.createTextNode(value.slice(tokenLine(plates).length));
-    mirror.replaceChildren(command, document.createTextNode(' '), label, rest);
-    if (value.endsWith('\n')) mirror.append(document.createTextNode(' '));
+  // paints the line: the tokens are marked, the reader's own words are not
+  const paint = (kept: AgentTask, value: string) => {
+    const nodes: Node[] = [];
+    for (const [index, token] of tokensOf(kept).entries()) {
+      if (index > 0) nodes.push(document.createTextNode(' '));
+      const el = document.createElement('span');
+      el.className = `agent-chat-token agent-chat-token-${token.display.startsWith('/') ? 'command' : 'subject'}`;
+      el.textContent = token.display;
+      nodes.push(el);
+    }
+    nodes.push(document.createTextNode(value.slice(tokenLine(kept).length)));
+    if (value.endsWith('\n')) nodes.push(document.createTextNode(' '));
+    mirror.replaceChildren(...nodes);
+    mirror.scrollTop = input.scrollTop; // a value taller than the box scrolls with it
+  };
+
+  const clear = () => {
+    task = null;
+    mirror.replaceChildren();
+  };
+
+  const requestOf = (value: string) => {
+    const rest = value.slice(tokenLine(task as AgentTask).length);
+    return rest.replace(/^\n/, '');
   };
 
   const sync = () => {
@@ -49,20 +90,13 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
       mirror.replaceChildren();
       return;
     }
-    // the task stands only while its own token line is untouched
+    // the line stands only while it is untouched: the first edit hands it back as plain text
     if (!input.value.startsWith(tokenLine(task))) {
-      task = null;
-      mirror.replaceChildren();
+      clear();
       return;
     }
-    paint(input.value, task);
-    mirror.scrollTop = input.scrollTop; // a value taller than the box scrolls with it
-  };
-
-  // what the reader sent is not what they read: the command carries the subject it needs
-  const payload = (kept: AgentTask, value: string) => {
-    const body = bodyOf(kept, value).trim();
-    return body === '' ? `/${kept.command} @${kept.subject}` : `/${kept.command} @${kept.subject} ${body}`;
+    task = {...task, request: requestOf(input.value)}; // the words under the line are the reader's
+    paint(task, input.value);
   };
 
   copyBox();
@@ -71,21 +105,25 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
   sync();
 
   return {
-    // puts a task in the box: the reader reads it, edits the request, and sends
-    set(next: AgentTask) {
+    // the task the box currently stands for, for the palette to reason about
+    current: () => task,
+    // puts a task in the box: the reader reads the line, writes what they want under it
+    set(source: AgentTaskSource, request = '') {
+      const next: AgentTask = {...source, request};
       task = next;
-      input.value = next.task === '' ? tokenLine(next) : `${tokenLine(next)}\n${next.task}`;
-      input.dispatchEvent(new Event('input', {bubbles: true})); // the box grows to fit it
+      const line = tokenLine(next);
+      input.value = request === '' ? line : `${line}\n${request}`;
+      input.dispatchEvent(new Event('input', {bubbles: true}));
       input.setSelectionRange(input.value.length, input.value.length);
       input.focus({preventScroll: true});
+      return next;
     },
+    sync,
     // writes the message a task stands for, and hands the box back to the reader
     apply(): string | null {
       if (!task) return null;
-      const kept = task;
-      const value = payload(kept, input.value);
-      task = null;
-      mirror.replaceChildren();
+      const value = taskPayload(task);
+      clear();
       input.value = value;
       return value;
     },

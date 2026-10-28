@@ -1,7 +1,9 @@
-// The tasks a repository agent knows, written once and reached two ways: the cards above the
-// composer, and the commands the composer itself understands ("/pr", "/issue"). Either way the
-// chosen task lands in the composer as a task, so sending stays the reader's call.
-import type {AgentTask} from './task-tokens.ts';
+// What this agent can be asked to do, written once and reached three ways: the cards above the
+// composer, the "/" that calls a skill, and the "@" that names a subject. The two sigils are
+// separate — either may stand alone — and a line that carries them is parsed into a task when
+// it is completed from the palette or broken by the reader.
+import {tokenLine} from './task-tokens.ts';
+import type {AgentTask, AgentTaskSource} from './task-tokens.ts';
 
 export type AgentPresetTarget = {label: string, subject: string, task: string};
 
@@ -18,17 +20,18 @@ export type AgentPreset = {
   needsTarget: boolean,
 };
 
-// what a task runs on: the subject a card is aimed at, read as the label it stands for
-type AgentTaskHost = {set: (task: AgentTask) => void};
-
-function taskOf(preset: AgentPreset, subject: string, label: string, task: string): AgentTask {
-  return {command: preset.command, subject, label, task};
-}
-
-const commandPrefix = '/';
-
 // one row of the palette the reader walks through
-type AgentPresetEntry = {label: string, hint: string, apply: () => void};
+type AgentPresetEntry = {label: string, hint: string, insert: () => void};
+
+// what the composer offers a task host: the plate, and the task it carries
+type AgentTaskHost = {
+  current: () => AgentTask | null,
+  set: (source: AgentTaskSource, request?: string) => AgentTask,
+  sync: () => void,
+};
+
+const commandSigil = '/';
+const subjectSigil = '@';
 
 export function readPresets(form: HTMLFormElement): AgentPreset[] {
   const raw = form.getAttribute('data-presets');
@@ -42,18 +45,37 @@ export function readPresets(form: HTMLFormElement): AgentPreset[] {
   }
 }
 
-// the subject a card runs on when the reader picks none: the repository itself
-function repositoryLabel(subject: string) {
-  return subject;
+// the word the caret is in, when it is a sigil word: what the palette completes
+function sigilWord(value: string, caret: number) {
+  const before = value.slice(0, caret);
+  const match = /(^|\s)([/@])(\S*)$/.exec(before);
+  if (!match) return null;
+  return {sigil: match[2], word: match[3], start: before.length - match[3].length - 1, end: caret};
 }
 
-// initPresets wires the cards and the "/" palette of one composer. Its keyDown reports the
-// keys the open palette took, so the composer's Enter-to-send leaves them alone.
 export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, tasks: AgentTaskHost) {
   const presets = readPresets(form);
   const paletteEl = form.querySelector<HTMLElement>('.agent-chat-commands');
   if (presets.length === 0 || !paletteEl) return {keyDown: (_event: KeyboardEvent) => false};
   const palette = paletteEl; // the palette is there from here on
+
+  // every subject this agent can be aimed at, named once: the tasks share them
+  const subjects = new Map<string, {label: string, hint: string}>();
+  for (const preset of presets) {
+    if (preset.subject !== '') subjects.set(preset.subject, {label: preset.subject, hint: preset.title});
+    for (const target of preset.targets) subjects.set(target.subject, {label: target.label, hint: preset.title});
+  }
+  const skills = new Map(presets.map((preset) => [preset.command, preset.title]));
+
+  const sourceOf = (command: string, subject: string): AgentTaskSource => ({
+    command,
+    commandTitle: command === '' ? '' : skills.get(command) ?? command,
+    subject,
+    subjectLabel: subject === '' ? '' : subjects.get(subject)?.label ?? subject,
+  });
+
+  // the tasks the cards hand over, by the command they call
+  const presetOf = (command: string) => presets.find((preset) => preset.command === command);
 
   // the cards: pick a subject, then hand that task to the composer
   for (const card of form.closest('.agent-chat-main')!.querySelectorAll<HTMLElement>('.agent-chat-preset')) {
@@ -61,27 +83,16 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
     if (!run) continue;
     run.addEventListener('click', () => {
       const option = card.querySelector<HTMLOptionElement>('.agent-chat-preset-target option:checked');
-      const preset = presets.find((p) => p.command === card.getAttribute('data-command'));
+      const preset = presetOf(card.getAttribute('data-command')!);
       if (!preset) return;
       const subject = option?.getAttribute('data-subject') ?? card.getAttribute('data-subject')!;
-      const label = option?.textContent?.trim() ?? repositoryLabel(card.getAttribute('data-subject')!);
-      tasks.set(taskOf(preset, subject, label, option?.getAttribute('data-task') ?? card.getAttribute('data-task')!));
+      tasks.set(sourceOf(preset.command, subject), option?.getAttribute('data-task') ?? card.getAttribute('data-task')!);
       close();
     });
   }
 
   let entries: AgentPresetEntry[] = [];
   let active = 0;
-
-  // running a task from the palette: a task that takes a subject names itself first
-  function runTask(preset: AgentPreset) {
-    if (preset.targets.length === 0) {
-      tasks.set(taskOf(preset, preset.subject, repositoryLabel(preset.subject), preset.task));
-      return;
-    }
-    input.value = `${commandPrefix}${preset.command} `;
-    input.dispatchEvent(new Event('input', {bubbles: true}));
-  }
 
   function paint() {
     const rows = entries.map((entry, index) => {
@@ -100,8 +111,8 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
       // the caret must stay in the input, so the palette answers the press itself
       el.addEventListener('mousedown', (event) => event.preventDefault());
       el.addEventListener('click', () => {
-        entry.apply();
-        offer(); // the chosen row may narrow the list further
+        entry.insert();
+        close();
       });
       return el;
     });
@@ -115,48 +126,92 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
     paint();
   }
 
-  function show(next: AgentPresetEntry[]) {
+  const show = (next: AgentPresetEntry[]) => {
     entries = next;
-    active = 0;
+    active = Math.min(active, Math.max(0, next.length - 1));
     paint();
+  };
+
+  // breaks the line the reader is on and parses what it carries: a skill, a subject, or both
+  function parse(text: string): AgentTaskSource | null {
+    const match = /^\/([a-z0-9][a-z0-9_-]*)(?:\s+@(\S+))?(?:\s+([\s\S]*))?$/.exec(text.trim());
+    if (!match) {
+      const subjectOnly = /^@(\S+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+      if (!subjectOnly || !subjects.has(subjectOnly[1])) return null;
+      return sourceOf('', subjectOnly[1]);
+    }
+    const [, command, subject, rest] = match;
+    if (!skills.has(command)) return null;
+    if (subject !== undefined && !subjects.has(subject)) return null;
+    const request = (rest ?? '').trim();
+    return {...sourceOf(command, subject ?? ''), ...(request !== '' && {request})};
   }
 
-  // what the reader typed decides what is offered: the commands themselves, or the subjects
-  // of the command already named
-  function offer() {
-    const value = input.value;
-    if (!value.startsWith(commandPrefix)) {
+  // the request under the parsed line is the reader's to keep writing
+  function parseRequest(text: string) {
+    const rest = text.slice(text.indexOf('\n') + 1);
+    return text.includes('\n') ? rest : '';
+  }
+
+  // what the caret is typing decides what is offered: a skill after "/", a subject after "@"
+  const offer = () => {
+    const word = sigilWord(input.value, input.selectionStart ?? input.value.length);
+    if (!word) {
       close();
       return;
     }
-    const body = value.slice(commandPrefix.length);
-    const split = body.indexOf(' ');
-    const typed = (split === -1 ? body : body.slice(0, split)).toLowerCase();
-    const keyword = (split === -1 ? '' : body.slice(split + 1).trim()).replace(/^@/, '').toLowerCase();
-    const preset = split === -1 ? undefined : presets.find((p) => p.command === typed);
-
-    if (preset) {
-      if (preset.targets.length === 0) {
-        close(); // the task takes no subject: whatever follows is the reader's own words
-        return;
-      }
-      show(preset.targets
-        .filter((target) => target.label.toLowerCase().includes(keyword))
-        .map((target) => ({
-          label: `@${target.label}`,
+    const typed = word.word.toLowerCase();
+    if (word.sigil === commandSigil) {
+      show(presets
+        .filter((preset) => preset.command.toLowerCase().startsWith(typed))
+        .map((preset) => ({
+          label: `${commandSigil}${preset.command}`,
           hint: preset.title,
-          apply: () => tasks.set(taskOf(preset, target.subject, target.label, target.task)),
+          insert: () => insertAt(word, `${commandSigil}${preset.command}`),
         })));
       return;
     }
+    show([...subjects]
+      .filter(([subject, named]) => subject.toLowerCase().includes(typed) || named.label.toLowerCase().includes(typed))
+      .map(([subject, named]) => ({
+        label: `${subjectSigil}${named.label}`,
+        hint: named.hint,
+        insert: () => insertAt(word, `${subjectSigil}${subject}`),
+      })));
+  };
 
-    const commands = presets
-      .filter((p) => split === -1 && p.command.startsWith(typed))
-      .map((p) => ({label: `${commandPrefix}${p.command}`, hint: p.title, apply: () => runTask(p)}));
-    show(commands);
+  // completing a word writes it, then reads the line: what the palette wrote is a whole task
+  function insertAt(word: {start: number, end: number}, text: string) {
+    const value = input.value;
+    const next = `${value.slice(0, word.start)}${text}${value.slice(word.end)}`;
+    input.value = next;
+    input.setSelectionRange(word.start + text.length, word.start + text.length);
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    readLine(true);
   }
 
-  input.addEventListener('input', offer);
+  // A line that carries a whole task is read as one: as soon as the palette completes it, and
+  // when the reader types it out and breaks the line themselves.
+  function readLine(completed = false) {
+    if (tasks.current()) {
+      tasks.sync();
+      return;
+    }
+    const value = input.value;
+    const cut = value.indexOf('\n');
+    if (cut === -1 && !completed) return;
+    const source = parse(cut === -1 ? value : value.slice(0, cut));
+    if (!source) return;
+    const request = cut === -1 ? '' : parseRequest(value);
+    const next = tasks.set(source, request);
+    const caret = tokenLine(next).length + (request === '' ? 0 : 1 + request.length);
+    input.setSelectionRange(caret, caret);
+  }
+
+  input.addEventListener('input', () => {
+    offer();
+    readLine();
+  });
 
   const move = (step: number) => {
     if (entries.length === 0) return;
@@ -177,12 +232,10 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
           move(-1);
           return true;
         case 'Enter':
-        case 'Tab': {
-          const entry = entries[active];
-          entry.apply();
-          offer();
+        case 'Tab':
+          entries[active].insert();
+          close();
           return true;
-        }
         case 'Escape':
           close();
           return true;

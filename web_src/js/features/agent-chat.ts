@@ -273,7 +273,7 @@ export function initAgentChat() {
     // the task is written as its command before the form is read for sending
     composerEl.addEventListener('submit', () => tasks.apply(), {capture: true});
   }
-  initComposerKeys(composerEl, inputEl, initPresets(composerEl, inputEl, tasks ?? {set: () => {}}));
+  if (tasks) initComposerKeys(composerEl, inputEl, initPresets(composerEl, inputEl, tasks));
 
   composerEl.addEventListener('submit', async (event) => {
     event.preventDefault();
