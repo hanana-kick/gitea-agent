@@ -23,8 +23,8 @@ type Token = {display: string, canonical: string};
 // the line the tokens take, and the shape the box keeps while the task stands
 export function tokenLine(task: AgentTask) {
   return [
-    task.command === '' ? '' : `[${task.commandTitle}]`,
-    task.subject === '' ? '' : `[@${task.subjectLabel}]`,
+    task.command === '' ? '' : task.commandTitle,
+    task.subject === '' ? '' : `@${task.subjectLabel}`,
   ].filter((part) => part !== '').join(' ');
 }
 
@@ -56,8 +56,8 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
 
   const tokensOf = (kept: AgentTask): Token[] => {
     const tokens: Token[] = [];
-    if (kept.command !== '') tokens.push({display: `[${kept.commandTitle}]`, canonical: `/${kept.command}`});
-    if (kept.subject !== '') tokens.push({display: `[@${kept.subjectLabel}]`, canonical: `@${kept.subject}`});
+    if (kept.command !== '') tokens.push({display: kept.commandTitle, canonical: `/${kept.command}`});
+    if (kept.subject !== '') tokens.push({display: `@${kept.subjectLabel}`, canonical: `@${kept.subject}`});
     return tokens;
   };
 
@@ -68,7 +68,14 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
       if (index > 0) nodes.push(document.createTextNode(' '));
       const el = document.createElement('span');
       el.className = `agent-chat-token agent-chat-token-${token.canonical.startsWith('/') ? 'command' : 'subject'}`;
-      el.textContent = token.display;
+      if (token.display.startsWith('@')) {
+        const sigil = document.createElement('span');
+        sigil.className = 'agent-chat-token-sigil';
+        sigil.textContent = '@';
+        el.append(sigil, document.createTextNode(token.display.slice(1)));
+      } else {
+        el.textContent = token.display;
+      }
       nodes.push(el);
     }
     nodes.push(document.createTextNode(value.slice(tokenLine(kept).length)));

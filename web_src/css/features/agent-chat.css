@@ -1085,6 +1085,15 @@ button.agent-chat-card {
   font-weight: var(--font-weight-medium);
 }
 
+.agent-chat-preset-command {
+  padding: 1px 8px;
+  color: var(--color-primary-dark-1);
+  background: var(--color-primary-alpha-20);
+  border: 1px solid var(--color-primary-alpha-30);
+  border-radius: var(--border-radius-full, 999px);
+  font-size: 12px;
+}
+
 .agent-chat-preset-desc {
   flex: 1; /* the card's controls line up, whatever the length of its description */
   margin: 0;
@@ -1243,19 +1252,38 @@ button.agent-chat-card {
   color: transparent;
 }
 
+/* A token is a pill drawn around words the textarea still owns: the tint is a pseudo element
+   that reaches a little past the text, so the pill has room without moving the line. */
 .agent-chat-token {
-  color: transparent;
-  border-radius: 3px;
+  position: relative;
+  color: var(--color-text);
+}
+
+.agent-chat-token::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -1px -5px;
+  border-radius: var(--border-radius-full, 999px);
 }
 
 .agent-chat-token-command {
+  color: var(--color-primary-dark-1);
+}
+
+.agent-chat-token-command::before {
   background: var(--color-primary-alpha-20);
   box-shadow: inset 0 0 0 1px var(--color-primary-alpha-30);
 }
 
-.agent-chat-token-subject {
+.agent-chat-token-subject::before {
   background: var(--color-secondary-alpha-60);
-  box-shadow: inset 0 0 0 1px var(--color-secondary);
+  box-shadow: inset 0 0 0 1px var(--color-secondary-dark-1);
+}
+
+/* the at-sign marks the token, the name it carries is what the reader reads */
+.agent-chat-token-sigil {
+  color: var(--color-text-light-2);
 }
 
 .agent-chat-empty {
