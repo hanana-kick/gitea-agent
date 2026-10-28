@@ -22,8 +22,10 @@ type Token = {display: string, canonical: string};
 
 // the line the tokens take, and the shape the box keeps while the task stands
 export function tokenLine(task: AgentTask) {
-  return [task.command === '' ? '' : `/${task.commandTitle}`, task.subject === '' ? '' : `@${task.subjectLabel}`]
-    .filter((part) => part !== '').join(' ');
+  return [
+    task.command === '' ? '' : `[${task.commandTitle}]`,
+    task.subject === '' ? '' : `[@${task.subjectLabel}]`,
+  ].filter((part) => part !== '').join(' ');
 }
 
 // the message a task stands for: the command, the subject it needs, and the request
@@ -54,8 +56,8 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
 
   const tokensOf = (kept: AgentTask): Token[] => {
     const tokens: Token[] = [];
-    if (kept.command !== '') tokens.push({display: `/${kept.commandTitle}`, canonical: `/${kept.command}`});
-    if (kept.subject !== '') tokens.push({display: `@${kept.subjectLabel}`, canonical: `@${kept.subject}`});
+    if (kept.command !== '') tokens.push({display: `[${kept.commandTitle}]`, canonical: `/${kept.command}`});
+    if (kept.subject !== '') tokens.push({display: `[@${kept.subjectLabel}]`, canonical: `@${kept.subject}`});
     return tokens;
   };
 
@@ -65,7 +67,7 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
     for (const [index, token] of tokensOf(kept).entries()) {
       if (index > 0) nodes.push(document.createTextNode(' '));
       const el = document.createElement('span');
-      el.className = `agent-chat-token agent-chat-token-${token.display.startsWith('/') ? 'command' : 'subject'}`;
+      el.className = `agent-chat-token agent-chat-token-${token.canonical.startsWith('/') ? 'command' : 'subject'}`;
       el.textContent = token.display;
       nodes.push(el);
     }
