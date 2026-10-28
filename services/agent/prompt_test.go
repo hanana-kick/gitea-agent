@@ -154,3 +154,32 @@ func TestImageDataURLOnlyForPictures(t *testing.T) {
 	storeFile(t, jpeg, "abc")
 	assert.True(t, strings.HasPrefix(ImageDataURL(jpeg), "data:image/jpeg;base64,"), "the extension is case insensitive")
 }
+
+// The reader's tasks arrive as commands: the model has to be told which skill runs one and
+// which subject it reads, and an ordinary message has to be left alone.
+func TestExpandCommandNamesTheSkillAndTheSubject(t *testing.T) {
+	catalog := []*agent_model.Skill{{Name: "issue-triage", Description: "Sort issues"}, {Name: "code-review", Description: "Read code"}}
+
+	task := expandCommand("/issue-triage @acme/widgets#7 look into this", catalog)
+	assert.Contains(t, task, "The reader ran the command /issue-triage on @acme/widgets#7.")
+	assert.Contains(t, task, "What they asked for: look into this")
+	assert.Contains(t, task, `Open the "issue-triage" skill with gitea_read_skill`)
+	assert.Contains(t, task, "The subject is #7 of acme/widgets")
+	assert.Contains(t, task, "gitea_read_issue")
+
+	// a subject without a number is the repository itself, and a command without a skill is
+	// still a task, so only the skill line is missing
+	repoOnly := expandCommand("/code-review @acme/widgets", catalog)
+	assert.NotContains(t, repoOnly, "gitea_read_issue")
+	assert.Contains(t, repoOnly, "The subject is the repository acme/widgets")
+	assert.Contains(t, repoOnly, `Open the "code-review" skill`)
+
+	plain := expandCommand("/code @acme/widgets review it", catalog)
+	assert.NotContains(t, plain, "Open the")
+	assert.Contains(t, plain, "The subject is the repository acme/widgets")
+
+	// anything that is not a command is handed over as it was written
+	for _, message := range []string{"what changed today?", "/not a command", "@acme/widgets#7", "hello/code @x"} {
+		assert.Equal(t, message, expandCommand(message, catalog))
+	}
+}

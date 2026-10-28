@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -109,6 +110,45 @@ func scopePrompt(ctx context.Context, conversation *agent_model.Conversation) st
 	return "You are Pod, an agent of this Gitea instance."
 }
 
+// agentCommandPattern matches the way the reader's tasks are written: "/command @subject",
+// optionally followed by what they want in their own words.
+var agentCommandPattern = regexp.MustCompile(`^/([a-z0-9][a-z0-9_-]*)[ \t]+@([^\s]+)(?:[ \t]+([\s\S]*))?$`)
+
+// expandCommand reads a task the reader ran and says what the model needs to know about it:
+// the skill that runs it, and the subject it is aimed at. A message that is not a task is
+// handed over as the reader wrote it.
+func expandCommand(content string, catalog []*agent_model.Skill) string {
+	match := agentCommandPattern.FindStringSubmatch(strings.TrimSpace(content))
+	if match == nil {
+		return content
+	}
+	command, subject, task := match[1], match[2], strings.TrimSpace(match[3])
+
+	hints := make([]string, 0, 3)
+	for _, skill := range catalog {
+		if skill.Name == command {
+			hints = append(hints, "Open the \""+command+"\" skill with "+agent_tools.SkillToolName+" and follow its steps before you answer.")
+			break
+		}
+	}
+	if repo, number, ok := strings.Cut(subject, "#"); ok {
+		hints = append(hints,
+			"The subject is #"+number+" of "+repo+" (an issue, or a pull request when the repository reads it as one):",
+			"read it with the gitea_read_issue tool before you answer, and search around it with gitea_search_issues.")
+	} else {
+		hints = append(hints, "The subject is the repository "+subject+": start from its issues with gitea_search_issues.")
+	}
+	builder := strings.Builder{}
+	builder.WriteString(content)
+	builder.WriteString("\n\n[task] ")
+	builder.WriteString("The reader ran the command /" + command + " on @" + subject + ".")
+	if task != "" {
+		builder.WriteString(" What they asked for: " + task)
+	}
+	builder.WriteString("\n" + strings.Join(hints, "\n"))
+	return builder.String()
+}
+
 // buildPrompt renders the messages handed to the model: the scope prompt, then the
 // transcript. Files sent with a message are inlined when they are text and attached as
 // pictures when the model accepts them. Tool records are history for the reader, so they
@@ -139,6 +179,9 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 			continue
 		}
 		content, images := messageFiles(message, attachments[message.ID])
+		if message.Role == agent_model.MessageRoleUser {
+			content = expandCommand(content, catalog) // a task says which skill runs it
+		}
 		total += len(content)
 		for _, picture := range images {
 			total += len(picture)

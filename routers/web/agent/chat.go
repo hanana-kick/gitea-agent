@@ -299,7 +299,8 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 	}
 
 	// the first skill of the list this instance has, so an instance that names its skills
-	// differently still finds the one that covers the card
+	// differently still finds the one that covers the card. A card whose task has a skill is
+	// called by that skill's name: the reader's message is a command either way.
 	skillFor := func(names ...string) string {
 		for _, name := range names {
 			if _, err := agent_skills.Get(ctx, agent_model.ConversationKindRepository, name); err == nil {
@@ -308,17 +309,22 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 		}
 		return ""
 	}
-	// a card runs its task through the skill when there is one, and on its own otherwise
-	card := func(key, command, icon string, skillNames []string, prompt string, targets []agentPresetTarget, takesSubject bool) agentPreset {
+	// a task is written the way every agent is told to write it: "/command @subject", then
+	// what the reader wants in their own words
+	compose := func(command, subject, task string) string {
+		if task == "" {
+			return fmt.Sprintf("/%s @%s", command, subject)
+		}
+		return fmt.Sprintf("/%s @%s %s", command, subject, task)
+	}
+	card := func(key, fallback, icon string, skillNames []string, task string, targets []agentPresetTarget, takesSubject bool) agentPreset {
 		skill := skillFor(skillNames...)
-		withSkill := func(text string) string {
-			if skill == "" {
-				return text
-			}
-			return text + " " + string(ctx.Tr("agent.suggest_use_skill", skill))
+		command := skill
+		if command == "" {
+			command = fallback
 		}
 		for i := range targets {
-			targets[i].Prompt = withSkill(targets[i].Prompt)
+			targets[i].Prompt = compose(command, targets[i].Subject, targets[i].Task)
 		}
 		return agentPreset{
 			Key:         key,
@@ -327,7 +333,7 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 			Desc:        string(ctx.Tr("agent.suggest_" + key + "_desc")),
 			Icon:        icon,
 			Skill:       skill,
-			Prompt:      withSkill(prompt),
+			Prompt:      compose(command, repo.FullName(), task),
 			Targets:     targets,
 			NeedsTarget: takesSubject && len(targets) == 0,
 		}
@@ -355,14 +361,14 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 			}
 			for _, issue := range issues {
 				targets = append(targets, agentPresetTarget{
-					Label:  fmt.Sprintf("#%d %s", issue.Index, issue.Title),
-					Prompt: string(ctx.Tr("agent.suggest_review_pr_prompt", issue.Index, issue.Title)),
+					Label:   fmt.Sprintf("#%d %s", issue.Index, issue.Title),
+					Subject: fmt.Sprintf("%s#%d", repo.FullName(), issue.Index),
+					Task:    string(ctx.Tr("agent.suggest_review_pr_prompt", issue.Index, issue.Title)),
 				})
 			}
 		}
 		cards = append(cards, card("review_pr", "pr", "octicon-git-pull-request",
-			[]string{"pr-review", "pull-request-review", "review-pr"},
-			string(ctx.Tr("agent.suggest_review_pr_prompt", 0, "")), targets, true))
+			[]string{"pr-review", "pull-request-review", "review-pr"}, "", targets, true))
 	}
 
 	if perm.CanRead(unit.TypeIssues) {
@@ -378,14 +384,14 @@ func prepareSuggestions(ctx *context.Context, repo *repo_model.Repository) {
 		if issues, err := issues_model.Issues(ctx, &opts); err == nil {
 			for _, issue := range issues {
 				targets = append(targets, agentPresetTarget{
-					Label:  fmt.Sprintf("#%d %s", issue.Index, issue.Title),
-					Prompt: string(ctx.Tr("agent.suggest_review_issue_prompt", issue.Index, issue.Title)),
+					Label:   fmt.Sprintf("#%d %s", issue.Index, issue.Title),
+					Subject: fmt.Sprintf("%s#%d", repo.FullName(), issue.Index),
+					Task:    string(ctx.Tr("agent.suggest_review_issue_prompt", issue.Index, issue.Title)),
 				})
 			}
 		}
 		cards = append(cards, card("review_issue", "issue", "octicon-issue-opened",
-			[]string{"issue-triage", "issue-review", "triage"},
-			string(ctx.Tr("agent.suggest_review_issue_prompt", 0, "")), targets, true))
+			[]string{"issue-triage", "issue-review", "triage"}, "", targets, true))
 	}
 
 	ctx.Data["Suggestions"] = cards
@@ -405,7 +411,7 @@ type agentPreset struct {
 	Title   string `json:"title"`   // the card's label in the reader's language
 	Desc    string `json:"desc"`    // what the task does, in the reader's language
 	Icon    string `json:"icon"`
-	Skill   string `json:"skill"` // the skill the card opens, empty when this instance has none
+	Skill   string `json:"skill"` // the skill the card's command names, empty when it is a plain task
 	// Targets are the subjects the card can be aimed at; a card without any runs on the
 	// repository as a whole, or has nothing to offer yet
 	Targets     []agentPresetTarget `json:"targets"`
@@ -413,10 +419,13 @@ type agentPreset struct {
 	Prompt      string              `json:"prompt"` // the message the card writes when it takes no subject
 }
 
-// agentPresetTarget is one subject a card can be aimed at.
+// agentPresetTarget is one subject a card can be aimed at: what the reader picks, the
+// "@subject" the command names it by, and the task written out.
 type agentPresetTarget struct {
-	Label  string `json:"label"`
-	Prompt string `json:"prompt"`
+	Label   string `json:"label"`
+	Subject string `json:"subject"`
+	Task    string `json:"-"`
+	Prompt  string `json:"prompt"`
 }
 
 // ChatDraft renders the chat screen for a conversation that does not exist yet: the first

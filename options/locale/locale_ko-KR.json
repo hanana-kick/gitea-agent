@@ -4217,7 +4217,6 @@
   "agent.suggest_run": "실행",
   "agent.suggest_target": "대상",
   "agent.suggest_no_target": "고를 대상이 아직 없습니다.",
-  "agent.suggest_use_skill": "\"%s\" 스킬을 열고 그 절차를 따라줘.",
   "agent.suggest_review_code": "코드 검토",
   "agent.suggest_review_code_desc": "최근 변경사항을 읽고 문제, 위험, 개선점을 알려줍니다.",
   "agent.suggest_review_code_prompt": "이 레포지토리의 코드를 검토해줘: 최근 변경사항을 읽고 문제, 위험, 개선점을 짚어줘.",

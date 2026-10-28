@@ -625,7 +625,7 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 	}
 	messages := buildPrompt(ctx, conversation, history, attachments, offerings, catalog)
 	defs := agent_tools.Definitions(offerings)
-	model := ""
+	var model string // the model that answered, as the gateway reports it
 	for round := range engineToolRounds {
 		// the last round goes without tools, so the model has to answer with what it read
 		askedFor := defs

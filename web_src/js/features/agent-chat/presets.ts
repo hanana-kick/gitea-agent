@@ -119,7 +119,7 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement) {
     const body = value.slice(commandPrefix.length);
     const split = body.indexOf(' ');
     const typed = (split === -1 ? body : body.slice(0, split)).toLowerCase();
-    const keyword = split === -1 ? '' : body.slice(split + 1).trim().toLowerCase();
+    const keyword = (split === -1 ? '' : body.slice(split + 1).trim()).replace(/^@/, '').toLowerCase();
     const preset = split === -1 ? undefined : presets.find((p) => p.command === typed);
 
     if (preset) {
@@ -129,7 +129,7 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement) {
       }
       show(preset.targets
         .filter((target) => target.label.toLowerCase().includes(keyword))
-        .map((target) => ({label: target.label, hint: preset.title, apply: () => writeTask(input, target.prompt)})));
+        .map((target) => ({label: `@${target.label}`, hint: preset.title, apply: () => writeTask(input, target.prompt)})));
       return;
     }
 

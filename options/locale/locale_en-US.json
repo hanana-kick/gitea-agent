@@ -4218,7 +4218,6 @@
   "agent.suggest_run": "Run",
   "agent.suggest_target": "Subject",
   "agent.suggest_no_target": "Nothing to choose from yet.",
-  "agent.suggest_use_skill": "Open the \"%s\" skill and follow its steps.",
   "agent.suggest_review_code": "Review the code",
   "agent.suggest_review_code_desc": "Read the recent changes and report problems, risks and improvements.",
   "agent.suggest_review_code_prompt": "Review the code of this repository: read the recent changes and point out problems, risks and improvements.",
