@@ -20,7 +20,7 @@ const commandPrefix = '/';
 // one row of the palette the reader walks through
 type AgentPresetEntry = {label: string, hint: string, apply: () => void};
 
-function readPresets(form: HTMLFormElement): AgentPreset[] {
+export function readPresets(form: HTMLFormElement): AgentPreset[] {
   const raw = form.getAttribute('data-presets');
   if (!raw) return [];
   try {

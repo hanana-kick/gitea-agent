@@ -1219,9 +1219,43 @@ button.agent-chat-card {
   }
 }
 
-.agent-chat-input {
+/* The textarea owns the text, the caret and the selection; the mirror above it draws a tint
+   over the command and the subject of a task. It stays in the same font and adds no padding,
+   so the two wrap their lines in exactly the same places. */
+.agent-chat-input-wrap {
+  position: relative;
   flex: 1;
+  min-width: 0;
+}
+
+.agent-chat-input {
   resize: none;
+}
+
+.agent-chat-input-mirror {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: transparent;
+}
+
+.agent-chat-token {
+  color: transparent;
+  border-radius: 3px;
+}
+
+.agent-chat-token-command {
+  background: var(--color-primary-alpha-20);
+  box-shadow: inset 0 0 0 1px var(--color-primary-alpha-30);
+}
+
+.agent-chat-token-subject {
+  background: var(--color-secondary-alpha-60);
+  box-shadow: inset 0 0 0 1px var(--color-secondary);
 }
 
 .agent-chat-empty {
