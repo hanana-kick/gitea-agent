@@ -153,8 +153,8 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
     set(source: AgentTaskSource, request = '') {
       const next: AgentTask = {...source, request};
       task = next;
-      const line = tokenLine(next);
-      input.value = request === '' ? line : `${line}\n${request}`;
+      // the words the reader writes next belong under the line, not glued to it
+      input.value = `${tokenLine(next)}\n${request}`;
       input.dispatchEvent(new Event('input', {bubbles: true}));
       input.setSelectionRange(input.value.length, input.value.length);
       input.focus({preventScroll: true});

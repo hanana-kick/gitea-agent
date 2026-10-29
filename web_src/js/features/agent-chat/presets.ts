@@ -133,24 +133,20 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
   };
 
   // breaks the line the reader is on and parses what it carries: a skill, a subject, or both
-  function parse(text: string): AgentTaskSource | null {
-    const match = /^\/([a-z0-9][a-z0-9_-]*)(?:\s+@(\S+))?(?:\s+([\s\S]*))?$/.exec(text.trim());
+  // parses what one line carries — a skill, a subject, or both — and what the reader wrote
+  // after them on that line
+  function parse(line: string): {source: AgentTaskSource, rest: string} | null {
+    const text = line.trimEnd();
+    const match = /^\/([a-z0-9][a-z0-9_-]*)(?:\s+@(\S+))?(?:\s+([\s\S]*))?$/.exec(text);
     if (!match) {
-      const subjectOnly = /^@(\S+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+      const subjectOnly = /^@(\S+)(?:\s+([\s\S]*))?$/.exec(text);
       if (!subjectOnly || !subjects.has(subjectOnly[1])) return null;
-      return sourceOf('', subjectOnly[1]);
+      return {source: sourceOf('', subjectOnly[1]), rest: (subjectOnly[2] ?? '').trim()};
     }
     const [, command, subject, rest] = match;
     if (!skills.has(command)) return null;
     if (subject !== undefined && !subjects.has(subject)) return null;
-    const request = (rest ?? '').trim();
-    return {...sourceOf(command, subject ?? ''), ...(request !== '' && {request})};
-  }
-
-  // the request under the parsed line is the reader's to keep writing
-  function parseRequest(text: string) {
-    const rest = text.slice(text.indexOf('\n') + 1);
-    return text.includes('\n') ? rest : '';
+    return {source: sourceOf(command, subject ?? ''), rest: (rest ?? '').trim()};
   }
 
   // what the caret is typing decides what is offered: a skill after "/", a subject after "@"
@@ -190,8 +186,8 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
     readLine(true);
   }
 
-  // A line that carries a whole task is read as one: as soon as the palette completes it, and
-  // when the reader types it out and breaks the line themselves.
+  // A line that carries a whole task is read as one: as soon as the palette completes it, as
+  // soon as the reader finishes a word with a space, and when they break the line after it.
   function readLine(completed = false) {
     if (tasks.current()) {
       tasks.sync();
@@ -199,11 +195,13 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
     }
     const value = input.value;
     const cut = value.indexOf('\n');
-    if (cut === -1 && !completed) return;
-    const source = parse(cut === -1 ? value : value.slice(0, cut));
-    if (!source) return;
-    const request = cut === -1 ? '' : parseRequest(value);
-    const next = tasks.set(source, request);
+    const line = cut === -1 ? value : value.slice(0, cut);
+    if (!completed && cut === -1 && !line.endsWith(' ')) return; // the word is still being typed
+    const parsed = parse(line);
+    if (!parsed) return;
+    const below = cut === -1 ? '' : value.slice(cut + 1);
+    const request = [parsed.rest, below].filter((part) => part.trim() !== '').join('\n');
+    const next = tasks.set(parsed.source, request);
     const caret = tokenLine(next).length + (request === '' ? 0 : 1 + request.length);
     input.setSelectionRange(caret, caret);
   }
