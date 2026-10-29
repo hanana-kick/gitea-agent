@@ -133,23 +133,31 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
   };
 
   // breaks the line the reader is on and parses what it carries: a skill, a subject, or both
-  // parses what one line carries — a skill, a subject, or both — and what the reader wrote
-  // after them on that line
-  function parse(line: string): {source: AgentTaskSource, rest: string} | null {
-    const text = line.trimEnd();
-    const match = /^\/([a-z0-9][a-z0-9_-]*)(?:\s+@(\S+))?(?:\s+([\s\S]*))?$/.exec(text);
-    if (!match) {
-      const subjectOnly = /^@(\S+)(?:\s+([\s\S]*))?$/.exec(text);
-      if (!subjectOnly) return null;
-      if (subjects.size > 0 && !subjects.has(subjectOnly[1])) return null;
-      return {source: sourceOf('', subjectOnly[1]), rest: (subjectOnly[2] ?? '').trim()};
+  // checks a word the reader typed: a skill is one this agent knows, a subject one it can be
+  // aimed at. Where nothing is known — a session with no repository — anything is its own.
+  function readWord(sigil: string, word: string): {source: Partial<AgentTaskSource>} | null {
+    if (sigil === commandSigil) {
+      if (skills.size > 0 && !skills.has(word)) return null;
+      return {source: {command: word, commandTitle: skills.get(word) ?? word}};
     }
-    const [, command, subject, rest] = match;
-    // a session with no repository knows no subjects, so a subject it names is its own to
-    // name; where the list is known, only what is on it is read as a token
-    if (skills.size > 0 && !skills.has(command)) return null;
-    if (subject !== undefined && subjects.size > 0 && !subjects.has(subject)) return null;
-    return {source: sourceOf(command, subject ?? ''), rest: (rest ?? '').trim()};
+    if (subjects.size > 0 && !subjects.has(word)) return null;
+    return {source: {subject: word, subjectLabel: subjects.get(word)?.label ?? word}};
+  }
+
+  // the sigil word the reader just finished, wherever they wrote it: it ends at a space, at
+  // the line under the tokens, or at the word the palette completed
+  function finishedWord(completed: boolean) {
+    const value = input.value;
+    const current = tasks.current();
+    const from = current ? tokenLine(current).length : 0; // the tokens themselves are not words
+    const tail = value.slice(from);
+    // both patterns are global: matchAll refuses anything else
+    const pattern = completed ? /(^|\s)([/@])(\S+)$/g : /(^|\s)([/@])(\S+)\s/g;
+    let match: RegExpExecArray | null = null;
+    for (const found of tail.matchAll(pattern)) match = found;
+    if (match === null) return null;
+    const at = from + (match.index ?? 0) + (match[1] ?? '').length;
+    return {sigil: match[2], word: match[3], spelled: `${match[2]}${match[3]}`, at, end: from + (match.index ?? 0) + match[0].length};
   }
 
   // what the caret is typing decides what is offered: a skill after "/", a subject after "@"
@@ -189,24 +197,35 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
     readLine(true);
   }
 
-  // A line that carries a whole task is read as one: as soon as the palette completes it, as
-  // soon as the reader finishes a word with a space, and when they break the line after it.
+  // A finished sigil word becomes a token, whenever it was written and in whatever order: the
+  // two are separate, so a "/" typed after an "@" fills the other slot. What the reader wrote
+  // under the tokens is theirs, and the tokens they already have are not text to keep.
   function readLine(completed = false) {
-    if (tasks.current()) {
-      tasks.sync();
+    const current = tasks.current();
+    const word = finishedWord(completed);
+    if (!word) {
+      if (current) tasks.sync();
       return;
     }
-    const value = input.value;
-    const cut = value.indexOf('\n');
-    const line = cut === -1 ? value : value.slice(0, cut);
-    if (!completed && cut === -1 && !line.endsWith(' ')) return; // the word is still being typed
-    const parsed = parse(line);
-    if (!parsed) return;
-    const below = cut === -1 ? '' : value.slice(cut + 1);
-    const request = [parsed.rest, below].filter((part) => part.trim() !== '').join('\n');
-    const next = tasks.set(parsed.source, request);
-    const caret = tokenLine(next).length + (request === '' ? 0 : 1 + request.length);
-    input.setSelectionRange(caret, caret);
+    const read = readWord(word.sigil, word.word);
+    if (!read) {
+      if (current) tasks.sync(); // an unknown word is the reader's own text
+      return;
+    }
+    // only what stands under the tokens is the reader's request
+    const under = current === null ? 0 : tokenLine(current).length + 1;
+    const before = input.value.slice(under, word.at);
+    const request = `${before}${input.value.slice(word.end)}`.trim();
+    const source: AgentTaskSource = {
+      // the slots the reader has not filled yet, and the one they just did
+      command: '', commandTitle: '', subject: '', subjectLabel: '',
+      ...current,
+      ...read.source,
+    };
+    const next = tasks.set(source, request);
+    // the caret stays where the reader was writing, not at the end of the box
+    const at = tokenLine(next).length + (request === '' ? 0 : 1 + Math.min(before.trimEnd().length, request.length));
+    input.setSelectionRange(at, at);
   }
 
   input.addEventListener('input', () => {
