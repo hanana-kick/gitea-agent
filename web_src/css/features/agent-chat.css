@@ -1085,15 +1085,6 @@ button.agent-chat-card {
   font-weight: var(--font-weight-medium);
 }
 
-.agent-chat-preset-command {
-  padding: 1px 8px;
-  color: var(--color-primary-dark-1);
-  background: var(--color-primary-alpha-20);
-  border: 1px solid var(--color-primary-alpha-30);
-  border-radius: var(--border-radius-full, 999px);
-  font-size: 12px;
-}
-
 .agent-chat-preset-desc {
   flex: 1; /* the card's controls line up, whatever the length of its description */
   margin: 0;
