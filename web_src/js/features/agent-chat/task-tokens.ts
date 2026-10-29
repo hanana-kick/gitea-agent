@@ -24,6 +24,17 @@ const tokenGap = '  ';
 // one token of the line, as it is read and as it is sent
 type Token = {display: string, canonical: string};
 
+// where each token sits in the line the reader reads: a deletion takes the one it lands in
+export function tokenSpans(task: AgentTask) {
+  const spans: {kind: 'command' | 'subject', to: number}[] = [];
+  const command = task.command === '' ? '' : task.commandTitle;
+  const subject = task.subject === '' ? '' : `@${task.subjectLabel}`;
+  // the gap between two tokens belongs to the one before it, so a caret in it deletes that one
+  if (command !== '') spans.push({kind: 'command', to: command.length + (subject === '' ? 0 : tokenGap.length)});
+  if (subject !== '') spans.push({kind: 'subject', to: command.length + (command === '' ? 0 : tokenGap.length) + subject.length});
+  return spans;
+}
+
 // the line the tokens take, and the shape the box keeps while the task stands
 export function tokenLine(task: AgentTask) {
   return [
@@ -108,19 +119,30 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
   copyBox();
   input.addEventListener('input', sync);
   input.addEventListener('scroll', sync);
-  // A token is not something to nibble at: the first deletion that touches the line takes the
-  // whole labelling with it — both tokens, for both are one task — and leaves the reader with
-  // the words they wrote under it.
+  // A token is not something to nibble at: a deletion that lands on one takes it whole. The
+  // two are separate jobs, so the one the caret is not in stays, and the reader's own words
+  // are never touched.
   input.addEventListener('beforeinput', (event) => {
     if (!task || !event.inputType.startsWith('delete')) return;
     const caret = input.selectionStart ?? 0;
     if (caret > tokenLine(task).length) return;
     event.preventDefault();
-    const request = task.request.trim();
-    clear();
-    input.value = request;
-    input.setSelectionRange(0, 0);
-    input.dispatchEvent(new Event('input', {bubbles: true})); // the box shrinks to fit it
+    const spans = tokenSpans(task);
+    const hit = spans.find((span) => caret <= span.to) ?? spans[spans.length - 1];
+    const kept = hit.kind === 'command' ?
+      {...task, command: '', commandTitle: ''} :
+      {...task, subject: '', subjectLabel: ''};
+    const line = tokenLine(kept);
+    if (line === '') {
+      clear();
+      input.value = kept.request.trim();
+      input.setSelectionRange(0, 0);
+    } else {
+      task = kept;
+      input.value = kept.request.trim() === '' ? line : `${line}\n${kept.request}`;
+      input.setSelectionRange(line.length, line.length);
+    }
+    input.dispatchEvent(new Event('input', {bubbles: true})); // the line is read again
   });
   sync();
 
