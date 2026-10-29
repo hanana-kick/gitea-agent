@@ -152,8 +152,10 @@ export function initDraftComposer() {
   initAttachmentList(form);
   const tasks = initTaskTokens(form, input);
   if (tasks) {
-    // a task is sent as the command it stands for, not as the line the reader read
-    form.addEventListener('submit', () => tasks.apply(), {capture: true});
+    // a task is sent as the word it stands for, not as the name the reader read
+    form.addEventListener('submit', () => {
+      input.value = tasks.payload();
+    }, {capture: true});
   }
   if (tasks) initComposerKeys(form, input, initPresets(form, input, tasks));
 
@@ -167,6 +169,7 @@ export function initDraftComposer() {
       });
       const location = resp.headers.get('location');
       if (resp.ok && location) {
+        tasks?.reset();
         window.location.assign(location);
         return;
       }

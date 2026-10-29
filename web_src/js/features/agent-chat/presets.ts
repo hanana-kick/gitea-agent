@@ -2,8 +2,7 @@
 // composer, the "/" that calls a skill, and the "@" that names a subject. The two sigils are
 // separate — either may stand alone — and a line that carries them is parsed into a task when
 // it is completed from the palette or broken by the reader.
-import {tokenLine} from './task-tokens.ts';
-import type {AgentTask, AgentTaskSource} from './task-tokens.ts';
+import type {AgentToken} from './task-tokens.ts';
 
 export type AgentPresetTarget = {label: string, subject: string, task: string};
 
@@ -23,11 +22,12 @@ export type AgentPreset = {
 // one row of the palette the reader walks through
 type AgentPresetEntry = {label: string, hint: string, insert: () => void};
 
-// what the composer offers a task host: the plate, and the task it carries
+// what the composer offers a task host: a word is replaced where it stands
 type AgentTaskHost = {
-  current: () => AgentTask | null,
-  set: (source: AgentTaskSource, request?: string) => AgentTask,
-  sync: () => void,
+  replace: (at: number, end: number, token: AgentToken) => void,
+  tokenOf: (display: string) => AgentToken | undefined,
+  payload: () => string,
+  reset: () => void,
 };
 
 const commandSigil = '/';
@@ -67,18 +67,10 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
   }
   const skills = new Map(presets.map((preset) => [preset.command, preset.title]));
 
-  const sourceOf = (command: string, subject: string): AgentTaskSource => ({
-    command,
-    commandTitle: command === '' ? '' : skills.get(command) ?? command,
-    subject,
-    subjectLabel: subject === '' ? '' : subjects.get(subject)?.label ?? subject,
-    subjectFirst: false,
-  });
-
   // the tasks the cards hand over, by the command they call
   const presetOf = (command: string) => presets.find((preset) => preset.command === command);
 
-  // the cards: pick a subject, then hand that task to the composer
+  // the cards: pick a subject, and the task is written into the box as the names it reads by
   for (const card of form.closest('.agent-chat-main')!.querySelectorAll<HTMLElement>('.agent-chat-preset')) {
     const run = card.querySelector<HTMLButtonElement>('.agent-chat-preset-run');
     if (!run) continue;
@@ -87,7 +79,23 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
       const preset = presetOf(card.getAttribute('data-command')!);
       if (!preset) return;
       const subject = option?.getAttribute('data-subject') ?? card.getAttribute('data-subject')!;
-      tasks.set(sourceOf(preset.command, subject), option?.getAttribute('data-task') ?? card.getAttribute('data-task')!);
+      const request = (option?.getAttribute('data-task') ?? card.getAttribute('data-task')!) || '';
+      const words = [
+        tokenOf(commandSigil, preset.command),
+        subject === '' ? null : tokenOf(subjectSigil, subject),
+      ].filter((token) => token !== null);
+      // the box takes the words, and the plate turns each of them into the name it reads by
+      input.value = `${words.map((token) => token.canonical).join(' ')}${request === '' ? '' : `\n${request}`}`;
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      let at = 0;
+      for (const token of words) {
+        const found = input.value.indexOf(token.canonical, at);
+        if (found === -1) continue;
+        tasks.replace(found, found + token.canonical.length, token);
+        at = found + token.display.length;
+      }
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.focus({preventScroll: true});
       close();
     });
   }
@@ -134,31 +142,48 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
   };
 
   // breaks the line the reader is on and parses what it carries: a skill, a subject, or both
-  // checks a word the reader typed: a skill is one this agent knows, a subject one it can be
-  // aimed at. Where nothing is known — a session with no repository — anything is its own.
-  function readWord(sigil: string, word: string): {source: Partial<AgentTaskSource>} | null {
+  // What a word stands for: the name the reader reads, and the word that is sent. A skill
+  // reads by its own name, a subject by what it names; where nothing is known — a session
+  // with no repository — a subject is its own name.
+  function tokenOf(sigil: string, word: string): AgentToken | null {
     if (sigil === commandSigil) {
       if (skills.size > 0 && !skills.has(word)) return null;
-      return {source: {command: word, commandTitle: skills.get(word) ?? word}};
+      return {display: skills.get(word) ?? word, canonical: `${commandSigil}${word}`};
     }
     if (subjects.size > 0 && !subjects.has(word)) return null;
-    return {source: {subject: word, subjectLabel: subjects.get(word)?.label ?? word}};
+    const named = subjects.get(word);
+    return {display: `${subjectSigil}${named?.label ?? word}`, canonical: `${subjectSigil}${word}`};
   }
 
-  // the sigil word the reader just finished, wherever they wrote it: it ends at a space, at
-  // the line under the tokens, or at the word the palette completed
+  // the word the reader just finished, wherever they wrote it: it ends at a space, at a line
+  // break, or at the word the palette completed
   function finishedWord(completed: boolean) {
     const value = input.value;
-    const current = tasks.current();
-    const from = current ? tokenLine(current).length : 0; // the tokens themselves are not words
-    const tail = value.slice(from);
-    // both patterns are global: matchAll refuses anything else
     const pattern = completed ? /(^|\s)([/@])(\S+)$/g : /(^|\s)([/@])(\S+)\s/g;
     let match: RegExpExecArray | null = null;
-    for (const found of tail.matchAll(pattern)) match = found;
+    for (const found of value.matchAll(pattern)) match = found;
     if (match === null) return null;
-    const at = from + (match.index ?? 0) + (match[1] ?? '').length;
-    return {sigil: match[2], word: match[3], spelled: `${match[2]}${match[3]}`, at, end: from + (match.index ?? 0) + match[0].length};
+    const at = (match.index ?? 0) + (match[1] ?? '').length;
+    return {sigil: match[2], word: match[3], at, end: at + match[2].length + match[3].length};
+  }
+
+  // A finished word becomes the name it stands for, where the reader wrote it: the tokens are
+  // taken in whatever order they come, and the words around them are never moved.
+  function readWord(completed = false) {
+    const word = finishedWord(completed);
+    if (word === null) return;
+    const token = tokenOf(word.sigil, word.word);
+    if (token === null) return; // an unknown word is the reader's own text
+    tasks.replace(word.at, word.end, token);
+  }
+
+  // completing a word writes it where the caret is, and reads it as the name it stands for
+  function insertAt(word: {start: number, end: number}, text: string) {
+    const value = input.value;
+    input.value = `${value.slice(0, word.start)}${text}${value.slice(word.end)}`;
+    input.setSelectionRange(word.start + text.length, word.start + text.length);
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    readWord(true);
   }
 
   // what the caret is typing decides what is offered: a skill after "/", a subject after "@"
@@ -179,7 +204,7 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
         })));
       return;
     }
-    show([...subjects]
+    show(Array.from(subjects)
       .filter(([subject, named]) => subject.toLowerCase().includes(typed) || named.label.toLowerCase().includes(typed))
       .map(([subject, named]) => ({
         label: `${subjectSigil}${named.label}`,
@@ -188,52 +213,9 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
       })));
   };
 
-  // completing a word writes it, then reads the line: what the palette wrote is a whole task
-  function insertAt(word: {start: number, end: number}, text: string) {
-    const value = input.value;
-    const next = `${value.slice(0, word.start)}${text}${value.slice(word.end)}`;
-    input.value = next;
-    input.setSelectionRange(word.start + text.length, word.start + text.length);
-    input.dispatchEvent(new Event('input', {bubbles: true}));
-    readLine(true);
-  }
-
-  // A finished sigil word becomes a token, whenever it was written and in whatever order: the
-  // two are separate, so a "/" typed after an "@" fills the other slot. What the reader wrote
-  // under the tokens is theirs, and the tokens they already have are not text to keep.
-  function readLine(completed = false) {
-    const current = tasks.current();
-    const word = finishedWord(completed);
-    if (!word) {
-      if (current) tasks.sync();
-      return;
-    }
-    const read = readWord(word.sigil, word.word);
-    if (!read) {
-      if (current) tasks.sync(); // an unknown word is the reader's own text
-      return;
-    }
-    // only what stands under the tokens is the reader's request
-    const under = current === null ? 0 : tokenLine(current).length + 1;
-    const before = input.value.slice(under, word.at);
-    const request = `${before}${input.value.slice(word.end)}`.trim();
-    const source: AgentTaskSource = {
-      // the slots the reader has not filled yet, and the one they just did
-      command: '', commandTitle: '', subject: '', subjectLabel: '',
-      ...current,
-      ...read.source,
-      // the line keeps the order the reader wrote it in: an "@" typed before a "/" stays first
-      subjectFirst: current?.subjectFirst ?? word.sigil === subjectSigil,
-    };
-    const next = tasks.set(source, request);
-    // the caret stays where the reader was writing, not at the end of the box
-    const at = tokenLine(next).length + (request === '' ? 0 : 1 + Math.min(before.trimEnd().length, request.length));
-    input.setSelectionRange(at, at);
-  }
-
   input.addEventListener('input', () => {
     offer();
-    readLine();
+    readWord();
   });
 
   const move = (step: number) => {

@@ -270,8 +270,10 @@ export function initAgentChat() {
   const clearAttachments = initAttachmentList(composerEl);
   const tasks = initTaskTokens(composerEl, inputEl);
   if (tasks) {
-    // the task is written as its command before the form is read for sending
-    composerEl.addEventListener('submit', () => tasks.apply(), {capture: true});
+    // the message carries the words the names stand for, written just before it is sent
+    composerEl.addEventListener('submit', () => {
+      inputEl.value = tasks.payload();
+    }, {capture: true});
   }
   if (tasks) initComposerKeys(composerEl, inputEl, initPresets(composerEl, inputEl, tasks));
 
@@ -288,6 +290,7 @@ export function initAgentChat() {
         return;
       }
       inputEl.value = '';
+      tasks?.reset(); // the names were sent as the words they stand for
       clearAttachments(); // the files are sent, so the next message starts without them
       if (!pendingEl) setPendingState('queued', labels.queued); // the run event follows, this avoids a gap
     } catch (error) {

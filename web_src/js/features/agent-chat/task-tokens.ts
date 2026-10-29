@@ -1,68 +1,25 @@
-// The composer writes tasks: "/" calls a skill, "@" names a subject, and they are separate —
-// either may stand alone. What the reader reads is not what is sent: the box shows the skill's
-// name and the subject's own name ("@#2 CI 타임아웃 재발 조사"), while the message carries the
-// command and the reference it needs ("/pr @acme/widgets#2").
+// A task is written where the reader writes it: the word they picked — "/pr", "@acme/widgets#2"
+// — is replaced in place by the name they read, and the rest of the text is left exactly as it
+// was. Nothing is moved, nothing leads: the tokens stand in the text at their own positions,
+// in whatever order they were written.
 //
-// A token is parsed when the reader completes it from the palette or breaks the line after
-// typing it, and it is not an object in the box: the caret moves through it like any text, and
-// the first deletion inside the line it sits on hands the whole line back as plain text.
-export type AgentTask = {
-  command: string, // the skill the line calls, without the slash
-  commandTitle: string, // what that skill is called in the reader's language, and what is read
-  subject: string, // the reference the message needs, without the at-sign
-  subjectLabel: string, // what the reader reads instead
-  request: string, // the reader's own words
-  // the two are separate, so neither leads: the line keeps the order the reader wrote them in
-  subjectFirst: boolean,
-};
+// What is read is not what is sent. The plate keeps what each replaced name stands for, and
+// writes it back into the message on the way out.
+const sigilWordPattern = (words: string[]) =>
+  new RegExp(words.map((word) => word.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
 
-// what a card or a palette row hands over: a task with no request yet
-export type AgentTaskSource = Omit<AgentTask, 'request'>;
+// a name the reader reads, and the word it stands for
+export type AgentToken = {display: string, canonical: string};
 
-// the tokens are two words apart, so the pills drawn around them do not run into each other;
-// the mirror has to keep the very same gap, or its words drift away from the textarea's
-const tokenGap = '  ';
-
-// one token of the line, as it is read and as it is sent
-type Token = {display: string, canonical: string};
-
-// the tokens of a task in the order they are read, and the one the reader wrote first
-function tokensOf(task: AgentTask): Token[] {
-  const command: Token | null = task.command === '' ? null : {display: task.commandTitle, canonical: `/${task.command}`};
-  const subject: Token | null = task.subject === '' ? null : {display: `@${task.subjectLabel}`, canonical: `@${task.subject}`};
-  const tokens = task.subjectFirst ? [subject, command] : [command, subject];
-  return tokens.filter((token) => token !== null);
-}
-
-// where each token sits in the line the reader reads: a deletion takes the one it lands in
-export function tokenSpans(task: AgentTask) {
-  const spans: {kind: 'command' | 'subject', to: number}[] = [];
-  let at = 0;
-  for (const [index, token] of tokensOf(task).entries()) {
-    if (index > 0) at += tokenGap.length; // the gap belongs to the token before it
-    at += token.display.length;
-    spans.push({kind: token.canonical.startsWith('/') ? 'command' : 'subject', to: at});
-  }
-  return spans;
-}
-
-// the line the tokens take, and the shape the box keeps while the task stands
-export function tokenLine(task: AgentTask) {
-  return tokensOf(task).map((token) => token.display).join(tokenGap);
-}
-
-// the message a task stands for: the command, the subject it needs, and the request
-export function taskPayload(task: AgentTask) {
-  const parts = tokensOf(task).map((token) => token.canonical);
-  if (task.request.trim() !== '') parts.push(task.request.trim());
-  return parts.join(' ');
-}
+// one occurrence of a token in the text
+type AgentTokenSpan = {token: AgentToken, from: number, to: number};
 
 export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement) {
   const mirror = form.querySelector<HTMLElement>('.agent-chat-input-mirror');
   if (!mirror) return null;
 
-  let task: AgentTask | null = null;
+  // what each name in the text stands for; a name the reader deletes is forgotten with it
+  const tokens = new Map<string, AgentToken>();
 
   // the mirror has to lay its text on the very box the textarea uses, or the plate lands
   // beside the words instead of behind them: take the metrics from the textarea itself
@@ -74,98 +31,76 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
     for (const property of from) mirror.style[property] = style[property];
   };
 
-  // paints the line: the tokens are marked, the reader's own words are not
-  const paint = (kept: AgentTask, value: string) => {
-    const nodes: Node[] = [];
-    for (const [index, token] of tokensOf(kept).entries()) {
-      if (index > 0) nodes.push(document.createTextNode(tokenGap));
-      const el = document.createElement('span');
-      el.className = `agent-chat-token agent-chat-token-${token.canonical.startsWith('/') ? 'command' : 'subject'}`;
-      el.textContent = token.display;
-      nodes.push(el);
+  // where the names the reader reads stand, in the order the text carries them
+  const spans = (): AgentTokenSpan[] => {
+    const value = input.value;
+    if (tokens.size === 0) return [];
+    const found: AgentTokenSpan[] = [];
+    const pattern = sigilWordPattern(Array.from(tokens.keys()));
+    for (const match of value.matchAll(pattern)) {
+      const token = tokens.get(match[0]);
+      if (token) found.push({token, from: match.index, to: match.index + match[0].length});
     }
-    nodes.push(document.createTextNode(value.slice(tokenLine(kept).length)));
+    return found;
+  };
+
+  const paint = () => {
+    const value = input.value;
+    const nodes: Node[] = [];
+    let at = 0;
+    for (const span of spans()) {
+      if (span.from > at) nodes.push(document.createTextNode(value.slice(at, span.from)));
+      const el = document.createElement('span');
+      el.className = `agent-chat-token agent-chat-token-${span.token.canonical.startsWith('/') ? 'command' : 'subject'}`;
+      el.textContent = span.token.display;
+      nodes.push(el);
+      at = span.to;
+    }
+    nodes.push(document.createTextNode(value.slice(at)));
     if (value.endsWith('\n')) nodes.push(document.createTextNode(' '));
     mirror.replaceChildren(...nodes);
     mirror.scrollTop = input.scrollTop; // a value taller than the box scrolls with it
   };
 
-  const clear = () => {
-    task = null;
-    mirror.replaceChildren();
-  };
-
-  const requestOf = (value: string) => {
-    const rest = value.slice(tokenLine(task as AgentTask).length);
-    return rest.replace(/^\n/, '');
-  };
-
-  const sync = () => {
-    if (!task) {
-      mirror.replaceChildren();
-      return;
-    }
-    // the line stands only while it is untouched: the first edit hands it back as plain text
-    if (!input.value.startsWith(tokenLine(task))) {
-      clear();
-      return;
-    }
-    task = {...task, request: requestOf(input.value)}; // the words under the line are the reader's
-    paint(task, input.value);
-  };
-
   copyBox();
-  input.addEventListener('input', sync);
-  input.addEventListener('scroll', sync);
-  // A token is not something to nibble at: a deletion that lands on one takes it whole. The
-  // two are separate jobs, so the one the caret is not in stays, and the reader's own words
-  // are never touched.
+  input.addEventListener('input', paint);
+  input.addEventListener('scroll', paint);
+  // a name is not something to nibble at: a deletion that lands on one takes it whole, and
+  // the words around it are never touched
   input.addEventListener('beforeinput', (event) => {
-    if (!task || !event.inputType.startsWith('delete')) return;
+    if (!event.inputType.startsWith('delete')) return;
     const caret = input.selectionStart ?? 0;
-    if (caret > tokenLine(task).length) return;
+    const span = spans().find((one) => caret > one.from && caret <= one.to);
+    if (!span) return;
     event.preventDefault();
-    const spans = tokenSpans(task);
-    const hit = spans.find((span) => caret <= span.to) ?? spans[spans.length - 1];
-    const kept = hit.kind === 'command' ?
-      {...task, command: '', commandTitle: ''} :
-      {...task, subject: '', subjectLabel: ''};
-    const line = tokenLine(kept);
-    if (line === '') {
-      clear();
-      input.value = kept.request.trim();
-      input.setSelectionRange(0, 0);
-    } else {
-      task = kept;
-      input.value = kept.request.trim() === '' ? line : `${line}\n${kept.request}`;
-      input.setSelectionRange(line.length, line.length);
-    }
-    input.dispatchEvent(new Event('input', {bubbles: true})); // the line is read again
+    input.value = `${input.value.slice(0, span.from)}${input.value.slice(span.to)}`;
+    input.setSelectionRange(span.from, span.from);
+    input.dispatchEvent(new Event('input', {bubbles: true}));
   });
-  sync();
+  paint();
 
   return {
-    // the task the box currently stands for, for the palette to reason about
-    current: () => task,
-    // puts a task in the box: the reader reads the line, writes what they want under it
-    set(source: AgentTaskSource, request = '') {
-      const next: AgentTask = {...source, request};
-      task = next;
-      // the words the reader writes next belong under the line, not glued to it
-      input.value = `${tokenLine(next)}\n${request}`;
+    // the word the reader picked is replaced by the name they read, where they wrote it
+    replace(at: number, end: number, token: AgentToken): void {
+      tokens.set(token.display, token);
+      input.value = `${input.value.slice(0, at)}${token.display}${input.value.slice(end)}`;
+      input.setSelectionRange(at + token.display.length, at + token.display.length);
       input.dispatchEvent(new Event('input', {bubbles: true}));
-      input.setSelectionRange(input.value.length, input.value.length);
-      input.focus({preventScroll: true});
-      return next;
     },
-    sync,
-    // writes the message a task stands for, and hands the box back to the reader
-    apply(): string | null {
-      if (!task) return null;
-      const value = taskPayload(task);
-      clear();
-      input.value = value;
+    // what a name stands for, when the reader picked one that is already in the text
+    tokenOf: (display: string) => tokens.get(display),
+    // the message: every name written back as the word it stands for
+    payload(): string {
+      let value = input.value;
+      for (const span of spans().reverse()) {
+        value = `${value.slice(0, span.from)}${span.token.canonical}${value.slice(span.to)}`;
+      }
       return value;
+    },
+    // the box is the reader's again
+    reset(): void {
+      tokens.clear();
+      mirror.replaceChildren();
     },
   };
 }
