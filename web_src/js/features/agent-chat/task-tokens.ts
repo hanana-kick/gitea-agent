@@ -108,6 +108,17 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
   copyBox();
   input.addEventListener('input', sync);
   input.addEventListener('scroll', sync);
+  // a token is not something to nibble at: the first deletion that touches one takes the
+  // whole task with it, and the box is the reader's again
+  input.addEventListener('beforeinput', (event) => {
+    if (!task || !event.inputType.startsWith('delete')) return;
+    const caret = input.selectionStart ?? 0;
+    if (caret > tokenLine(task).length) return;
+    event.preventDefault();
+    clear();
+    input.value = '';
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+  });
   sync();
 
   return {
