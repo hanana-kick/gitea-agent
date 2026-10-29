@@ -17,6 +17,10 @@ export type AgentTask = {
 // what a card or a palette row hands over: a task with no request yet
 export type AgentTaskSource = Omit<AgentTask, 'request'>;
 
+// the tokens are two words apart, so the pills drawn around them do not run into each other;
+// the mirror has to keep the very same gap, or its words drift away from the textarea's
+const tokenGap = '  ';
+
 // one token of the line, as it is read and as it is sent
 type Token = {display: string, canonical: string};
 
@@ -25,7 +29,7 @@ export function tokenLine(task: AgentTask) {
   return [
     task.command === '' ? '' : task.commandTitle,
     task.subject === '' ? '' : `@${task.subjectLabel}`,
-  ].filter((part) => part !== '').join(' ');
+  ].filter((part) => part !== '').join(tokenGap);
 }
 
 // the message a task stands for: the command, the subject it needs, and the request
@@ -65,17 +69,10 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
   const paint = (kept: AgentTask, value: string) => {
     const nodes: Node[] = [];
     for (const [index, token] of tokensOf(kept).entries()) {
-      if (index > 0) nodes.push(document.createTextNode(' '));
+      if (index > 0) nodes.push(document.createTextNode(tokenGap));
       const el = document.createElement('span');
       el.className = `agent-chat-token agent-chat-token-${token.canonical.startsWith('/') ? 'command' : 'subject'}`;
-      if (token.display.startsWith('@')) {
-        const sigil = document.createElement('span');
-        sigil.className = 'agent-chat-token-sigil';
-        sigil.textContent = '@';
-        el.append(sigil, document.createTextNode(token.display.slice(1)));
-      } else {
-        el.textContent = token.display;
-      }
+      el.textContent = token.display;
       nodes.push(el);
     }
     nodes.push(document.createTextNode(value.slice(tokenLine(kept).length)));
