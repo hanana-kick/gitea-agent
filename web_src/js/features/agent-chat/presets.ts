@@ -140,12 +140,15 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
     const match = /^\/([a-z0-9][a-z0-9_-]*)(?:\s+@(\S+))?(?:\s+([\s\S]*))?$/.exec(text);
     if (!match) {
       const subjectOnly = /^@(\S+)(?:\s+([\s\S]*))?$/.exec(text);
-      if (!subjectOnly || !subjects.has(subjectOnly[1])) return null;
+      if (!subjectOnly) return null;
+      if (subjects.size > 0 && !subjects.has(subjectOnly[1])) return null;
       return {source: sourceOf('', subjectOnly[1]), rest: (subjectOnly[2] ?? '').trim()};
     }
     const [, command, subject, rest] = match;
-    if (!skills.has(command)) return null;
-    if (subject !== undefined && !subjects.has(subject)) return null;
+    // a session with no repository knows no subjects, so a subject it names is its own to
+    // name; where the list is known, only what is on it is read as a token
+    if (skills.size > 0 && !skills.has(command)) return null;
+    if (subject !== undefined && subjects.size > 0 && !subjects.has(subject)) return null;
     return {source: sourceOf(command, subject ?? ''), rest: (rest ?? '').trim()};
   }
 

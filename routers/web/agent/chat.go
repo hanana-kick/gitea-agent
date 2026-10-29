@@ -22,6 +22,7 @@ import (
 	"gitea.dev/modules/optional"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
+	"gitea.dev/modules/util"
 	agent_service "gitea.dev/services/agent"
 	agent_skills "gitea.dev/services/agent/skills"
 	"gitea.dev/services/context"
@@ -182,6 +183,11 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 		}
 	}
 	ctx.Data["RepoGroups"] = groupRepositories(list, openRepoID)
+	if promptRepo == nil {
+		// a session with no repository still writes tasks: the skills it may open are its
+		// commands, and any subject it names is its own to name
+		prepareSkillCommands(ctx, sessionKindOf(session))
+	}
 	ctx.Data["Title"] = ctx.Tr("agent.chat_title")
 	ctx.Data["PageIsAgentChat"] = true
 	if promptRepo != nil {
@@ -284,6 +290,41 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 			ctx.Data["PendingRunID"] = run.ID
 		}
 	}
+}
+
+// sessionKindOf is the kind of session a screen shows; a draft is a server session.
+func sessionKindOf(session *agent_model.Conversation) string {
+	if session == nil {
+		return agent_model.ConversationKindServer
+	}
+	return session.Kind
+}
+
+// prepareSkillCommands hands the composer the skills of a session with no repository, so "/"
+// offers what this session may open and a "/skill" line is read as the task it is.
+func prepareSkillCommands(ctx *context.Context, kind string) {
+	skills, err := agent_skills.List(ctx, kind)
+	if err != nil {
+		ctx.ServerError("List", err)
+		return
+	}
+	commands := make([]agentPreset, 0, len(skills))
+	for _, skill := range skills {
+		commands = append(commands, agentPreset{
+			Key:     "skill_" + skill.Name,
+			Command: skill.Name,
+			Title:   skill.Name,
+			Desc:    util.EllipsisDisplayString(strings.ReplaceAll(skill.Description, "\n", " "), 80),
+			Icon:    "octicon-agent",
+			Skill:   skill.Name,
+		})
+	}
+	presets, err := json.Marshal(commands)
+	if err != nil {
+		ctx.ServerError("json.Marshal", err)
+		return
+	}
+	ctx.Data["PresetsJSON"] = string(presets)
 }
 
 // prepareSuggestions fills the cards a repository agent offers: review the code, review one
