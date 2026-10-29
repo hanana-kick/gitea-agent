@@ -12,6 +12,8 @@ export type AgentTask = {
   subject: string, // the reference the message needs, without the at-sign
   subjectLabel: string, // what the reader reads instead
   request: string, // the reader's own words
+  // the two are separate, so neither leads: the line keeps the order the reader wrote them in
+  subjectFirst: boolean,
 };
 
 // what a card or a palette row hands over: a task with no request yet
@@ -24,31 +26,34 @@ const tokenGap = '  ';
 // one token of the line, as it is read and as it is sent
 type Token = {display: string, canonical: string};
 
+// the tokens of a task in the order they are read, and the one the reader wrote first
+function tokensOf(task: AgentTask): Token[] {
+  const command: Token | null = task.command === '' ? null : {display: task.commandTitle, canonical: `/${task.command}`};
+  const subject: Token | null = task.subject === '' ? null : {display: `@${task.subjectLabel}`, canonical: `@${task.subject}`};
+  const tokens = task.subjectFirst ? [subject, command] : [command, subject];
+  return tokens.filter((token) => token !== null);
+}
+
 // where each token sits in the line the reader reads: a deletion takes the one it lands in
 export function tokenSpans(task: AgentTask) {
   const spans: {kind: 'command' | 'subject', to: number}[] = [];
-  const command = task.command === '' ? '' : task.commandTitle;
-  const subject = task.subject === '' ? '' : `@${task.subjectLabel}`;
-  // the gap between two tokens belongs to the one before it, so a caret in it deletes that one
-  if (command !== '') spans.push({kind: 'command', to: command.length + (subject === '' ? 0 : tokenGap.length)});
-  if (subject !== '') spans.push({kind: 'subject', to: command.length + (command === '' ? 0 : tokenGap.length) + subject.length});
+  let at = 0;
+  for (const [index, token] of tokensOf(task).entries()) {
+    if (index > 0) at += tokenGap.length; // the gap belongs to the token before it
+    at += token.display.length;
+    spans.push({kind: token.canonical.startsWith('/') ? 'command' : 'subject', to: at});
+  }
   return spans;
 }
 
 // the line the tokens take, and the shape the box keeps while the task stands
 export function tokenLine(task: AgentTask) {
-  return [
-    task.command === '' ? '' : task.commandTitle,
-    task.subject === '' ? '' : `@${task.subjectLabel}`,
-  ].filter((part) => part !== '').join(tokenGap);
+  return tokensOf(task).map((token) => token.display).join(tokenGap);
 }
 
 // the message a task stands for: the command, the subject it needs, and the request
 export function taskPayload(task: AgentTask) {
-  const parts = [
-    task.command === '' ? '' : `/${task.command}`,
-    task.subject === '' ? '' : `@${task.subject}`,
-  ].filter((part) => part !== '');
+  const parts = tokensOf(task).map((token) => token.canonical);
   if (task.request.trim() !== '') parts.push(task.request.trim());
   return parts.join(' ');
 }
@@ -67,13 +72,6 @@ export function initTaskTokens(form: HTMLFormElement, input: HTMLTextAreaElement
       'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'fontFamily', 'fontSize',
       'fontWeight', 'lineHeight', 'letterSpacing', 'textIndent'] as const;
     for (const property of from) mirror.style[property] = style[property];
-  };
-
-  const tokensOf = (kept: AgentTask): Token[] => {
-    const tokens: Token[] = [];
-    if (kept.command !== '') tokens.push({display: kept.commandTitle, canonical: `/${kept.command}`});
-    if (kept.subject !== '') tokens.push({display: `@${kept.subjectLabel}`, canonical: `@${kept.subject}`});
-    return tokens;
   };
 
   // paints the line: the tokens are marked, the reader's own words are not

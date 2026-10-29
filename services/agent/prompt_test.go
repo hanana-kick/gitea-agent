@@ -156,7 +156,7 @@ func TestImageDataURLOnlyForPictures(t *testing.T) {
 }
 
 // The reader's tasks arrive as commands: the model has to be told which skill runs one and
-// which subject it reads, and an ordinary message has to be left alone.
+// which subject it reads, whichever of the two leads, and an ordinary message is left alone.
 func TestExpandCommandNamesTheSkillAndTheSubject(t *testing.T) {
 	catalog := []*agent_model.Skill{{Name: "issue-triage", Description: "Sort issues"}, {Name: "code-review", Description: "Read code"}}
 
@@ -166,6 +166,11 @@ func TestExpandCommandNamesTheSkillAndTheSubject(t *testing.T) {
 	assert.Contains(t, task, `Open the "issue-triage" skill with gitea_read_skill`)
 	assert.Contains(t, task, "The subject is #7 of acme/widgets")
 	assert.Contains(t, task, "gitea_read_issue")
+
+	// the two are separate: the subject may lead, and it may stand alone
+	reversed := expandCommand("@acme/widgets#7 /issue-triage look into this", catalog)
+	assert.Contains(t, reversed, "The subject is #7 of acme/widgets")
+	assert.Contains(t, reversed, `Open the "issue-triage" skill`)
 
 	// a subject without a number is the repository itself, and a command without a skill is
 	// still a task, so only the skill line is missing
@@ -178,8 +183,8 @@ func TestExpandCommandNamesTheSkillAndTheSubject(t *testing.T) {
 	assert.NotContains(t, plain, "Open the")
 	assert.Contains(t, plain, "The subject is the repository acme/widgets")
 
-	// anything that is not a command is handed over as it was written
-	for _, message := range []string{"what changed today?", "/not a command", "@acme/widgets#7", "hello/code @x"} {
+	// anything without a skill is not a command: it is handed over as it was written
+	for _, message := range []string{"what changed today?", "what about /usr/bin?", "hello @acme/widgets", "and/or"} {
 		assert.Equal(t, message, expandCommand(message, catalog))
 	}
 }

@@ -72,6 +72,7 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
     commandTitle: command === '' ? '' : skills.get(command) ?? command,
     subject,
     subjectLabel: subject === '' ? '' : subjects.get(subject)?.label ?? subject,
+    subjectFirst: false,
   });
 
   // the tasks the cards hand over, by the command they call
@@ -221,6 +222,8 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
       command: '', commandTitle: '', subject: '', subjectLabel: '',
       ...current,
       ...read.source,
+      // the line keeps the order the reader wrote it in: an "@" typed before a "/" stays first
+      subjectFirst: current?.subjectFirst ?? word.sigil === subjectSigil,
     };
     const next = tasks.set(source, request);
     // the caret stays where the reader was writing, not at the end of the box
