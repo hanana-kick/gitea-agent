@@ -46,14 +46,18 @@ type searchIssuesTool struct{}
 func (searchIssuesTool) Name() string { return "gitea_search_issues" }
 
 func (searchIssuesTool) Description() string {
-	return "Search Gitea issues by keyword. Use when the user asks about open work, bugs or tasks. " +
-		"Returns issue titles, numbers and the repository they belong to."
+	return "Search Gitea issues by keyword, or list the newest issues when no keyword is given. Use " +
+		"when the user asks about open work, bugs or tasks. Returns issue titles, numbers, states " +
+		"and the repository they belong to."
 }
 
 func (searchIssuesTool) Scope() Scope { return ScopeUser }
 
 func (searchIssuesTool) Args() []Arg {
-	return []Arg{{Name: "keyword", Description: "Text to look for in issue titles and bodies"}}
+	return []Arg{{
+		Name: "keyword", Optional: true,
+		Description: "Text to look for in issue titles and bodies; leave it out to list the newest issues",
+	}}
 }
 
 func (searchIssuesTool) Run(ctx context.Context, doer *user_model.User, session Session, args string) (string, error) {
@@ -64,14 +68,14 @@ func (searchIssuesTool) Run(ctx context.Context, doer *user_model.User, session 
 		return "", err
 	}
 	params.Keyword = strings.TrimSpace(params.Keyword)
-	if params.Keyword == "" {
-		return "The keyword argument is required.", nil
-	}
 	issues, err := matchedIssues(ctx, doer, session.RepoID, params.Keyword)
 	if err != nil {
 		return "", err
 	}
 	if len(issues) == 0 {
+		if params.Keyword == "" {
+			return "No issues are visible here.", nil
+		}
 		return "No issues matched the keyword.", nil
 	}
 	lines := make([]string, 0, len(issues))
@@ -84,12 +88,14 @@ func (searchIssuesTool) Run(ctx context.Context, doer *user_model.User, session 
 	return clip(strings.Join(lines, "\n")), nil
 }
 
-// matchedIssues finds the issues the doer may see that mention the keyword. A repository
-// session passes its repository, so the search never leaves it. The index does the
-// matching while it is running; otherwise the newest issues are filtered here, which only
-// reaches as far as the listing does.
+// matchedIssues finds the issues the doer may see that mention the keyword; with no keyword
+// it lists the newest ones instead. A repository session passes its repository, so neither
+// ever leaves it. The index does the matching while it is running; otherwise the newest
+// issues are filtered here, which only reaches as far as the listing does.
 func matchedIssues(ctx context.Context, doer *user_model.User, repoID int64, keyword string) ([]*issues_model.Issue, error) {
-	indexed := issue_indexer.IsAvailable(ctx)
+	// no keyword asks what is there, not what matches: the listing is the answer itself
+	listing := keyword == ""
+	indexed := issue_indexer.IsAvailable(ctx) && !listing
 	options := issues_model.IssuesOptions{
 		Doer:      doer,
 		AllPublic: true,
@@ -121,7 +127,7 @@ func matchedIssues(ctx context.Context, doer *user_model.User, repoID int64, key
 	if err != nil {
 		return nil, err
 	}
-	if indexed {
+	if indexed || listing {
 		return issues, nil
 	}
 	wanted := strings.ToLower(keyword)

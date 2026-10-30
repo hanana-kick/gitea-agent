@@ -56,7 +56,8 @@ func TestDefinitionsDescribeArgumentsForTheModel(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(parameters, &schema))
 	assert.Equal(t, "object", schema.Type)
-	assert.Equal(t, []string{"keyword"}, schema.Required)
+	// the keyword may be left out: without one the tool lists what is there
+	assert.Empty(t, schema.Required)
 	assert.Equal(t, "string", schema.Properties["keyword"]["type"])
 	assert.NotEmpty(t, schema.Properties["keyword"]["description"])
 

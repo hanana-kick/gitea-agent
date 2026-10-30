@@ -61,6 +61,8 @@ type Arg struct {
 	Description string
 	// Type is the JSON type of the argument; "string" when empty.
 	Type string
+	// Optional marks an argument the model may leave out, so the schema does not demand it.
+	Optional bool
 }
 
 // Session is what a tool may know about the session it runs in. Most tools only read what
@@ -130,7 +132,9 @@ func Definitions(list []Tool) []llm.ToolDef {
 				kind = "string"
 			}
 			properties[arg.Name] = map[string]any{"type": kind, "description": arg.Description}
-			required = append(required, arg.Name)
+			if !arg.Optional {
+				required = append(required, arg.Name)
+			}
 		}
 		parameters := map[string]any{"type": "object", "properties": properties}
 		if len(required) > 0 {
