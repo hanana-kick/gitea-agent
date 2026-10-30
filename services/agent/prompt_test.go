@@ -159,8 +159,9 @@ func TestImageDataURLOnlyForPictures(t *testing.T) {
 // which subject it reads, whichever of the two leads, and an ordinary message is left alone.
 func TestExpandCommandNamesTheSkillAndTheSubject(t *testing.T) {
 	catalog := []*agent_model.Skill{{Name: "issue-triage", Description: "Sort issues"}, {Name: "code-review", Description: "Read code"}}
+	all := map[string]bool{"gitea_read_skill": true, "gitea_read_issue": true, "gitea_search_issues": true}
 
-	task := expandCommand("/issue-triage @acme/widgets#7 look into this", catalog)
+	task := expandCommand("/issue-triage @acme/widgets#7 look into this", catalog, all)
 	assert.Contains(t, task, "The reader ran the command /issue-triage on @acme/widgets#7.")
 	assert.Contains(t, task, "What they asked for: look into this")
 	assert.Contains(t, task, `Open the "issue-triage" skill with gitea_read_skill`)
@@ -168,23 +169,39 @@ func TestExpandCommandNamesTheSkillAndTheSubject(t *testing.T) {
 	assert.Contains(t, task, "gitea_read_issue")
 
 	// the two are separate: the subject may lead, and it may stand alone
-	reversed := expandCommand("@acme/widgets#7 /issue-triage look into this", catalog)
+	reversed := expandCommand("@acme/widgets#7 /issue-triage look into this", catalog, all)
 	assert.Contains(t, reversed, "The subject is #7 of acme/widgets")
 	assert.Contains(t, reversed, `Open the "issue-triage" skill`)
 
 	// a subject without a number is the repository itself, and a command without a skill is
 	// still a task, so only the skill line is missing
-	repoOnly := expandCommand("/code-review @acme/widgets", catalog)
+	repoOnly := expandCommand("/code-review @acme/widgets", catalog, all)
 	assert.NotContains(t, repoOnly, "gitea_read_issue")
 	assert.Contains(t, repoOnly, "The subject is the repository acme/widgets")
 	assert.Contains(t, repoOnly, `Open the "code-review" skill`)
 
-	plain := expandCommand("/code @acme/widgets review it", catalog)
+	plain := expandCommand("/code @acme/widgets review it", catalog, all)
 	assert.NotContains(t, plain, "Open the")
 	assert.Contains(t, plain, "The subject is the repository acme/widgets")
 
 	// anything without a skill is not a command: it is handed over as it was written
 	for _, message := range []string{"what changed today?", "what about /usr/bin?", "hello @acme/widgets", "and/or"} {
-		assert.Equal(t, message, expandCommand(message, catalog))
+		assert.Equal(t, message, expandCommand(message, catalog, all))
 	}
+
+	// the task still reads the same way without any tool to name: a session is never sent
+	// after a tool it was not offered
+	none := expandCommand("/issue-triage @acme/widgets#7 look into this", catalog, map[string]bool{})
+	assert.Contains(t, none, "The reader ran the command /issue-triage on @acme/widgets#7.")
+	assert.Contains(t, none, "The subject is #7 of acme/widgets")
+	assert.NotContains(t, none, "gitea_")
+
+	repoNoTools := expandCommand("/code @acme/widgets review it", catalog, map[string]bool{})
+	assert.Contains(t, repoNoTools, "The subject is the repository acme/widgets.")
+	assert.NotContains(t, repoNoTools, "gitea_search_issues")
+	// one of the two lookups is offered: only that one is named
+	partial := expandCommand("/issue-triage @acme/widgets#7 look into this", catalog, map[string]bool{"gitea_search_issues": true})
+	assert.Contains(t, partial, "search around it with gitea_search_issues")
+	assert.NotContains(t, partial, "gitea_read_issue")
+	assert.NotContains(t, partial, "Open the")
 }

@@ -124,8 +124,9 @@ var (
 
 // expandCommand reads a task the reader ran and says what the model needs to know about it:
 // the skill that runs it, and the subject it is aimed at. A message that carries neither is
-// handed over as the reader wrote it.
-func expandCommand(content string, catalog []*agent_model.Skill) string {
+// handed over as the reader wrote it. A tool is only named when the session was offered it,
+// so a task never sends the model after something it cannot call.
+func expandCommand(content string, catalog []*agent_model.Skill, offered map[string]bool) string {
 	command := agentCommandSkill.FindStringSubmatch(content)
 	subject := agentCommandSubject.FindStringSubmatch(content)
 	if command == nil || !agentCommandLead.MatchString(content) {
@@ -133,19 +134,32 @@ func expandCommand(content string, catalog []*agent_model.Skill) string {
 	}
 
 	hints := make([]string, 0, 3)
-	for _, skill := range catalog {
-		if skill.Name == command[1] {
-			hints = append(hints, "Open the \""+command[1]+"\" skill with "+agent_tools.SkillToolName+" and follow its steps before you answer.")
-			break
+	if offered[agent_tools.SkillToolName] {
+		for _, skill := range catalog {
+			if skill.Name == command[1] {
+				hints = append(hints, "Open the \""+command[1]+"\" skill with "+agent_tools.SkillToolName+" and follow its steps before you answer.")
+				break
+			}
 		}
 	}
 	if subject != nil {
 		if repo, number, ok := strings.Cut(subject[1], "#"); ok {
-			hints = append(hints,
-				"The subject is #"+number+" of "+repo+" (an issue, or a pull request when the repository reads it as one):",
-				"read it with the gitea_read_issue tool before you answer, and search around it with gitea_search_issues.")
+			hints = append(hints, "The subject is #"+number+" of "+repo+" (an issue, or a pull request when the repository reads it as one):")
+			look := make([]string, 0, 2)
+			if offered["gitea_read_issue"] {
+				look = append(look, "read it with the gitea_read_issue tool before you answer")
+			}
+			if offered["gitea_search_issues"] {
+				look = append(look, "search around it with gitea_search_issues")
+			}
+			if len(look) > 0 {
+				hints = append(hints, strings.Join(look, ", and ")+".")
+			}
 		} else {
-			hints = append(hints, "The subject is the repository "+subject[1]+": start from its issues with gitea_search_issues.")
+			hints = append(hints, "The subject is the repository "+subject[1]+".")
+			if offered["gitea_search_issues"] {
+				hints = append(hints, "Start from its issues with gitea_search_issues.")
+			}
 		}
 	}
 
@@ -159,7 +173,9 @@ func expandCommand(content string, catalog []*agent_model.Skill) string {
 	if task := strings.TrimSpace(agentCommandToken.ReplaceAllString(content, " ")); task != "" {
 		builder.WriteString(" What they asked for: " + task)
 	}
-	builder.WriteString("\n" + strings.Join(hints, "\n"))
+	if len(hints) > 0 {
+		builder.WriteString("\n" + strings.Join(hints, "\n"))
+	}
 	return builder.String()
 }
 
@@ -184,6 +200,11 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 	if len(recent) > engineHistoryLimit {
 		recent = recent[len(recent)-engineHistoryLimit:]
 	}
+	// a task only names the tools this session was offered
+	offered := make(map[string]bool, len(offerings))
+	for _, tool := range offerings {
+		offered[tool.Name()] = true
+	}
 	// the system prompt is spent before any history, so the transcript budget accounts for it
 	total := len(system)
 	kept := make([]llm.Message, 0, len(recent))
@@ -194,7 +215,7 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 		}
 		content, images := messageFiles(message, attachments[message.ID])
 		if message.Role == agent_model.MessageRoleUser {
-			content = expandCommand(content, catalog) // a task says which skill runs it
+			content = expandCommand(content, catalog, offered) // a task says which skill runs it
 		}
 		total += len(content)
 		for _, picture := range images {
