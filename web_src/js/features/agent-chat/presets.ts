@@ -45,6 +45,19 @@ export function readPresets(form: HTMLFormElement): AgentPreset[] {
   }
 }
 
+// what every task word of this page stands for, for the transcript to read a message the way
+// its writer read it: "/issue-triage" reads as the skill's name, "@acme/widgets#2" as what it names
+export function tokenNames(form: HTMLFormElement): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const preset of readPresets(form)) {
+    names.set(`${commandSigil}${preset.command}`, preset.title);
+    // a subject reads with the at-sign that names it, exactly as the composer draws it
+    if (preset.subject !== '') names.set(`${subjectSigil}${preset.subject}`, `${subjectSigil}${preset.subject}`);
+    for (const target of preset.targets) names.set(`${subjectSigil}${target.subject}`, `${subjectSigil}${target.label}`);
+  }
+  return names;
+}
+
 // the word the caret is in, when it is a sigil word: what the palette completes
 function sigilWord(value: string, caret: number) {
   const before = value.slice(0, caret);

@@ -44,8 +44,9 @@ export function buildMessage(message: AgentMessage, opts: {
   labels: AgentChatLabels,
   moreLabel: string,
   editURL: string,
+  names: Map<string, string>,
 }): HTMLElement {
-  const {labels, moreLabel, editURL} = opts;
+  const {labels, moreLabel, editURL, names} = opts;
   const messageEl = document.createElement('div');
   messageEl.className = `agent-chat-message ${message.role}`;
   messageEl.setAttribute('data-message-id', String(message.id));
@@ -147,7 +148,44 @@ export function buildMessage(message: AgentMessage, opts: {
   sourceEl.textContent = message.content;
 
   messageEl.append(bubbleEl, actionsEl, sourceEl);
+  decorateTaskTokens(bubbleEl, names); // the words read as the names they stand for
   return messageEl;
+}
+
+// A message carries the words its writer picked ("/issue-triage", "@acme/widgets#2"). The
+// transcript reads them the way the composer did — as the names they stand for, marked like
+// every other token — so what was sent reads like what was written.
+const taskWordPattern = /(^|\s)([/@][a-z0-9][a-z0-9_./#-]*)/g;
+
+export function decorateTaskTokens(root: HTMLElement, names: Map<string, string>) {
+  // the words inside a link or a code block are not tasks, and the copy the reader takes has
+  // to be the message exactly as it was sent
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => node.parentElement?.closest('a, code, pre, .agent-chat-token, .agent-chat-source') === null ?
+      NodeFilter.FILTER_ACCEPT :
+      NodeFilter.FILTER_REJECT,
+  });
+  const texts: Text[] = [];
+  while (walker.nextNode()) texts.push(walker.currentNode as Text);
+
+  for (const node of texts) {
+    const text = node.data;
+    let at = 0;
+    const parts: Node[] = [];
+    for (const match of text.matchAll(taskWordPattern)) {
+      const word = match[2];
+      const start = (match.index ?? 0) + match[1].length;
+      if (start > at) parts.push(document.createTextNode(text.slice(at, start)));
+      const el = document.createElement('span');
+      el.className = `agent-chat-token agent-chat-token-${word.startsWith('/') ? 'command' : 'subject'}`;
+      el.textContent = names.get(word) ?? word;
+      parts.push(el);
+      at = start + word.length;
+    }
+    if (parts.length === 0) continue;
+    if (at < text.length) parts.push(document.createTextNode(text.slice(at)));
+    node.replaceWith(...parts);
+  }
 }
 
 // the run waits for the reader: the card posts the decision, so the transcript reloads

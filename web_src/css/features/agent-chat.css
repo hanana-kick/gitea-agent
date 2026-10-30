@@ -1229,6 +1229,9 @@ button.agent-chat-card {
 }
 
 .agent-chat-input {
+  /* the textarea paints its own words above the mirror behind it, whose tokens are only tint */
+  position: relative;
+  z-index: 1;
   resize: none;
 }
 
@@ -1253,27 +1256,28 @@ button.agent-chat-card {
 
 /* A token is a pill drawn over words the textarea still owns: the mirror carries no glyph of
    its own, only the tint, so nothing is drawn twice. */
+/* A token is a pill around the words it replaced. The tint is the token's own background, so
+   it always sits behind those words: in the composer the textarea draws the glyphs and the
+   mirror's copy of them stays invisible, and in a transcript the token draws them itself. */
 .agent-chat-token {
-  position: relative;
-  color: transparent;
-}
-
-.agent-chat-token::before {
-  content: "";
-  position: absolute;
-  inset: -1px -2px;
+  color: inherit;
   border-radius: var(--border-radius-medium);
 }
 
-.agent-chat-token-command::before {
-  background: var(--color-primary-alpha-20);
-  box-shadow: inset 0 0 0 1px var(--color-primary-alpha-30);
+.agent-chat-input-wrap .agent-chat-token {
+  color: transparent;
 }
 
-.agent-chat-token-subject::before {
-  /* light enough that the words inside keep their contrast */
-  background: var(--color-secondary-alpha-40);
-  box-shadow: inset 0 0 0 1px var(--color-secondary);
+.agent-chat-token-command {
+  /* strong enough to be read as a chip on the composer's canvas and inside a bubble, which
+     carries a tint of the same hue */
+  background: color-mix(in srgb, var(--color-primary) 34%, var(--color-body));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 62%, var(--color-body));
+}
+
+.agent-chat-token-subject {
+  background: color-mix(in srgb, var(--color-secondary) 85%, var(--color-body));
+  box-shadow: inset 0 0 0 1px var(--color-secondary-dark-1);
 }
 
 .agent-chat-empty {

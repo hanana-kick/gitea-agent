@@ -7,9 +7,9 @@ import {toggleElem} from '../utils/dom.ts';
 import {followAgentLive, markSessionBusy, runIsBusy} from '../modules/agent-live.ts';
 import type {AgentApproval, AgentDelta, AgentMessage, AgentRun} from '../modules/agent-live.ts';
 import {initAttachmentList, initComposerKeys, initDraftComposer, fitLayout} from './agent-chat/composer.ts';
-import {initPresets} from './agent-chat/presets.ts';
+import {initPresets, tokenNames} from './agent-chat/presets.ts';
 import {initTaskTokens} from './agent-chat/task-tokens.ts';
-import {buildApproval, buildMessage, initMessageActions, initTranscriptActions, scrollToLastQuestion, scrollToTop} from './agent-chat/transcript.ts';
+import {buildApproval, buildMessage, decorateTaskTokens, initMessageActions, initTranscriptActions, scrollToLastQuestion, scrollToTop} from './agent-chat/transcript.ts';
 import type {AgentChatLabels} from './agent-chat/transcript.ts';
 import {initMoreMenus, initRepoGroups, applyConversationTitle} from './agent-chat/list.ts';
 
@@ -58,6 +58,7 @@ export function initAgentChat() {
   const sendEl = mainEl.querySelector<HTMLButtonElement>('.agent-chat-send')!;
   const noteEl = mainEl.querySelector<HTMLElement>('.agent-chat-composer-error')!;
   const inputEl = mainEl.querySelector<HTMLTextAreaElement>('.agent-chat-input')!;
+  const names = tokenNames(composerEl); // the words of a message read as their names
   const ajaxHeaders = {'X-Requested-With': 'XMLHttpRequest'};
   const elConversationID = mainEl.getAttribute('data-conversation-id')!;
   const editURL = `${messagesUrl}/`; // (the trailing slash: the per-message URL appends the message id)
@@ -88,7 +89,8 @@ export function initAgentChat() {
 
     for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
 
-    messagesEl.append(buildMessage(message, {labels, moreLabel, editURL}));
+    const built = buildMessage(message, {labels, moreLabel, editURL, names});
+    messagesEl.append(built);
     mainEl!.setAttribute('data-last-message-id', String(message.id));
     if (message.role === 'user') {
       // the browser keeps the caret in view, so wait for the input to settle before anchoring
@@ -119,7 +121,7 @@ export function initAgentChat() {
       const anchor = messagesEl.scrollHeight - messagesEl.scrollTop;
       const first = messagesEl.querySelector('.agent-chat-message');
       for (const message of older) {
-        messagesEl.insertBefore(buildMessage(message, {labels, moreLabel, editURL}), first);
+        messagesEl.insertBefore(buildMessage(message, {labels, moreLabel, editURL, names}), first);
       }
       if (older.length > 0) {
         button.setAttribute('data-oldest', String(older[0].id));
@@ -268,6 +270,7 @@ export function initAgentChat() {
     image.removeAttribute('loading');
   }
   const clearAttachments = initAttachmentList(composerEl);
+  decorateTaskTokens(messagesEl, names); // the messages already on the page
   const tasks = initTaskTokens(composerEl, inputEl);
   if (tasks) {
     // the message carries the words the names stand for, written just before it is sent
