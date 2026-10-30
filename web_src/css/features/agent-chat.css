@@ -1107,6 +1107,7 @@ button.agent-chat-card {
 }
 
 .agent-chat-composer {
+  position: relative; /* the palette hangs off it without taking room of its own */
   display: flex;
   flex-wrap: wrap; /* the list of chosen files takes its own line above the row */
   gap: 8px;
@@ -1116,16 +1117,20 @@ button.agent-chat-card {
   border-top: 1px solid var(--color-secondary);
 }
 
-/* the tasks the composer itself knows: "/pr", "/issue" open this list above the input */
+/* The tasks the composer itself knows: "/pr", "/issue" open this list. It floats over the
+   transcript rather than taking a row, so that opening it never moves the chat behind it. */
 .agent-chat-commands {
-  order: -3; /* above the chosen files and the row itself */
-  flex: 0 1 100%;
+  position: absolute;
+  bottom: calc(100% - 10px); /* just above the field, inside the composer's own padding */
+  right: 12px;
+  left: 12px;
+  z-index: 20;
   max-height: 220px;
   overflow-y: auto;
-  margin-bottom: 6px;
   background: var(--color-body);
   border: 1px solid var(--color-secondary);
   border-radius: var(--border-radius);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 12%);
 }
 
 .agent-chat-command {
