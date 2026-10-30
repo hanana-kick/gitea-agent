@@ -23,7 +23,7 @@ func TestRegistryIsStableAndComplete(t *testing.T) {
 		assert.NotEmpty(t, tool.Description(), "%s needs a description for the model", tool.Name())
 	}
 	assert.Equal(t, []string{
-		"gitea_list_files", "gitea_list_repos", "gitea_read_file",
+		"gitea_list_actions_runs", "gitea_list_files", "gitea_list_repos", "gitea_read_file",
 		"gitea_read_issue", "gitea_read_skill", "gitea_search_issues",
 	}, names)
 }
@@ -67,15 +67,15 @@ func TestDefinitionsDescribeArgumentsForTheModel(t *testing.T) {
 	// a tool that takes nothing asks for no properties and demands nothing
 	assert.Equal(t, map[string]any{"type": "object", "properties": map[string]any{}}, defs[1].Function.Parameters)
 
-	// an id argument has to arrive as a number, or the tool cannot decode it
+	// the number has to arrive as a number, or the tool cannot decode it
 	numbered := Definitions([]Tool{readIssueTool{}})[0].Function.Parameters
 	numberedProperties, ok := numbered["properties"].(map[string]any)
 	require.True(t, ok)
-	issueID, ok := numberedProperties["issue_id"].(map[string]any)
+	index, ok := numberedProperties["index"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "integer", issueID["type"])
-	assert.NotEmpty(t, issueID["description"])
-	assert.Equal(t, []string{"issue_id"}, numbered["required"])
+	assert.Equal(t, "integer", index["type"])
+	assert.NotEmpty(t, index["description"])
+	assert.Equal(t, []string{"index"}, numbered["required"]) // the repository may be left to the session
 }
 
 func TestListReposIsOfferedOnlyOutsideARepository(t *testing.T) {
@@ -93,24 +93,21 @@ func TestListReposIsOfferedOnlyOutsideARepository(t *testing.T) {
 }
 
 func TestFileToolsFollowTheRepositoryOfTheSession(t *testing.T) {
-	ctx := context.Background()
 	for _, tool := range []Tool{listFilesTool{}, readFileTool{}} {
-		conditional, isConditional := tool.(Conditional)
-		require.True(t, isConditional, "%s has nothing behind it in a session with no repository", tool.Name())
-
-		// a session with no repository has nothing to read, so the tool is not offered
-		offered, err := conditional.Offered(ctx, Session{Kind: agent_model.ConversationKindServer})
-		require.NoError(t, err)
-		assert.False(t, offered, "%s in a session with no repository", tool.Name())
-
-		offered, err = conditional.Offered(ctx, Session{Kind: agent_model.ConversationKindRepository, RepoID: 7})
-		require.NoError(t, err)
-		assert.True(t, offered, "%s in a repository session", tool.Name())
-
-		// the reach is the repository's, so a wider session may use it and a narrower cannot
+		// a session bound to no repository names the one it means, so the tool reaches it
 		assert.True(t, tool.Scope().AllowedFor(agent_model.ConversationKindRepository))
 		assert.True(t, tool.Scope().AllowedFor(agent_model.ConversationKindServer))
+
+		// the reach is the repository's, so a session that sees less cannot have it
 		assert.False(t, tool.Scope().AllowedFor("nonsense"))
+	}
+
+	// every file tool says how a session that is not bound to a repository asks for one
+	for _, tool := range []Tool{listFilesTool{}, readFileTool{}} {
+		first := tool.Args()[0]
+		assert.Equal(t, repositoryNameArg, first.Name)
+		assert.True(t, first.Optional, "%s leaves the repository to the session it runs in", tool.Name())
+		assert.NotEmpty(t, first.Description)
 	}
 }
 
@@ -120,14 +117,15 @@ func TestFileToolsArgueWithPathsAndRevisions(t *testing.T) {
 		byName[tool.Name()] = tool.Args()
 	}
 	// a listing starts at the root, so its path may be left out; reading needs one
-	assert.True(t, byName["gitea_list_files"][0].Optional)
-	assert.False(t, byName["gitea_read_file"][0].Optional)
+	// a listing starts at the root, so its path may be left out; reading needs one
+	assert.True(t, byName["gitea_list_files"][1].Optional)
+	assert.False(t, byName["gitea_read_file"][1].Optional)
 	// both read the default branch unless another revision is named
 	for _, name := range []string{"gitea_list_files", "gitea_read_file"} {
 		args := byName[name]
-		require.Len(t, args, 2)
-		assert.Equal(t, "ref", args[1].Name)
-		assert.True(t, args[1].Optional, "%s reads the default branch by default", name)
+		require.Len(t, args, 3)
+		assert.Equal(t, "ref", args[2].Name)
+		assert.True(t, args[2].Optional, "%s reads the default branch by default", name)
 	}
 
 	defs := Definitions([]Tool{readFileTool{}})

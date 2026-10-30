@@ -13,6 +13,7 @@ import (
 	issues_model "gitea.dev/models/issues"
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
+	unit_model "gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
 	issue_indexer "gitea.dev/modules/indexer/issues"
 	"gitea.dev/modules/json"
@@ -39,6 +40,7 @@ func (GiteaTools) Registry() []Tool {
 		readSkillTool{},
 		listFilesTool{},
 		readFileTool{},
+		listRunsTool{},
 	}
 }
 
@@ -48,9 +50,9 @@ type searchIssuesTool struct{}
 func (searchIssuesTool) Name() string { return "gitea_search_issues" }
 
 func (searchIssuesTool) Description() string {
-	return "Search Gitea issues by keyword, or list the newest issues when no keyword is given. Use " +
-		"when the user asks about open work, bugs or tasks. Returns issue titles, numbers, states " +
-		"and the repository they belong to."
+	return "Search this Gitea instance's issues and pull requests by keyword, or list the newest when " +
+		"no keyword is given. Open ones are returned unless another state is asked for. Use it when " +
+		"the user asks about open work, bugs, reviews or tasks."
 }
 
 func (searchIssuesTool) Scope() Scope { return ScopeUser }
@@ -64,13 +66,37 @@ func (searchIssuesTool) Args() []Arg {
 
 func (searchIssuesTool) Run(ctx context.Context, doer *user_model.User, session Session, args string) (string, error) {
 	var params struct {
-		Keyword string `json:"keyword"`
+		Keyword    string `json:"keyword"`
+		Repository string `json:"repository"`
+		State      string `json:"state"`
+		Kind       string `json:"kind"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", err
 	}
 	params.Keyword = strings.TrimSpace(params.Keyword)
-	issues, err := matchedIssues(ctx, doer, session.RepoID, params.Keyword)
+	state, err := parseIssueState(params.State)
+	if err != nil {
+		if message, told := toldToModel(err); told {
+			return message, nil
+		}
+		return "", err
+	}
+	kind, err := parseIssueKind(params.Kind)
+	if err != nil {
+		if message, told := toldToModel(err); told {
+			return message, nil
+		}
+		return "", err
+	}
+	repoID, err := searchScope(ctx, doer, session, params.Repository)
+	if err != nil {
+		if message, told := toldToModel(err); told {
+			return message, nil
+		}
+		return "", err
+	}
+	issues, err := matchedIssues(ctx, doer, repoID, params.Keyword, state, kind)
 	if err != nil {
 		return "", err
 	}
@@ -85,24 +111,89 @@ func (searchIssuesTool) Run(ctx context.Context, doer *user_model.User, session 
 		if err := issue.LoadRepo(ctx); err != nil {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("%s #%d %s (%s)", issue.Repo.FullName(), issue.Index, issue.Title, issue.State()))
+		lines = append(lines, issueLine(issue))
 	}
 	return clip(strings.Join(lines, "\n")), nil
+}
+
+// issueState is what a search asks for: open ones, closed ones, or either.
+type issueState int
+
+const (
+	issueStateOpen issueState = iota
+	issueStateClosed
+	issueStateAll
+)
+
+// parseIssueState reads the state a call asked for, defaulting to open work.
+func parseIssueState(raw string) (issueState, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "open":
+		return issueStateOpen, nil
+	case "closed":
+		return issueStateClosed, nil
+	case "all":
+		return issueStateAll, nil
+	}
+	return issueStateOpen, unreadableRepo{`The state is "open", "closed" or "all".`}
+}
+
+// issueKind is what a search asks for among the issues and pull requests of an instance.
+type issueKind int
+
+const (
+	issueKindEither issueKind = iota
+	issueKindIssue
+	issueKindPull
+)
+
+// parseIssueKind reads the kind a call asked for, defaulting to both: an issue and a pull
+// request are both open work, and a task rarely cares which it is.
+func parseIssueKind(raw string) (issueKind, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "either", "both", "all":
+		return issueKindEither, nil
+	case "issue", "issues":
+		return issueKindIssue, nil
+	case "pull", "pulls", "pull request", "pull requests", "pr", "prs":
+		return issueKindPull, nil
+	}
+	return issueKindEither, unreadableRepo{`The kind is "issue", "pull request", or left out for both.`}
+}
+
+// issueLine names an issue the way the transcript and the tools speak of it.
+func issueLine(issue *issues_model.Issue) string {
+	line := fmt.Sprintf("%s #%d %s (%s", issue.Repo.FullName(), issue.Index, issue.Title, issue.State())
+	if issue.IsPull {
+		line += ", pull request"
+	}
+	return line + ")"
 }
 
 // matchedIssues finds the issues the doer may see that mention the keyword; with no keyword
 // it lists the newest ones instead. A repository session passes its repository, so neither
 // ever leaves it. The index does the matching while it is running; otherwise the newest
 // issues are filtered here, which only reaches as far as the listing does.
-func matchedIssues(ctx context.Context, doer *user_model.User, repoID int64, keyword string) ([]*issues_model.Issue, error) {
+func matchedIssues(ctx context.Context, doer *user_model.User, repoID int64, keyword string, state issueState, kind issueKind) ([]*issues_model.Issue, error) {
 	// no keyword asks what is there, not what matches: the listing is the answer itself
 	listing := keyword == ""
 	indexed := issue_indexer.IsAvailable(ctx) && !listing
 	options := issues_model.IssuesOptions{
 		Doer:      doer,
 		AllPublic: true,
-		IsPull:    optional.Some(false),
 		SortType:  "newest",
+	}
+	switch kind {
+	case issueKindIssue:
+		options.IsPull = optional.Some(false)
+	case issueKindPull:
+		options.IsPull = optional.Some(true)
+	}
+	switch state {
+	case issueStateOpen:
+		options.IsClosed = optional.Some(false)
+	case issueStateClosed:
+		options.IsClosed = optional.Some(true)
 	}
 	if repoID != 0 {
 		// the repository is the whole world of this session, so nothing outside it may match
@@ -148,50 +239,17 @@ type readIssueTool struct{}
 func (readIssueTool) Name() string { return "gitea_read_issue" }
 
 func (readIssueTool) Description() string {
-	return "Read one Gitea issue: its title, state and body. Use after gitea_search_issues to look at " +
-		"an issue in full."
+	return "Read one issue or pull request: its title, state, body, and for a pull request the " +
+		"branches it merges. Use the number gitea_search_issues showed for it."
 }
 
 func (readIssueTool) Scope() Scope { return ScopeUser }
 
 func (readIssueTool) Args() []Arg {
-	return []Arg{{Name: "issue_id", Description: "The numeric issue ID from gitea_search_issues", Type: "integer"}}
-}
-
-func (readIssueTool) Run(ctx context.Context, doer *user_model.User, session Session, args string) (string, error) {
-	var params struct {
-		IssueID int64 `json:"issue_id"`
+	return []Arg{
+		repositoryArg("the issue or pull request it reads"),
+		{Name: "index", Type: "integer", Description: "The number gitea_search_issues showed for it"},
 	}
-	if err := json.Unmarshal([]byte(args), &params); err != nil {
-		return "", err
-	}
-	if params.IssueID == 0 {
-		return "The issue_id argument is required.", nil
-	}
-	issue, err := issues_model.GetIssueByID(ctx, params.IssueID)
-	if err != nil {
-		return "There is no issue with that ID.", nil
-	}
-	if session.RepoID != 0 && issue.RepoID != session.RepoID {
-		return "That issue belongs to another repository, so search this one instead.", nil
-	}
-	if err := issue.LoadRepo(ctx); err != nil {
-		return "", err
-	}
-	// the doer has to be able to read the issue where it lives, not just know its ID
-	perm, err := access_model.GetIndividualUserRepoPermission(ctx, issue.Repo, doer)
-	if err != nil {
-		return "", err
-	}
-	if !perm.CanReadIssuesOrPulls(issue.IsPull) {
-		return "That issue is not visible to you.", nil
-	}
-	out := []string{fmt.Sprintf("%s #%d %s (%s)", issue.Repo.FullName(), issue.Index, issue.Title, issue.State())}
-	if issue.Content != "" {
-		// the model reads markdown itself, so the stored source costs it fewer tokens than rendered HTML
-		out = append(out, issue.Content)
-	}
-	return clip(strings.Join(out, "\n\n")), nil
 }
 
 // listReposTool lists the repositories the calling user can see.
@@ -235,6 +293,72 @@ func (listReposTool) Run(ctx context.Context, doer *user_model.User, _ Session, 
 	}
 	log.Trace("Agent tool gitea_list_repos returned %d repos for user %d", len(lines), doer.ID)
 	return clip(strings.Join(lines, "\n")), nil
+}
+
+func (readIssueTool) Run(ctx context.Context, doer *user_model.User, session Session, args string) (string, error) {
+	var params struct {
+		Repository string `json:"repository"`
+		Index      int64  `json:"index"`
+	}
+	if err := json.Unmarshal([]byte(args), &params); err != nil {
+		return "", err
+	}
+	if params.Index == 0 {
+		return "The index argument is required.", nil
+	}
+	repository, err := resolveRepo(ctx, doer, session, params.Repository, unit_model.TypeIssues)
+	if err != nil {
+		if message, told := toldToModel(err); told {
+			return message, nil
+		}
+		return "", err
+	}
+	issue, err := issues_model.GetIssueByIndex(ctx, repository.ID, params.Index)
+	if err != nil {
+		return "There is no issue or pull request with that number in " + repository.FullName() + ".", nil
+	}
+	if err := issue.LoadRepo(ctx); err != nil {
+		return "", err
+	}
+	if issue.IsPull {
+		if err := issue.LoadPullRequest(ctx); err != nil {
+			return "", err
+		}
+		if err := issue.PullRequest.LoadAttributes(ctx); err != nil {
+			return "", err
+		}
+	}
+	// the repository has to have the unit this thing belongs to, and the user has to be able
+	// to read it there
+	perm, err := access_model.GetIndividualUserRepoPermission(ctx, issue.Repo, doer)
+	if err != nil {
+		return "", err
+	}
+	if !perm.CanReadIssuesOrPulls(issue.IsPull) {
+		return "That is not visible to you.", nil
+	}
+	out := []string{issueLine(issue)}
+	if issue.IsPull {
+		out = append(out, pullRequestLine(issue.PullRequest))
+	}
+	if issue.Content != "" {
+		// the model reads markdown itself, so the stored source costs it fewer tokens than rendered HTML
+		out = append(out, issue.Content)
+	}
+	return clip(strings.Join(out, "\n\n")), nil
+}
+
+// pullRequestLine says what a pull request merges where, which is what reading one is for.
+func pullRequestLine(pr *issues_model.PullRequest) string {
+	head := pr.HeadBranch
+	if pr.HeadRepo != nil {
+		head = pr.HeadRepo.FullName() + ":" + pr.HeadBranch
+	}
+	base := pr.BaseBranch
+	if pr.BaseRepo != nil {
+		base = pr.BaseRepo.FullName() + ":" + pr.BaseBranch
+	}
+	return "merges " + head + " into " + base
 }
 
 // clip cuts tool output down to what the prompt can afford.

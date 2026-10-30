@@ -58,5 +58,5 @@ func TestFileToolsReadWithTheUsersRights(t *testing.T) {
 
 	out, err := readFileTool{}.Run(ctx, stranger, session, `{"path":"README.md"}`)
 	require.NoError(t, err)
-	assert.Contains(t, out, "You cannot read the code of this repository.")
+	assert.Contains(t, out, "You cannot read the code of user2/repo2.")
 }

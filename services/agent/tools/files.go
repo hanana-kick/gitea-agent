@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	unit_model "gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
@@ -40,19 +39,13 @@ type sessionRepo struct {
 	ref        string
 }
 
-// openSessionRepo opens what a session may read: the repository it works in, at the revision
-// it asked for. A tool reads with the rights of the calling user, so what the user may not
-// see, the model may not see either.
-func openSessionRepo(ctx context.Context, doer *user_model.User, session Session, ref string) (*sessionRepo, error) {
-	if session.RepoID == 0 {
-		return nil, unreadableRepo{"This session is not bound to a repository, so it has no files to read."}
-	}
-	repository, err := repo_model.GetRepositoryByID(ctx, session.RepoID)
+// openSessionRepo opens what a call may read: the repository the session works in, or the one
+// it named, at the revision it asked for. It reads with the rights of the calling user, so what
+// the user may not see, the model may not see either.
+func openSessionRepo(ctx context.Context, doer *user_model.User, session Session, name, ref string) (*sessionRepo, error) {
+	repository, err := resolveRepo(ctx, doer, session, name, unit_model.TypeCode)
 	if err != nil {
 		return nil, err
-	}
-	if !access_model.CheckRepoUnitUser(ctx, repository, doer, unit_model.TypeCode) {
-		return nil, unreadableRepo{"You cannot read the code of this repository."}
 	}
 	gitRepo, err := git.OpenRepository(ctx, repository)
 	if err != nil {
@@ -119,19 +112,15 @@ type listFilesTool struct{}
 func (listFilesTool) Name() string { return "gitea_list_files" }
 
 func (listFilesTool) Description() string {
-	return "List the files and directories of one directory of this session's repository. Start " +
-		"at the root, then follow the paths it shows. Use it before reading a file you have not seen."
+	return "List the files and directories of one directory of a repository. Start at the root, then " +
+		"follow the paths it shows. Use it before reading a file you have not seen."
 }
 
 func (listFilesTool) Scope() Scope { return ScopeRepository }
 
-// Offered keeps the tool out of a session that has no repository to look at.
-func (listFilesTool) Offered(_ context.Context, session Session) (bool, error) {
-	return session.RepoID != 0, nil
-}
-
 func (listFilesTool) Args() []Arg {
 	return []Arg{
+		repositoryArg("the files"),
 		{Name: "path", Optional: true, Description: "Directory to list, relative to the repository root; leave it out for the root"},
 		{Name: "ref", Optional: true, Description: "Branch, tag or commit to read; leave it out for the default branch"},
 	}
@@ -147,13 +136,14 @@ func (listFilesTool) Run(ctx context.Context, doer *user_model.User, session Ses
 
 func (listFilesTool) list(ctx context.Context, doer *user_model.User, session Session, args string) (string, error) {
 	var params struct {
-		Path string `json:"path"`
-		Ref  string `json:"ref"`
+		Repository string `json:"repository"`
+		Path       string `json:"path"`
+		Ref        string `json:"ref"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", err
 	}
-	found, err := openSessionRepo(ctx, doer, session, params.Ref)
+	found, err := openSessionRepo(ctx, doer, session, params.Repository, params.Ref)
 	if err != nil {
 		return "", err
 	}
@@ -211,18 +201,15 @@ type readFileTool struct{}
 func (readFileTool) Name() string { return readFileToolName }
 
 func (readFileTool) Description() string {
-	return "Read one text file of this session's repository, up to " + sizeText(toolOutputLimit) +
-		" of it. A picture or another binary file comes back as a line saying so."
+	return "Read one text file of a repository, up to " + sizeText(toolOutputLimit) + " of it. A " +
+		"picture or another binary file comes back as a line saying so."
 }
 
 func (readFileTool) Scope() Scope { return ScopeRepository }
 
-func (readFileTool) Offered(_ context.Context, session Session) (bool, error) {
-	return session.RepoID != 0, nil
-}
-
 func (readFileTool) Args() []Arg {
 	return []Arg{
+		repositoryArg("a file"),
 		{Name: "path", Description: "Path of the file, relative to the repository root, as gitea_list_files shows it"},
 		{Name: "ref", Optional: true, Description: "Branch, tag or commit to read; leave it out for the default branch"},
 	}
@@ -238,13 +225,14 @@ func (readFileTool) Run(ctx context.Context, doer *user_model.User, session Sess
 
 func (readFileTool) read(ctx context.Context, doer *user_model.User, session Session, args string) (string, error) {
 	var params struct {
-		Path string `json:"path"`
-		Ref  string `json:"ref"`
+		Repository string `json:"repository"`
+		Path       string `json:"path"`
+		Ref        string `json:"ref"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", err
 	}
-	found, err := openSessionRepo(ctx, doer, session, params.Ref)
+	found, err := openSessionRepo(ctx, doer, session, params.Repository, params.Ref)
 	if err != nil {
 		return "", err
 	}

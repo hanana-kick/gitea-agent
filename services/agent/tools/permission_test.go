@@ -30,11 +30,6 @@ func TestCheckReadsTheSessionItIsGiven(t *testing.T) {
 	assert.NotNil(t, tool)
 	assert.Equal(t, DecisionRun, decision)
 
-	kindOnly := Session{Kind: agent_model.ConversationKindRepository}
-	_, decision, err = Check(ctx, kindOnly, "gitea_read_file")
-	require.NoError(t, err)
-	assert.Equal(t, DecisionDenied, decision, "a session with no repository has no files to read")
-
 	// the admin can switch a tool off, and that holds wherever it would be offered
 	require.NoError(t, SetMode(ctx, "gitea_read_file", PermissionLLM, false))
 	t.Cleanup(func() { _ = SetMode(ctx, "gitea_read_file", PermissionLLM, true) })
@@ -77,9 +72,9 @@ func TestAvailableNarrowsTheRegistryToTheSession(t *testing.T) {
 
 	server := names(Session{Kind: agent_model.ConversationKindServer})
 	assert.Contains(t, server, "gitea_list_repos")
-	// with no repository of its own, it has no files to read
-	assert.NotContains(t, server, "gitea_read_file")
-	assert.NotContains(t, server, "gitea_list_files")
+	// a session that spans the instance names the repository its file tools read
+	assert.Contains(t, server, "gitea_read_file")
+	assert.Contains(t, server, "gitea_list_files")
 
 	// nothing of the session's own scope reaches a session kind narrower than its own
 	kindOnly := names(Session{Kind: "nonsense"})
