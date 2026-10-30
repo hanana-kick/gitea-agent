@@ -22,7 +22,10 @@ func TestRegistryIsStableAndComplete(t *testing.T) {
 		names = append(names, tool.Name())
 		assert.NotEmpty(t, tool.Description(), "%s needs a description for the model", tool.Name())
 	}
-	assert.Equal(t, []string{"gitea_list_repos", "gitea_read_issue", "gitea_read_skill", "gitea_search_issues"}, names)
+	assert.Equal(t, []string{
+		"gitea_list_files", "gitea_list_repos", "gitea_read_file",
+		"gitea_read_issue", "gitea_read_skill", "gitea_search_issues",
+	}, names)
 }
 
 func TestScopeAllowedFor(t *testing.T) {
@@ -87,6 +90,58 @@ func TestListReposIsOfferedOnlyOutsideARepository(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, offered, "in %s", kind)
 	}
+}
+
+func TestFileToolsFollowTheRepositoryOfTheSession(t *testing.T) {
+	ctx := context.Background()
+	for _, tool := range []Tool{listFilesTool{}, readFileTool{}} {
+		conditional, isConditional := tool.(Conditional)
+		require.True(t, isConditional, "%s has nothing behind it in a session with no repository", tool.Name())
+
+		// a session with no repository has nothing to read, so the tool is not offered
+		offered, err := conditional.Offered(ctx, Session{Kind: agent_model.ConversationKindServer})
+		require.NoError(t, err)
+		assert.False(t, offered, "%s in a session with no repository", tool.Name())
+
+		offered, err = conditional.Offered(ctx, Session{Kind: agent_model.ConversationKindRepository, RepoID: 7})
+		require.NoError(t, err)
+		assert.True(t, offered, "%s in a repository session", tool.Name())
+
+		// the reach is the repository's, so a wider session may use it and a narrower cannot
+		assert.True(t, tool.Scope().AllowedFor(agent_model.ConversationKindRepository))
+		assert.True(t, tool.Scope().AllowedFor(agent_model.ConversationKindServer))
+		assert.False(t, tool.Scope().AllowedFor("nonsense"))
+	}
+}
+
+func TestFileToolsArgueWithPathsAndRevisions(t *testing.T) {
+	byName := map[string][]Arg{}
+	for _, tool := range []Tool{listFilesTool{}, readFileTool{}} {
+		byName[tool.Name()] = tool.Args()
+	}
+	// a listing starts at the root, so its path may be left out; reading needs one
+	assert.True(t, byName["gitea_list_files"][0].Optional)
+	assert.False(t, byName["gitea_read_file"][0].Optional)
+	// both read the default branch unless another revision is named
+	for _, name := range []string{"gitea_list_files", "gitea_read_file"} {
+		args := byName[name]
+		require.Len(t, args, 2)
+		assert.Equal(t, "ref", args[1].Name)
+		assert.True(t, args[1].Optional, "%s reads the default branch by default", name)
+	}
+
+	defs := Definitions([]Tool{readFileTool{}})
+	required, ok := defs[0].Function.Parameters["required"].([]string)
+	require.True(t, ok)
+	assert.Equal(t, []string{"path"}, required) // the model must say what to read
+}
+
+func TestSizeTextSpeaksOfFiles(t *testing.T) {
+	assert.Equal(t, "0 B", sizeText(0))
+	assert.Equal(t, "1023 B", sizeText(1023))
+	assert.Equal(t, "1.0 KB", sizeText(1024))
+	assert.Equal(t, "8.0 KB", sizeText(toolOutputLimit))
+	assert.Equal(t, "1.0 MB", sizeText(1024*1024))
 }
 
 func TestClipKeepsToolOutputInsideThePrompt(t *testing.T) {

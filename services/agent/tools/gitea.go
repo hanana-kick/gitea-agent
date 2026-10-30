@@ -37,6 +37,8 @@ func (GiteaTools) Registry() []Tool {
 		readIssueTool{},
 		listReposTool{},
 		readSkillTool{},
+		listFilesTool{},
+		readFileTool{},
 	}
 }
 

@@ -62,16 +62,17 @@ func offeredTo(ctx context.Context, tool Tool, session Session) (bool, error) {
 }
 
 // Check reports how one call may proceed: run, ask its user, or not at all.
-func Check(ctx context.Context, sessionKind, name string) (Tool, Decision, error) {
+func Check(ctx context.Context, session Session, name string) (Tool, Decision, error) {
 	tool, ok := Find(name)
 	if !ok {
 		return nil, DecisionDenied, fmt.Errorf("unknown tool %q", name)
 	}
-	if !tool.Scope().AllowedFor(sessionKind) {
+	if !tool.Scope().AllowedFor(session.Kind) {
 		return tool, DecisionDenied, nil
 	}
-	// a tool that is not offered here is not callable here either, whatever the model asks
-	offered, err := offeredTo(ctx, tool, Session{Kind: sessionKind})
+	// a tool that is not offered here is not callable here either, whatever the model asks —
+	// and what a tool is offered needs the whole session, not just its kind
+	offered, err := offeredTo(ctx, tool, session)
 	if err != nil {
 		return tool, DecisionDenied, err
 	}

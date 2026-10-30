@@ -678,7 +678,8 @@ func runUser(ctx context.Context, run *agent_model.Run) (*user_model.User, error
 // callTool makes one call the model asked for, records it in the transcript and returns
 // what the model gets to read.
 func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, doer *user_model.User, call llm.ToolCall) string {
-	tool, decision, err := agent_tools.Check(ctx, conversation.Kind, call.Function.Name)
+	session := agent_tools.Session{Kind: conversation.Kind, RepoID: conversation.RepoID}
+	tool, decision, err := agent_tools.Check(ctx, session, call.Function.Name)
 	switch {
 	case err != nil:
 		return e.recordTool(ctx, conversation, call, err.Error())
@@ -692,7 +693,6 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 			return e.recordTool(ctx, conversation, call, reason)
 		}
 	}
-	session := agent_tools.Session{Kind: conversation.Kind, RepoID: conversation.RepoID}
 	output, err := tool.Run(ctx, doer, session, call.Function.Arguments)
 	if err != nil {
 		log.Error("Agent engine: tool %s of run %d failed: %v", call.Function.Name, run.ID, err)
