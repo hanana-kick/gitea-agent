@@ -2,7 +2,7 @@
 // composer, the "/" that calls a skill, and the "@" that names a subject. The two sigils are
 // separate — either may stand alone — and a line that carries them is parsed into a task when
 // it is completed from the palette or broken by the reader.
-import type {AgentToken} from './task-tokens.ts';
+import type {AgentToken, ComposerInput} from './input.ts';
 
 export type AgentPresetTarget = {label: string, subject: string, task: string};
 
@@ -21,14 +21,6 @@ export type AgentPreset = {
 
 // one row of the palette the reader walks through
 type AgentPresetEntry = {label: string, hint: string, insert: () => void};
-
-// what the composer offers a task host: a word is replaced where it stands
-type AgentTaskHost = {
-  replace: (at: number, end: number, token: AgentToken) => void,
-  tokenOf: (display: string) => AgentToken | undefined,
-  payload: () => string,
-  reset: () => void,
-};
 
 const commandSigil = '/';
 const subjectSigil = '@';
@@ -58,19 +50,41 @@ export function tokenNames(form: HTMLFormElement): Map<string, string> {
   return names;
 }
 
-// the word the caret is in, when it is a sigil word: what the palette completes
-function sigilWord(value: string, caret: number) {
-  const before = value.slice(0, caret);
-  const match = /(^|\s)([/@])(\S*)$/.exec(before);
-  if (!match) return null;
-  return {sigil: match[2], word: match[3], start: before.length - match[3].length - 1, end: caret};
+// what a word of this page stands for: a skill reads by its own name, a subject by what it
+// names; where nothing is known — a session with no repository — a subject is its own name
+export function presetResolver(form: HTMLFormElement): (word: string) => AgentToken | null {
+  const presets = readPresets(form);
+  const subjects = new Map<string, string>();
+  for (const preset of presets) {
+    if (preset.subject !== '') subjects.set(preset.subject, preset.subject);
+    for (const target of preset.targets) subjects.set(target.subject, target.label);
+  }
+  const skills = new Map(presets.map((preset) => [preset.command, preset.title]));
+  return (word) => {
+    if (word.startsWith(commandSigil)) {
+      const command = word.slice(1);
+      if (skills.size > 0 && !skills.has(command)) return null;
+      return {display: skills.get(command) ?? command, canonical: word};
+    }
+    if (!word.startsWith(subjectSigil)) return null;
+    const subject = word.slice(1);
+    if (subjects.size > 0 && !subjects.has(subject)) return null;
+    return {display: `${subjectSigil}${subjects.get(subject) ?? subject}`, canonical: word};
+  };
 }
 
-export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, tasks: AgentTaskHost) {
+// the sigil word the caret is in, when what is written before it is one: what the palette completes
+function sigilWord(before: string) {
+  const match = /(^|\s)([/@])(\S*)$/.exec(before);
+  return match ? {sigil: match[2], typed: match[3]} : null;
+}
+
+export function initPresets(form: HTMLFormElement, input: ComposerInput) {
   const presets = readPresets(form);
   const paletteEl = form.querySelector<HTMLElement>('.agent-chat-commands');
   if (presets.length === 0 || !paletteEl) return {keyDown: (_event: KeyboardEvent) => false};
   const palette = paletteEl; // the palette is there from here on
+  const resolve = presetResolver(form);
 
   // every subject this agent can be aimed at, named once: the tasks share them
   const subjects = new Map<string, {label: string, hint: string}>();
@@ -78,9 +92,6 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
     if (preset.subject !== '') subjects.set(preset.subject, {label: preset.subject, hint: preset.title});
     for (const target of preset.targets) subjects.set(target.subject, {label: target.label, hint: preset.title});
   }
-  const skills = new Map(presets.map((preset) => [preset.command, preset.title]));
-
-  // the tasks the cards hand over, by the command they call
   const presetOf = (command: string) => presets.find((preset) => preset.command === command);
 
   // the cards: pick a subject, and the task is written into the box as the names it reads by
@@ -94,21 +105,12 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
       const subject = option?.getAttribute('data-subject') ?? card.getAttribute('data-subject')!;
       const request = (option?.getAttribute('data-task') ?? card.getAttribute('data-task')!) || '';
       const words = [
-        tokenOf(commandSigil, preset.command),
-        subject === '' ? null : tokenOf(subjectSigil, subject),
-      ].filter((token) => token !== null);
-      // the box takes the words, and the plate turns each of them into the name it reads by
-      input.value = `${words.map((token) => token.canonical).join(' ')}${request === '' ? '' : `\n${request}`}`;
-      input.dispatchEvent(new Event('input', {bubbles: true}));
-      let at = 0;
-      for (const token of words) {
-        const found = input.value.indexOf(token.canonical, at);
-        if (found === -1) continue;
-        tasks.replace(found, found + token.canonical.length, token);
-        at = found + token.display.length;
-      }
-      input.setSelectionRange(input.value.length, input.value.length);
-      input.focus({preventScroll: true});
+        `${commandSigil}${preset.command}`,
+        subject === '' ? null : `${subjectSigil}${subject}`,
+      ].filter((word) => word !== null);
+      input.setText(`${words.join(' ')}${request === '' ? '' : `\n${request}`}`);
+      input.applyTokens(resolve); // the words read as their names, where they were written
+      input.focusToEnd();
       close();
     });
   }
@@ -130,7 +132,7 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
       hint.className = 'agent-chat-command-hint';
       hint.textContent = entry.hint;
       el.append(label, hint);
-      // the caret must stay in the input, so the palette answers the press itself
+      // the caret must stay in the box, so the palette answers the press itself
       el.addEventListener('mousedown', (event) => event.preventDefault());
       el.addEventListener('click', () => {
         entry.insert();
@@ -154,66 +156,38 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
     paint();
   };
 
-  // breaks the line the reader is on and parses what it carries: a skill, a subject, or both
-  // What a word stands for: the name the reader reads, and the word that is sent. A skill
-  // reads by its own name, a subject by what it names; where nothing is known — a session
-  // with no repository — a subject is its own name.
-  function tokenOf(sigil: string, word: string): AgentToken | null {
-    if (sigil === commandSigil) {
-      if (skills.size > 0 && !skills.has(word)) return null;
-      return {display: skills.get(word) ?? word, canonical: `${commandSigil}${word}`};
-    }
-    if (subjects.size > 0 && !subjects.has(word)) return null;
-    const named = subjects.get(word);
-    return {display: `${subjectSigil}${named?.label ?? word}`, canonical: `${subjectSigil}${word}`};
-  }
-
-  // the word the reader just finished, wherever they wrote it: it ends at a space, at a line
-  // break, or at the word the palette completed
-  function finishedWord(completed: boolean) {
-    const value = input.value;
-    const pattern = completed ? /(^|\s)([/@])(\S+)$/g : /(^|\s)([/@])(\S+)\s/g;
-    let match: RegExpExecArray | null = null;
-    for (const found of value.matchAll(pattern)) match = found;
-    if (match === null) return null;
-    const at = (match.index ?? 0) + (match[1] ?? '').length;
-    return {sigil: match[2], word: match[3], at, end: at + match[2].length + match[3].length};
-  }
-
-  // A finished word becomes the name it stands for, where the reader wrote it: the tokens are
-  // taken in whatever order they come, and the words around them are never moved.
-  function readWord(completed = false) {
-    const word = finishedWord(completed);
-    if (word === null) return;
-    const token = tokenOf(word.sigil, word.word);
-    if (token === null) return; // an unknown word is the reader's own text
-    tasks.replace(word.at, word.end, token);
-  }
-
-  // completing a word writes it where the caret is, and reads it as the name it stands for
-  function insertAt(word: {start: number, end: number}, text: string) {
-    const value = input.value;
-    input.value = `${value.slice(0, word.start)}${text}${value.slice(word.end)}`;
-    input.setSelectionRange(word.start + text.length, word.start + text.length);
-    input.dispatchEvent(new Event('input', {bubbles: true}));
+  // completing a word writes it where the caret is, and the box reads it as its name
+  function insert(word: string, typed: number) {
+    input.replaceBefore(1 + typed, word);
     readWord(true);
+  }
+
+  // A word is read once it is finished: by its own end when the palette completed it, by the
+  // space the reader broke it with — and that space keeps its place in the text.
+  function readWord(completed: boolean) {
+    const before = input.beforeCaret();
+    const match = (completed ? /(^|\s)([/@])(\S+)$/ : /(^|\s)([/@])(\S+)(\s+)$/).exec(before);
+    if (!match) return;
+    const token = resolve(match[2] + match[3]);
+    if (!token) return; // an unknown word is the reader's own text
+    input.replaceBefore(1 + match[3].length, token, match[4]?.length ?? 0);
   }
 
   // what the caret is typing decides what is offered: a skill after "/", a subject after "@"
   const offer = () => {
-    const word = sigilWord(input.value, input.selectionStart ?? input.value.length);
+    const word = sigilWord(input.beforeCaret());
     if (!word) {
       close();
       return;
     }
-    const typed = word.word.toLowerCase();
+    const typed = word.typed.toLowerCase();
     if (word.sigil === commandSigil) {
       show(presets
         .filter((preset) => preset.command.toLowerCase().startsWith(typed))
         .map((preset) => ({
           label: `${commandSigil}${preset.command}`,
           hint: preset.title,
-          insert: () => insertAt(word, `${commandSigil}${preset.command}`),
+          insert: () => insert(`${commandSigil}${preset.command}`, word.typed.length),
         })));
       return;
     }
@@ -222,13 +196,13 @@ export function initPresets(form: HTMLFormElement, input: HTMLTextAreaElement, t
       .map(([subject, named]) => ({
         label: `${subjectSigil}${named.label}`,
         hint: named.hint,
-        insert: () => insertAt(word, `${subjectSigil}${subject}`),
+        insert: () => insert(`${subjectSigil}${subject}`, word.typed.length),
       })));
   };
 
-  input.addEventListener('input', () => {
+  input.el.addEventListener('input', () => {
     offer();
-    readWord();
+    readWord(false);
   });
 
   const move = (step: number) => {

@@ -7,8 +7,8 @@ import {toggleElem} from '../utils/dom.ts';
 import {followAgentLive, markSessionBusy, runIsBusy} from '../modules/agent-live.ts';
 import type {AgentApproval, AgentDelta, AgentMessage, AgentRun} from '../modules/agent-live.ts';
 import {initAttachmentList, initComposerKeys, initDraftComposer, fitLayout} from './agent-chat/composer.ts';
+import {initComposerInput} from './agent-chat/input.ts';
 import {initPresets, tokenNames} from './agent-chat/presets.ts';
-import {initTaskTokens} from './agent-chat/task-tokens.ts';
 import {buildApproval, buildMessage, decorateTaskTokens, initMessageActions, initTranscriptActions, scrollToLastQuestion, scrollToTop} from './agent-chat/transcript.ts';
 import type {AgentChatLabels} from './agent-chat/transcript.ts';
 import {initMoreMenus, initRepoGroups, applyConversationTitle} from './agent-chat/list.ts';
@@ -57,8 +57,8 @@ export function initAgentChat() {
   const composerEl = mainEl.querySelector<HTMLFormElement>('.agent-chat-composer')!;
   const sendEl = mainEl.querySelector<HTMLButtonElement>('.agent-chat-send')!;
   const noteEl = mainEl.querySelector<HTMLElement>('.agent-chat-composer-error')!;
-  const inputEl = mainEl.querySelector<HTMLTextAreaElement>('.agent-chat-input')!;
   const names = tokenNames(composerEl); // the words of a message read as their names
+  const input = initComposerInput(composerEl); // the box the reader types in
   const ajaxHeaders = {'X-Requested-With': 'XMLHttpRequest'};
   const elConversationID = mainEl.getAttribute('data-conversation-id')!;
   const editURL = `${messagesUrl}/`; // (the trailing slash: the per-message URL appends the message id)
@@ -99,7 +99,7 @@ export function initAgentChat() {
         const bubble = users[users.length - 1]?.querySelector<HTMLElement>('.agent-chat-bubble') ?? users[users.length - 1];
         // the chat input steals focus first: without it the browser pulls the caret back into view
         scrollToTop(messagesEl, bubble, () => {
-          composerEl.querySelector<HTMLTextAreaElement>('.agent-chat-input')?.focus({preventScroll: true});
+          input?.el.focus({preventScroll: true});
         });
       });
       return;
@@ -271,14 +271,7 @@ export function initAgentChat() {
   }
   const clearAttachments = initAttachmentList(composerEl);
   decorateTaskTokens(messagesEl, names); // the messages already on the page
-  const tasks = initTaskTokens(composerEl, inputEl);
-  if (tasks) {
-    // the message carries the words the names stand for, written just before it is sent
-    composerEl.addEventListener('submit', () => {
-      inputEl.value = tasks.payload();
-    }, {capture: true});
-  }
-  if (tasks) initComposerKeys(composerEl, inputEl, initPresets(composerEl, inputEl, tasks));
+  if (input) initComposerKeys(composerEl, input, initPresets(composerEl, input));
 
   composerEl.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -292,8 +285,7 @@ export function initAgentChat() {
         setBusy(false, `${labels.error} (${resp.status} ${resp.statusText})`);
         return;
       }
-      inputEl.value = '';
-      tasks?.reset(); // the names were sent as the words they stand for
+      input?.clear(); // the box is the reader's again
       clearAttachments(); // the files are sent, so the next message starts without them
       if (!pendingEl) setPendingState('queued', labels.queued); // the run event follows, this avoids a gap
     } catch (error) {

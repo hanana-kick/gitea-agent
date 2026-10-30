@@ -1,6 +1,7 @@
 import {POST} from '../../modules/fetch.ts';
+import {initComposerInput} from './input.ts';
+import type {ComposerInput} from './input.ts';
 import {initPresets} from './presets.ts';
-import {initTaskTokens} from './task-tokens.ts';
 import {svg} from '../../svg.ts';
 import {createElementFromHTML, toggleElem} from '../../utils/dom.ts';
 
@@ -120,26 +121,19 @@ export function initAttachmentList(form: HTMLFormElement): () => void {
   return clear;
 }
 
-// ChatGPT and Claude send on Enter and grow the input while typing; a chat box that stays
-// three rows tall wastes half the panel.
-export function initComposerKeys(form: HTMLFormElement, input: HTMLTextAreaElement, presets?: {keyDown: (event: KeyboardEvent) => boolean}) {
-  input.addEventListener('keydown', (event) => {
+// ChatGPT and Claude send on Enter; the box grows while the message does, and shift breaks the
+// line, which is how a task is read as one.
+export function initComposerKeys(form: HTMLFormElement, input: ComposerInput, presets?: {keyDown: (event: KeyboardEvent) => boolean}) {
+  input.el.addEventListener('keydown', (event) => {
     if (event.isComposing) return;
     if (presets?.keyDown(event)) { // the open palette owns the arrow keys and Enter
       event.preventDefault();
       return;
     }
-    if (event.key !== 'Enter') return;
-    if (event.shiftKey) return; // shift breaks the line, which is how a task is read as one
+    if (event.key !== 'Enter' || event.shiftKey) return;
     event.preventDefault();
     form.requestSubmit();
   });
-  const grow = () => {
-    input.style.height = 'auto';
-    input.style.height = `${Math.min(input.scrollHeight, 240)}px`;
-  };
-  input.addEventListener('input', grow);
-  grow();
 }
 
 // a conversation does not exist until its first message, so the draft posts the message and
@@ -148,16 +142,10 @@ export function initDraftComposer() {
   const form = document.querySelector<HTMLFormElement>('.agent-chat-composer[data-draft-url]');
   if (!form) return;
   const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
-  const input = form.querySelector<HTMLTextAreaElement>('.agent-chat-input')!;
+  const input = initComposerInput(form);
+  if (!input) return;
   initAttachmentList(form);
-  const tasks = initTaskTokens(form, input);
-  if (tasks) {
-    // a task is sent as the word it stands for, not as the name the reader read
-    form.addEventListener('submit', () => {
-      input.value = tasks.payload();
-    }, {capture: true});
-  }
-  if (tasks) initComposerKeys(form, input, initPresets(form, input, tasks));
+  initComposerKeys(form, input, initPresets(form, input));
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -169,7 +157,7 @@ export function initDraftComposer() {
       });
       const location = resp.headers.get('location');
       if (resp.ok && location) {
-        tasks?.reset();
+        input.clear();
         window.location.assign(location);
         return;
       }

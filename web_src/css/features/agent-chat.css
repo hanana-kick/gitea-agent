@@ -1219,53 +1219,48 @@ button.agent-chat-card {
   }
 }
 
-/* The textarea owns the text, the caret and the selection; the mirror above it draws a tint
-   over the command and the subject of a task. It stays in the same font and adds no padding,
-   so the two wrap their lines in exactly the same places. */
-.agent-chat-input-wrap {
-  position: relative;
+/* The composer's box is an editable element, not a textarea: a picked task word has to stand
+   in the text as a chip, and only an element can be one. It reads as a field, and the hidden
+   field under it carries the message that is sent. */
+.agent-chat-input {
   flex: 1;
   min-width: 0;
-}
-
-.agent-chat-input {
-  /* the textarea paints its own words above the mirror behind it, whose tokens are only tint */
-  position: relative;
-  z-index: 1;
-  resize: none;
-}
-
-/* The mirror sits under the textarea and draws only tint, so the tint is behind the words and
-   the words stay the theme's own. The textarea lends it the background it would otherwise
-   paint over it, and keeps the caret and the selection for itself. */
-.agent-chat-input-mirror {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
+  min-height: 62px; /* about the three rows a textarea used to hold */
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px 10px;
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--border-radius-medium);
+  background: var(--color-input-background);
+  color: var(--color-text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: transparent;
+  cursor: text;
 }
 
-/* the rule that paints form fields is a long one, so this one matches it and then some */
-.agent-chat-composer .agent-chat-input-wrap .agent-chat-input,
-.agent-chat-composer .agent-chat-input-wrap .agent-chat-input:focus {
-  background: transparent;
+.agent-chat-input:focus {
+  border-color: var(--color-primary);
+  outline: none;
 }
 
-/* A token is a pill drawn over words the textarea still owns: the mirror carries no glyph of
-   its own, only the tint, so nothing is drawn twice. */
-/* A token is a pill around the words it replaced. The tint is the token's own background, so
-   it always sits behind those words: in the composer the textarea draws the glyphs and the
-   mirror's copy of them stays invisible, and in a transcript the token draws them itself. */
+/* nothing written yet: the placeholder stands where the words would */
+.agent-chat-input[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: var(--color-text-light-2);
+  pointer-events: none;
+}
+
+.agent-chat-input[contenteditable="false"] {
+  color: var(--color-text-light-2);
+}
+
+/* A chip stands where the word it replaced was written, with the padding and the margins of a
+   chip of its own: it never crowds the words it sits between. */
 .agent-chat-token {
-  color: inherit;
+  display: inline-block;
+  padding: 1px 7px;
+  margin: 0 2px;
   border-radius: var(--border-radius-medium);
-}
-
-.agent-chat-input-wrap .agent-chat-token {
-  color: transparent;
 }
 
 .agent-chat-token-command {
