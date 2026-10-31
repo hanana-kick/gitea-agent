@@ -48,6 +48,10 @@ type scriptedModel struct {
 	// has been answered, which is how the round limit is reached.
 	chunks     []map[string]any
 	alwaysCall bool
+	// requireSignature refuses an answer whose replayed call lost what the gateway signed it
+	// with, which is how one family of gateways rejects a follow-up request
+	requireSignature bool
+	refusals         int
 
 	mu       sync.Mutex
 	requests []scriptedRequest
@@ -97,6 +101,27 @@ func (m *scriptedModel) serve(w http.ResponseWriter, r *http.Request) {
 	if len(body.Tools) == 0 {
 		writeAnswer(w, body.Stream, m.answer)
 		return
+	}
+	if m.requireSignature && answered {
+		signed := false
+		for _, message := range body.Messages {
+			if message.Role != "assistant" {
+				continue
+			}
+			for _, call := range message.ToolCalls {
+				if _, ok := call.Extra["extra_content"]; ok {
+					signed = true
+				}
+			}
+		}
+		if !signed {
+			m.mu.Lock()
+			m.refusals++
+			m.mu.Unlock()
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"the call lost its signature"}}`))
+			return
+		}
 	}
 	if len(m.chunks) > 0 {
 		if answered && !m.alwaysCall {
@@ -531,8 +556,12 @@ func streamedCall(calls []map[string]any) []map[string]any {
 			fn["name"] = name
 		}
 		piece := map[string]any{"index": index, "type": "function", "function": fn}
-		if id, ok := call["id"]; ok {
-			piece["id"] = id
+		for key, value := range call {
+			switch key {
+			case "index", "name", "arguments", "function":
+			default:
+				piece[key] = value // whatever else a gateway signs a call with
+			}
 		}
 		chunks = append(chunks, map[string]any{"choices": []any{
 			map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{piece}}, "finish_reason": nil},
@@ -583,4 +612,93 @@ func TestEngineAnswersCallsWithNoArgumentsAndCallsToNothing(t *testing.T) {
 
 	final := messagesOf(t, conversation.ID)
 	assert.Equal(t, "nothing and nowhere", final[len(final)-1].Content)
+}
+
+// A gateway that signs a call and refuses the answer without the signature gets it back: what
+// the gateway sent with a call is kept and replayed with it.
+func TestEngineReplaysWhatAGatewaySignedACallWith(t *testing.T) {
+	model := newScriptedModel(t, "", "", "the readme is short")
+	model.requireSignature = true
+	model.chunks = streamedCall([]map[string]any{
+		{
+			"name": "gitea_read_file", "arguments": `{"path":"README.md"}`,
+			"extra_content": map[string]any{"google": map[string]any{"thought_signature": "sig-1"}},
+		},
+	})
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "read the readme")
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	assert.Zero(t, model.refusals, "the answered request arrived without the signature")
+	assert.Contains(t, toolRecord(t, conversation.ID, "gitea_read_file"), "`README.md` at master")
+}
+
+// Two calls that a gateway named alike are told apart, so the two answers are not confused
+// for each other.
+func TestEngineTellsApartCallsTheGatewayNamedAlike(t *testing.T) {
+	model := newScriptedModel(t, "", "", "both were read")
+	model.chunks = streamedCall([]map[string]any{
+		{"index": 0, "id": "call_1", "name": "gitea_read_file", "arguments": `{"path":"README.md"}`},
+		{"index": 1, "id": "call_1", "name": "gitea_read_issue", "arguments": `{"index":1}`},
+	})
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "read both")
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+
+	requests := model.requestsMade()
+	require.Len(t, requests, 2)
+	ids := []string{}
+	answered := []string{}
+	for _, message := range requests[1].Messages {
+		if message.Role == "assistant" {
+			for _, call := range message.ToolCalls {
+				ids = append(ids, call.ID)
+			}
+		}
+		if message.Role == "tool" {
+			answered = append(answered, message.ToolCallID)
+		}
+	}
+	require.Len(t, ids, 2)
+	assert.NotEqual(t, ids[0], ids[1], "two calls cannot share one name back")
+	assert.ElementsMatch(t, ids, answered, "every call is answered by its own name")
+}
+
+// The model can put a document in the arguments of a call; the reader of a record does not have
+// to be given all of it.
+func TestEngineCapsTheArgumentsItRecords(t *testing.T) {
+	model := newScriptedModel(t, "", "", "listed")
+	model.chunks = streamedCall([]map[string]any{
+		{"name": "gitea_list_files", "arguments": `{"path":"","note":"` + strings.Repeat("x", 8*1024) + `"}`},
+	})
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "list the files")
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+
+	record := toolRecord(t, conversation.ID, "gitea_list_files")
+	require.NotEmpty(t, record)
+	line, _, _ := strings.Cut(record, "\n")
+	assert.LessOrEqual(t, len(line), engineArgsLimit+len("gitea_list_files ")+4)
+	assert.Contains(t, line, "…")
+	assert.Contains(t, record, "README.md", "the tool still ran with the arguments it was given")
+}
+
+// A call that names no tool at all is answered in words the model can act on.
+func TestEngineAnswersACallThatNamesNoTool(t *testing.T) {
+	model := newScriptedModel(t, "", "", "nothing to call")
+	model.chunks = streamedCall([]map[string]any{{"arguments": `{}`}})
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "call something")
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+
+	var told string
+	for _, message := range messagesOf(t, conversation.ID) {
+		if message.Role == agent_model.MessageRoleTool {
+			told = message.Content
+		}
+	}
+	assert.Contains(t, told, "named no tool")
 }

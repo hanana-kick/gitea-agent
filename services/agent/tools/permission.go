@@ -5,7 +5,9 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
@@ -63,6 +65,9 @@ func offeredTo(ctx context.Context, tool Tool, session Session) (bool, error) {
 
 // Check reports how one call may proceed: run, ask its user, or not at all.
 func Check(ctx context.Context, session Session, name string) (Tool, Decision, error) {
+	if strings.TrimSpace(name) == "" {
+		return nil, DecisionDenied, errors.New("that call named no tool")
+	}
 	tool, ok := Find(name)
 	if !ok {
 		return nil, DecisionDenied, fmt.Errorf("unknown tool %q", name)

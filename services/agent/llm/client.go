@@ -58,12 +58,111 @@ type ToolCall struct {
 	ID       string       `json:"id"`
 	Type     string       `json:"type"`
 	Function FunctionCall `json:"function"`
+	// Extra is whatever else the gateway sent with the call. It is sent back with the call
+	// when the assistant message is replayed, because some gateways sign a call and refuse
+	// the answer to it without the signature.
+	Extra map[string]any `json:"-"`
+}
+
+// MarshalJSON writes the call back the way it arrived: the fields this agent reads, and
+// everything else the gateway put in it.
+func (c ToolCall) MarshalJSON() ([]byte, error) {
+	body := make(map[string]any, len(c.Extra)+3)
+	maps.Copy(body, c.Extra)
+	body["id"] = c.ID
+	body["type"] = c.Type
+	body["function"] = c.Function
+	return json.Marshal(body)
+}
+
+// UnmarshalJSON reads a call, holding on to the fields it does not know.
+func (c *ToolCall) UnmarshalJSON(data []byte) error {
+	body := map[string]any{}
+	if err := json.Unmarshal(data, &body); err != nil {
+		return err
+	}
+	readToolCall(&body, c)
+	return nil
 }
 
 // FunctionCall names the tool and carries its arguments as JSON.
 type FunctionCall struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
+}
+
+// UnmarshalJSON reads a call's arguments as the JSON text the standard sends — and as the
+// object or array a gateway may send instead, which is the same call in another shape.
+func (f *FunctionCall) UnmarshalJSON(data []byte) error {
+	body := struct {
+		Name      string `json:"name"`
+		Arguments any    `json:"arguments"`
+	}{}
+	if err := json.Unmarshal(data, &body); err != nil {
+		return err
+	}
+	f.Name = body.Name
+	f.Arguments = argumentsText(body.Arguments)
+	return nil
+}
+
+// argumentsText is a call's arguments as the JSON text a tool decodes.
+func argumentsText(arguments any) string {
+	switch typed := arguments.(type) {
+	case nil:
+		return ""
+	case string:
+		return typed
+	}
+	encoded, err := json.Marshal(arguments)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+// readToolCall reads one call — from the wire, or from one streamed piece of it — and takes
+// what is not a field of it as something to send back.
+func readToolCall(body *map[string]any, call *ToolCall) {
+	if call.Type == "" {
+		call.Type = "function"
+	}
+	if value, ok := (*body)["id"].(string); ok {
+		call.ID = value
+	}
+	if value, ok := (*body)["type"].(string); ok {
+		call.Type = value
+	}
+	if fn, ok := (*body)["function"].(map[string]any); ok {
+		if name, ok := fn["name"].(string); ok {
+			call.Function.Name = name
+		}
+		call.Function.Arguments = argumentsText(fn["arguments"])
+	}
+	delete(*body, "index")
+	delete(*body, "id")
+	delete(*body, "type")
+	delete(*body, "function")
+	if len(*body) > 0 {
+		if call.Extra == nil {
+			call.Extra = make(map[string]any, len(*body))
+		}
+		maps.Copy(call.Extra, *body)
+	}
+}
+
+// toolCallIndex is the position a streamed piece belongs to; a piece without one is the
+// first and only call of its message.
+func toolCallIndex(body map[string]any) int {
+	switch value := body["index"].(type) {
+	case float64:
+		return int(value)
+	case int:
+		return value
+	case int64:
+		return int(value)
+	}
+	return 0
 }
 
 // ToolDef describes one tool the model may call.
@@ -333,18 +432,9 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 					Content          string `json:"content"`
 					Reasoning        string `json:"reasoning"`
 					ReasoningContent string `json:"reasoning_content"`
-					ToolCalls        []struct {
-						Index    int    `json:"index"`
-						ID       string `json:"id"`
-						Type     string `json:"type"`
-						Function struct {
-							Name string `json:"name"`
-							// the standard sends the arguments as JSON text, in pieces; a
-							// gateway that sends the object itself is read here too, rather
-							// than dropping the call it is making
-							Arguments any `json:"arguments"`
-						} `json:"function"`
-					} `json:"tool_calls"`
+					// a piece of a call is read whole: the fields this agent uses, and
+					// whatever else the gateway signed it with
+					ToolCalls []map[string]any `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
@@ -372,25 +462,26 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 		finished := chunk.Choices[0].FinishReason != ""
 		delta := chunk.Choices[0].Delta
 		// a call arrives in pieces: the name once and the arguments in fragments
-		for _, call := range delta.ToolCalls {
-			for len(toolCalls) <= call.Index {
+		for _, piece := range delta.ToolCalls {
+			index := toolCallIndex(piece)
+			call := ToolCall{Type: "function"}
+			readToolCall(&piece, &call)
+			for len(toolCalls) <= index {
 				toolCalls = append(toolCalls, ToolCall{Type: "function"})
 			}
-			piece := &toolCalls[call.Index]
+			gathered := &toolCalls[index]
 			if call.ID != "" {
-				piece.ID = call.ID
+				gathered.ID = call.ID
 			}
-			if piece.Function.Name == "" {
-				piece.Function.Name = call.Function.Name
+			if gathered.Function.Name == "" {
+				gathered.Function.Name = call.Function.Name
 			}
-			switch arguments := call.Function.Arguments.(type) {
-			case string:
-				piece.Function.Arguments += arguments
-			case nil:
-			default:
-				if encoded, err := json.Marshal(arguments); err == nil {
-					piece.Function.Arguments += string(encoded)
+			gathered.Function.Arguments += call.Function.Arguments
+			for key, value := range call.Extra {
+				if gathered.Extra == nil {
+					gathered.Extra = make(map[string]any, len(call.Extra))
 				}
+				gathered.Extra[key] = value
 			}
 		}
 		thought := delta.Reasoning + delta.ReasoningContent

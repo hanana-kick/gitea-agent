@@ -640,14 +640,17 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 		if len(message.ToolCalls) == 0 {
 			return answerResult{Content: message.Content, Reasoning: reasoning.String(), Model: model}, nil
 		}
-		// a gateway may leave a call unnamed, and a call has to be named back when its result
-		// is returned, or the two cannot be lined up
+		// a call has to be named back when its result is returned, or the two cannot be lined
+		// up: a gateway may leave a call unnamed, and may name two calls alike
+		named := make(map[string]bool, len(message.ToolCalls))
 		for i := range message.ToolCalls {
-			if message.ToolCalls[i].ID == "" {
-				message.ToolCalls[i].ID = fmt.Sprintf("call_%d_%d", round, i)
+			call := &message.ToolCalls[i]
+			if call.ID == "" || named[call.ID] {
+				call.ID = fmt.Sprintf("call_%d_%d", round, i)
 			}
-			if message.ToolCalls[i].Type == "" {
-				message.ToolCalls[i].Type = "function"
+			named[call.ID] = true
+			if call.Type == "" {
+				call.Type = "function"
 			}
 		}
 		// the calls are what the reader watches happen; the answer starts after them
@@ -719,8 +722,7 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 // recordTool puts one call and its result in the transcript, and hands the same result
 // back for the model to read.
 func (e *Engine) recordTool(ctx context.Context, conversation *agent_model.Conversation, call llm.ToolCall, result string) string {
-	args := strings.Join(strings.Fields(call.Function.Arguments), " ")
-	if message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleTool, argsLine(call.Function.Name, args)+"\n"+result, ""); err == nil {
+	if message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleTool, argsLine(call.Function.Name, call.Function.Arguments)+"\n"+result, ""); err == nil {
 		e.broker.publish(conversation.ID, 0, Event{Name: EventMessage, Data: message.ID})
 	} else {
 		log.Error("Agent engine: unable to record tool %s: %v", call.Function.Name, err)
@@ -728,10 +730,18 @@ func (e *Engine) recordTool(ctx context.Context, conversation *agent_model.Conve
 	return result
 }
 
+// engineArgsLimit caps the arguments one record keeps: the model can put a document in them,
+// and the record is read by a person.
+const engineArgsLimit = 2 * 1024
+
 // argsLine renders a call the way the transcript shows it.
 func argsLine(name, args string) string {
+	args = strings.Join(strings.Fields(args), " ")
 	if args == "" || args == "{}" {
 		return name
+	}
+	if len(args) > engineArgsLimit {
+		args = args[:engineArgsLimit] + "…"
 	}
 	return name + " " + args
 }
