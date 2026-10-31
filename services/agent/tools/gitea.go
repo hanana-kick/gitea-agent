@@ -48,6 +48,9 @@ func (GiteaTools) Registry() []Tool {
 		listBranchesTool{},
 		searchCodeTool{},
 		commitFilesTool{},
+		reviewPullRequestTool{},
+		readReviewsTool{},
+		commentPullRequestTool{},
 	}
 }
 
