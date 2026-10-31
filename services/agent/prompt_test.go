@@ -211,3 +211,32 @@ func TestExpandCommandNamesTheSkillAndTheSubject(t *testing.T) {
 	assert.Contains(t, changes, "read what it changes with gitea_read_pull_request")
 	assert.Contains(t, changes, "read it with the gitea_read_issue tool")
 }
+
+// A session whose tools only read is told so, rather than left to promise a change it cannot
+// make; once a tool that writes is offered, the line goes away.
+func TestToolsPromptSaysWhenNothingCanBeChanged(t *testing.T) {
+	// the tools that only read, whatever else the package grows
+	reading := []agent_tools.Tool{}
+	for _, tool := range agent_tools.Registry() {
+		if !agent_tools.Writes(tool) {
+			reading = append(reading, tool)
+		}
+	}
+	assert.Contains(t, toolsPrompt(reading), "Nothing here changes anything")
+
+	writing := toolsPrompt(append(agent_tools.Registry(), fakeWriteTool{}))
+	assert.NotContains(t, writing, "Nothing here changes anything")
+	assert.Contains(t, writing, "- gitea_fake_write:")
+}
+
+// fakeWriteTool is a tool that changes something, to say how such a tool reads in the prompt.
+type fakeWriteTool struct{}
+
+func (fakeWriteTool) Name() string             { return "gitea_fake_write" }
+func (fakeWriteTool) Description() string      { return "Write something." }
+func (fakeWriteTool) Scope() agent_tools.Scope { return agent_tools.ScopeRepository }
+func (fakeWriteTool) Args() []agent_tools.Arg  { return nil }
+func (fakeWriteTool) Writes() bool             { return true }
+func (fakeWriteTool) Run(context.Context, *user_model.User, agent_tools.Session, string) (string, error) {
+	return "", nil
+}

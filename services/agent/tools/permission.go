@@ -98,17 +98,22 @@ func Check(ctx context.Context, session Session, name string) (Tool, Decision, e
 	}
 }
 
-// ModeOf returns the permission mode of a tool and whether it is offered at all;
-// unknown tools default to llm-decided. The mode of a disabled tool is still reported, so
-// the admin page can show what it will go back to.
+// ModeOf returns the permission mode of a tool and whether it is offered at all. A tool that
+// reads what the user may read is offered at once and runs when the model decides; a tool that
+// writes waits for an admin to switch it on and asks its reader before it runs. The mode of a
+// disabled tool is still reported, so the admin page can show what it will go back to.
 func ModeOf(ctx context.Context, tool string) (string, bool, error) {
+	defaultMode, defaultEnabled := PermissionLLM, true
+	if registered, ok := Find(tool); ok && Writes(registered) {
+		defaultMode, defaultEnabled = PermissionManual, false
+	}
 	row := &agent_model.ToolPermission{}
 	has, err := db.GetEngine(ctx).Where("tool = ?", tool).Get(row)
 	if err != nil {
 		return "", false, fmt.Errorf("get tool permission %q: %w", tool, err)
 	}
 	if !has {
-		return PermissionLLM, true, nil
+		return defaultMode, defaultEnabled, nil
 	}
 	switch row.Mode {
 	case PermissionManual, PermissionAllowAll:

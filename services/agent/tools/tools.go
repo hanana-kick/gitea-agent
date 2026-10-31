@@ -86,6 +86,20 @@ type Tool interface {
 	Run(ctx context.Context, doer *user_model.User, session Session, args string) (string, error)
 }
 
+// WriteTool marks a tool that changes something: it commits, comments, opens or merges. A
+// write is not offered until an admin switches it on, and it asks its reader before it runs,
+// so nothing an agent does on its own leaves a trace in the instance.
+type WriteTool interface {
+	Tool
+	Writes() bool
+}
+
+// Writes reports whether a tool changes something; a tool that does not say is read as one.
+func Writes(tool Tool) bool {
+	written, ok := tool.(WriteTool)
+	return ok && written.Writes()
+}
+
 // Conditional is a tool that is offered only when the session can use it, so a tool with
 // nothing behind it costs the prompt nothing.
 type Conditional interface {

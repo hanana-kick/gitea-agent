@@ -53,6 +53,12 @@ func toolsPrompt(offerings []agent_tools.Tool) string {
 	for _, tool := range offerings {
 		builder.WriteString("- " + tool.Name() + ": " + tool.Description() + "\n")
 	}
+	if !slices.ContainsFunc(offerings, agent_tools.Writes) {
+		// a session that can only read must say so rather than promise a change it cannot make
+		builder.WriteString("\nNothing here changes anything: you can read and report, and when you are asked ")
+		builder.WriteString("to change, commit, open or merge something, say that you cannot and what a ")
+		builder.WriteString("reader has to switch on for you to do it.\n")
+	}
 	return strings.TrimRight(builder.String(), "\n")
 }
 

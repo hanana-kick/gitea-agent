@@ -23,8 +23,10 @@ func TestRegistryIsStableAndComplete(t *testing.T) {
 		assert.NotEmpty(t, tool.Description(), "%s needs a description for the model", tool.Name())
 	}
 	assert.Equal(t, []string{
-		"gitea_list_actions_runs", "gitea_list_files", "gitea_list_repos", "gitea_read_file",
-		"gitea_read_issue", "gitea_read_pull_request", "gitea_read_skill", "gitea_search_issues",
+		"gitea_commit_files", "gitea_list_actions_runs", "gitea_list_branches", "gitea_list_commits",
+		"gitea_list_files", "gitea_list_repos", "gitea_read_commit", "gitea_read_file",
+		"gitea_read_issue",
+		"gitea_read_pull_request", "gitea_read_skill", "gitea_search_code", "gitea_search_issues",
 	}, names)
 }
 
