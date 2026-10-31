@@ -7,10 +7,10 @@ import (
 	"net/url"
 	"testing"
 
-	"gitea.dev/models/unittest"
-	repo_model "gitea.dev/models/repo"
-	user_model "gitea.dev/models/user"
 	agent_model "gitea.dev/models/agent"
+	repo_model "gitea.dev/models/repo"
+	"gitea.dev/models/unittest"
+	user_model "gitea.dev/models/user"
 	agent_tools "gitea.dev/services/agent/tools"
 
 	"github.com/stretchr/testify/assert"
@@ -31,5 +31,9 @@ func TestAgentCommitFilesTool(t *testing.T) {
 		read, err := agent_tools.ReadFileTool{}.Run(t.Context(), user, session, `{"path":"NOTES.md","ref":"agent/notes"}`)
 		require.NoError(t, err)
 		assert.Contains(t, read, "notes")
+
+		created, err := agent_tools.CreateBranchTool{}.Run(t.Context(), user, session, `{"branch":"agent/from-tool","from":"master"}`)
+		require.NoError(t, err)
+		assert.Contains(t, created, "Branch agent/from-tool created from master")
 	})
 }

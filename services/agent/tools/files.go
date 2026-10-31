@@ -221,6 +221,14 @@ func (readFileTool) Args() []Arg {
 		repositoryArg("a file"),
 		{Name: "path", Description: "Path of the file, relative to the repository root, as gitea_list_files shows it"},
 		{Name: "ref", Optional: true, Description: "Branch, tag or commit to read; leave it out for the default branch"},
+		{
+			Name: "start_line", Optional: true, Type: "integer",
+			Description: "First line to read, 1-based, for a file too large to be read whole",
+		},
+		{
+			Name: "end_line", Optional: true, Type: "integer",
+			Description: "Last line to read; leave it out for 200 lines from start_line",
+		},
 	}
 }
 
@@ -237,6 +245,8 @@ func (readFileTool) read(ctx context.Context, doer *user_model.User, session Ses
 		Repository string `json:"repository"`
 		Path       string `json:"path"`
 		Ref        string `json:"ref"`
+		StartLine  int    `json:"start_line"`
+		EndLine    int    `json:"end_line"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", err
@@ -263,12 +273,37 @@ func (readFileTool) read(ctx context.Context, doer *user_model.User, session Ses
 	if !typesniffer.DetectContentType(content).IsText() {
 		return fmt.Sprintf("%s is not a text file (%s).", displayPath(path), sizeText(size)), nil
 	}
+	text := string(content)
+	// a line range reads a source file too large to be read whole: the lines are cut from what
+	// the cap already fetched, which is the beginning of the file
+	if params.StartLine > 0 || params.EndLine > 0 {
+		start := max(params.StartLine, 1)
+		end := params.EndLine
+		if end < start {
+			end = start + 200 - 1
+		}
+		lines := strings.Split(text, "\n")
+		total := len(lines)
+		if start > total {
+			return fmt.Sprintf("%s has %d lines; %d is past the end.", displayPath(path), total, start), nil
+		}
+		if end > total {
+			end = total
+		}
+		if end-start+1 > 400 {
+			end = start + 399
+		}
+		text = strings.Join(lines[start-1:end], "\n")
+		header := fmt.Sprintf("%s at %s, lines %d-%d of %d", displayPath(path), found.ref, start, end, total)
+		log.Trace("Agent tool gitea_read_file read lines %d-%d of %s for user %d", start, end, path, doer.ID)
+		return clip(header + "\n\n" + text), nil
+	}
 	header := fmt.Sprintf("%s at %s, %s", displayPath(path), found.ref, sizeText(size))
 	if int64(len(content)) < size {
 		header += ", showing the first " + sizeText(int64(len(content)))
 	}
 	log.Trace("Agent tool gitea_read_file read %s of %s for user %d", path, found.repository.FullName(), doer.ID)
-	return clip(header + "\n\n" + string(content)), nil
+	return clip(header + "\n\n" + text), nil
 }
 
 // listFilesToolName is named where another tool answers with what to use instead.

@@ -23,8 +23,9 @@ func TestRegistryIsStableAndComplete(t *testing.T) {
 		assert.NotEmpty(t, tool.Description(), "%s needs a description for the model", tool.Name())
 	}
 	assert.Equal(t, []string{
-		"gitea_comment_issue", "gitea_commit_files", "gitea_list_actions_runs", "gitea_list_branches",
-		"gitea_list_commits", "gitea_list_files", "gitea_list_repos", "gitea_read_commit", "gitea_read_file",
+		"gitea_comment_issue", "gitea_commit_files", "gitea_create_branch", "gitea_delete_branch",
+		"gitea_list_actions_runs", "gitea_list_branches", "gitea_list_commits", "gitea_list_files",
+		"gitea_list_repos", "gitea_move_file", "gitea_patch_file", "gitea_read_commit", "gitea_read_file",
 		"gitea_read_issue", "gitea_read_pull_request", "gitea_read_pull_request_reviews",
 		"gitea_read_skill", "gitea_review_pull_request", "gitea_search_code", "gitea_search_issues",
 	}, names)
@@ -119,16 +120,28 @@ func TestFileToolsArgueWithPathsAndRevisions(t *testing.T) {
 		byName[tool.Name()] = tool.Args()
 	}
 	// a listing starts at the root, so its path may be left out; reading needs one
-	// a listing starts at the root, so its path may be left out; reading needs one
 	assert.True(t, byName["gitea_list_files"][1].Optional)
 	assert.False(t, byName["gitea_read_file"][1].Optional)
 	// both read the default branch unless another revision is named
 	for _, name := range []string{"gitea_list_files", "gitea_read_file"} {
 		args := byName[name]
-		require.Len(t, args, 3)
-		assert.Equal(t, "ref", args[2].Name)
-		assert.True(t, args[2].Optional, "%s reads the default branch by default", name)
+		want := 3
+		if name == "gitea_read_file" {
+			want = 5 // the line range a large file is read in
+		}
+		require.Len(t, args, want)
+		refIndex := len(args) - 1
+		if name == "gitea_read_file" {
+			refIndex = 2
+		}
+		assert.Equal(t, "ref", args[refIndex].Name)
+		assert.True(t, args[refIndex].Optional, "%s reads the default branch by default", name)
 	}
+	// a file too large to read whole is read in ranges
+	rangeArgs := byName["gitea_read_file"]
+	assert.Equal(t, "start_line", rangeArgs[3].Name)
+	assert.Equal(t, "end_line", rangeArgs[4].Name)
+	assert.True(t, rangeArgs[3].Optional && rangeArgs[4].Optional)
 
 	defs := Definitions([]Tool{readFileTool{}})
 	required, ok := defs[0].Function.Parameters["required"].([]string)
