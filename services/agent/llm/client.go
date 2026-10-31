@@ -470,6 +470,12 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 				toolCalls = append(toolCalls, ToolCall{Type: "function"})
 			}
 			gathered := &toolCalls[index]
+			if call.Function.Name != "" && gathered.Function.Name != "" && call.Function.Name != gathered.Function.Name {
+				// the pieces of one call share its index; a gateway that puts a second call on
+				// an index it already used is making another call, not another piece of this one
+				toolCalls = append(toolCalls, ToolCall{Type: "function"})
+				gathered = &toolCalls[len(toolCalls)-1]
+			}
 			if call.ID != "" {
 				gathered.ID = call.ID
 			}

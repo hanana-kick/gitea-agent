@@ -702,3 +702,46 @@ func TestEngineAnswersACallThatNamesNoTool(t *testing.T) {
 	}
 	assert.Contains(t, told, "named no tool")
 }
+
+// A gateway that never says which call a piece belongs to: one call, read as one.
+func TestEngineReadsACallThatNeverSaysItsIndex(t *testing.T) {
+	model := newScriptedModel(t, "", "", "read it")
+	model.chunks = []map[string]any{
+		{"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{
+			map[string]any{"id": "call_1", "type": "function", "function": map[string]any{"name": "gitea_read_file"}},
+		}}, "finish_reason": nil}}},
+		{"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{
+			map[string]any{"type": "function", "function": map[string]any{"arguments": `{"path":"README.md"}`}},
+		}}, "finish_reason": nil}}},
+	}
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "read the readme")
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	assert.Contains(t, toolRecord(t, conversation.ID, "gitea_read_file"), "`README.md` at master")
+}
+
+// A gateway that puts two different calls on one index is making two calls, and both run.
+func TestEngineReadsTwoCallsThatShareAnIndex(t *testing.T) {
+	model := newScriptedModel(t, "", "", "both were read")
+	model.chunks = streamedCall([]map[string]any{
+		{"index": 0, "id": "call_a", "name": "gitea_read_file", "arguments": `{"path":"README.md"}`},
+		{"index": 0, "id": "call_b", "name": "gitea_read_issue", "arguments": `{"index":1}`},
+	})
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "read both")
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	assert.Contains(t, toolRecord(t, conversation.ID, "gitea_read_file"), "`README.md` at master")
+	assert.Contains(t, toolRecord(t, conversation.ID, "gitea_read_issue"), "user2/repo1 #1")
+
+	requests := model.requestsMade()
+	require.Len(t, requests, 2)
+	answered := []string{}
+	for _, message := range requests[1].Messages {
+		if message.Role == "tool" {
+			answered = append(answered, message.ToolCallID)
+		}
+	}
+	assert.ElementsMatch(t, []string{"call_a", "call_b"}, answered)
+}
