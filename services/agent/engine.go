@@ -166,6 +166,15 @@ func recoverRuns(ctx context.Context) error {
 		return err
 	}
 
+	// a call that waited for its reader belongs to a run that just died: nobody can answer it
+	// now, so it is closed rather than left looking pending
+	if _, err := db.GetEngine(ctx).
+		Where("status = ?", agent_model.ToolApprovalPending).
+		Cols("status", "decided_unix").
+		Update(&agent_model.ToolApproval{Status: agent_model.ToolApprovalExpired, DecidedUnix: timeutil.TimeStampNow()}); err != nil {
+		return err
+	}
+
 	runs := make([]*agent_model.Run, 0, 8)
 	if err := db.GetEngine(ctx).Where("status = ?", agent_model.RunStatusQueued).OrderBy("id ASC").Find(&runs); err != nil {
 		return err
@@ -712,7 +721,7 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 			return e.recordTool(ctx, conversation, call, reason)
 		}
 	}
-	output, err := tool.Run(ctx, doer, session, call.Function.Arguments)
+	output, err := runToolSafely(ctx, tool, doer, session, call)
 	if err != nil {
 		log.Error("Agent engine: tool %s of run %d failed: %v", call.Function.Name, run.ID, err)
 		return e.recordTool(ctx, conversation, call, "The tool could not run: "+err.Error())
@@ -728,6 +737,18 @@ func (e *Engine) sessionFor(ctx context.Context, conversation *agent_model.Conve
 		session.ActorID = agent.ID
 	}
 	return session
+}
+
+// runToolSafely runs one tool, turning a panic into the failure it is: a tool is written by
+// hand, and the instance must survive a bad one.
+func runToolSafely(ctx context.Context, tool agent_tools.Tool, doer *user_model.User, session agent_tools.Session, call llm.ToolCall) (output string, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Error("Agent engine: tool %s of run %d panicked: %v", call.Function.Name, session.RepoID, recovered)
+			err = fmt.Errorf("the tool failed while it ran (%v)", recovered)
+		}
+	}()
+	return tool.Run(ctx, doer, session, call.Function.Arguments)
 }
 
 // recordTool puts one call and its result in the transcript, and hands the same result

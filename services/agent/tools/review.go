@@ -81,6 +81,13 @@ func (reviewPullRequestTool) review(ctx context.Context, doer *user_model.User, 
 	if err := issue.LoadRepo(ctx); err != nil {
 		return "", err
 	}
+	// the head of the change is what a review is made against, and the service wants its ref
+	if err := issue.LoadPullRequest(ctx); err != nil {
+		return "", err
+	}
+	if issue.PullRequest == nil {
+		return fmt.Sprintf("%s #%d reads as a pull request but has no change behind it.", repository.FullName(), issue.Index), nil
+	}
 	// a review of one's own pull request is refused by the service, and said here in words
 	if issue.PosterID == actor.ID {
 		return "That pull request is yours: you cannot approve or reject it yourself.", nil

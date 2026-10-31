@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	agent_model "gitea.dev/models/agent"
+	"gitea.dev/models/db"
 	issues_model "gitea.dev/models/issues"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unittest"
@@ -87,4 +88,44 @@ func TestAgentSessionWritesAsTheAgent(t *testing.T) {
 	userSession, err := CreateConversation(ctx, agent_model.ConversationKindRepository, 1, 1, "user session")
 	require.NoError(t, err)
 	assert.Zero(t, engine.sessionFor(ctx, userSession).ActorID)
+}
+
+// A run whose answer never reached the thread is reported there, and one that did is not said
+// again: the surface hears how the work ended, once.
+func TestMentionReportsWhatTheThreadDidNotHear(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{ID: 1})
+
+	conversation, err := CreateConversation(ctx, agent_model.ConversationKindRepository, 2, repo.ID, "agent session")
+	require.NoError(t, err)
+
+	// a run that already succeeded, and a request whose answer the model never posted
+	run := &agent_model.Run{ConversationID: conversation.ID, UserID: 1, Status: agent_model.RunStatusSucceeded}
+	require.NoError(t, db.Insert(ctx, run))
+	request, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleUser, "[mention] …", "")
+	require.NoError(t, err)
+
+	agent := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agent.Name
+
+	// the answer is in the thread already: nothing more is said
+	before, err := issues_model.CountComments(ctx, &issues_model.FindCommentsOptions{IssueID: issue.ID})
+	require.NoError(t, err)
+	reportMention(ctx, request.ID, run.ID, repo, issue)
+	after, err := issues_model.CountComments(ctx, &issues_model.FindCommentsOptions{IssueID: issue.ID})
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "a run that answered in the thread says nothing more")
+
+	// a failed run is said out loud
+	failed := &agent_model.Run{ConversationID: conversation.ID, UserID: 1, Status: agent_model.RunStatusFailed, Error: "the model did not answer in time"}
+	require.NoError(t, db.Insert(ctx, failed))
+	reportMention(ctx, request.ID, failed.ID, repo, issue)
+	comments, err := issues_model.FindComments(ctx, &issues_model.FindCommentsOptions{IssueID: issue.ID})
+	require.NoError(t, err)
+	require.Greater(t, int64(len(comments)), before)
+	assert.Contains(t, comments[len(comments)-1].Content, "I could not finish this one")
+	assert.Equal(t, agent.ID, comments[len(comments)-1].PosterID)
 }

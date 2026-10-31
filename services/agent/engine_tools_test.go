@@ -422,6 +422,31 @@ func TestEngineWaitsForTheApprovalOfAManualTool(t *testing.T) {
 	_ = run
 }
 
+// A tool that panics is a failed call, not a dead instance: the model is told and the run ends.
+func TestToolPanicIsAFailedCall(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	user := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+
+	output, err := runToolSafely(context.Background(), panickingTool{}, user,
+		agent_tools.Session{Kind: agent_model.ConversationKindRepository, RepoID: 1},
+		llm.ToolCall{Function: llm.FunctionCall{Name: "gitea_fake_write"}})
+	assert.Empty(t, output)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed while it ran")
+}
+
+// panickingTool is a tool written wrongly, which the engine must survive.
+type panickingTool struct{}
+
+func (panickingTool) Name() string             { return "gitea_fake_write" }
+func (panickingTool) Description() string      { return "Panics." }
+func (panickingTool) Scope() agent_tools.Scope { return agent_tools.ScopeRepository }
+func (panickingTool) Args() []agent_tools.Arg  { return nil }
+func (panickingTool) Writes() bool             { return true }
+func (panickingTool) Run(context.Context, *user_model.User, agent_tools.Session, string) (string, error) {
+	panic("a tool written wrongly")
+}
+
 // A pull request of the session's repository is read as the change it is: the review path
 // every other tool was built for.
 func TestEngineReadsAPullRequestChange(t *testing.T) {

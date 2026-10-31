@@ -43,3 +43,19 @@ func TestReviewAnswersInsteadOfRunning(t *testing.T) {
 
 	_ = repo_model.Repository{}
 }
+
+// A review needs the change it is about: a pull request the service cannot line up is answered
+// rather than crashing the tool.
+func TestReviewAnswersAPullRequestWithNoChange(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	owner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	session := Session{Kind: agent_model.ConversationKindRepository, RepoID: 1}
+
+	out, err := reviewPullRequestTool{}.Run(ctx, owner, session, `{"index":2,"verdict":"comment","body":"x"}`)
+	require.NoError(t, err)
+	assert.NotPanics(t, func() {
+		_, _ = reviewPullRequestTool{}.Run(ctx, owner, session, `{"index":2,"verdict":"approve","body":"x"}`)
+	})
+	assert.NotEmpty(t, out)
+}
