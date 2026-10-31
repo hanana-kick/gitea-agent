@@ -68,9 +68,8 @@ func openSessionRepo(ctx context.Context, doer *user_model.User, session Session
 
 // entryAt finds one path in the revision, telling the model when there is nothing there.
 func (s *sessionRepo) entryAt(ctx context.Context, path string) (*git.TreeEntry, string, error) {
-	cleaned := files_service.CleanGitTreePath(path)
-	// a path that cleans away to nothing is either the root or one a repository cannot hold
-	if cleaned == "" && !isRootPath(path) {
+	cleaned, ok := cleanPath(path)
+	if !ok {
 		return nil, "", unreadableRepo{"That path is one a repository cannot hold."}
 	}
 	entry, err := s.commit.GetTreeEntryByPath(ctx, s.gitRepo, cleaned)
@@ -86,6 +85,16 @@ func (s *sessionRepo) entryAt(ctx context.Context, path string) (*git.TreeEntry,
 // isRootPath reports whether a path means the repository itself: nothing, or dots.
 func isRootPath(path string) bool {
 	return strings.Trim(strings.TrimSpace(path), "./") == ""
+}
+
+// cleanPath is the repository path a call asked about, and whether a repository could hold it:
+// a path that cleans away to nothing is either the root or one a repository cannot hold.
+func cleanPath(path string) (string, bool) {
+	cleaned := files_service.CleanGitTreePath(path)
+	if cleaned == "" && !isRootPath(path) {
+		return "", false
+	}
+	return cleaned, true
 }
 
 // displayPath names a path the way a message reads, with the repository root spelled out.

@@ -41,6 +41,7 @@ func (GiteaTools) Registry() []Tool {
 		listFilesTool{},
 		readFileTool{},
 		listRunsTool{},
+		readPullRequestTool{},
 	}
 }
 

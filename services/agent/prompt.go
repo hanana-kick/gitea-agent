@@ -145,9 +145,12 @@ func expandCommand(content string, catalog []*agent_model.Skill, offered map[str
 	if subject != nil {
 		if repo, number, ok := strings.Cut(subject[1], "#"); ok {
 			hints = append(hints, "The subject is #"+number+" of "+repo+" (an issue, or a pull request when the repository reads it as one):")
-			look := make([]string, 0, 2)
+			look := make([]string, 0, 3)
 			if offered["gitea_read_issue"] {
 				look = append(look, "read it with the gitea_read_issue tool before you answer")
+			}
+			if offered["gitea_read_pull_request"] {
+				look = append(look, "when it is a pull request, read what it changes with gitea_read_pull_request")
 			}
 			if offered["gitea_search_issues"] {
 				look = append(look, "search around it with gitea_search_issues")

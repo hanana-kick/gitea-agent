@@ -199,9 +199,15 @@ func TestExpandCommandNamesTheSkillAndTheSubject(t *testing.T) {
 	repoNoTools := expandCommand("/code @acme/widgets review it", catalog, map[string]bool{})
 	assert.Contains(t, repoNoTools, "The subject is the repository acme/widgets.")
 	assert.NotContains(t, repoNoTools, "gitea_search_issues")
-	// one of the two lookups is offered: only that one is named
+	// one of the lookups is offered: only that one is named
 	partial := expandCommand("/issue-triage @acme/widgets#7 look into this", catalog, map[string]bool{"gitea_search_issues": true})
 	assert.Contains(t, partial, "search around it with gitea_search_issues")
 	assert.NotContains(t, partial, "gitea_read_issue")
 	assert.NotContains(t, partial, "Open the")
+
+	// a subject on its own is still read where the tools are there: the changes of a pull
+	// request are not in its description, so the task says where they are
+	changes := expandCommand("/pr @acme/widgets#7 look into this", catalog, map[string]bool{"gitea_read_pull_request": true, "gitea_read_issue": true})
+	assert.Contains(t, changes, "read what it changes with gitea_read_pull_request")
+	assert.Contains(t, changes, "read it with the gitea_read_issue tool")
 }

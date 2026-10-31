@@ -24,7 +24,7 @@ func TestRegistryIsStableAndComplete(t *testing.T) {
 	}
 	assert.Equal(t, []string{
 		"gitea_list_actions_runs", "gitea_list_files", "gitea_list_repos", "gitea_read_file",
-		"gitea_read_issue", "gitea_read_skill", "gitea_search_issues",
+		"gitea_read_issue", "gitea_read_pull_request", "gitea_read_skill", "gitea_search_issues",
 	}, names)
 }
 
