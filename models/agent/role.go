@@ -6,6 +6,7 @@ package agent
 import (
 	"slices"
 
+	"gitea.dev/models/db"
 	"gitea.dev/modules/timeutil"
 )
 
@@ -36,4 +37,8 @@ type ModelRole struct {
 
 func (ModelRole) TableName() string {
 	return "agent_model_role"
+}
+
+func init() {
+	db.RegisterModel(new(ModelRole))
 }
