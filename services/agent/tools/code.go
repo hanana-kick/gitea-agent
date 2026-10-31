@@ -355,7 +355,24 @@ func (commitFilesTool) commit(ctx context.Context, doer *user_model.User, sessio
 		} `json:"files"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
-		return "", err
+		// a model may send the files as the JSON text of the array rather than the array
+		var loose struct {
+			Repository string `json:"repository"`
+			Branch     string `json:"branch"`
+			Base       string `json:"base"`
+			Message    string `json:"message"`
+			Files      any    `json:"files"`
+		}
+		if json.Unmarshal([]byte(args), &loose) != nil {
+			return "", err
+		}
+		params.Repository, params.Branch = loose.Repository, loose.Branch
+		params.Base, params.Message = loose.Base, loose.Message
+		if files, ok := loose.Files.(string); ok {
+			if json.Unmarshal([]byte(files), &params.Files) != nil {
+				return "", err
+			}
+		}
 	}
 	params.Branch = strings.TrimSpace(params.Branch)
 	if params.Branch == "" || strings.TrimSpace(params.Message) == "" {
