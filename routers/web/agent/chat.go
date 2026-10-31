@@ -988,7 +988,7 @@ func chatScope(ctx *context.Context, session *agent_model.Conversation, repo *re
 
 	switch ctx.FormString("scope") {
 	case "agent", "server":
-		// server agents are sessions of the global agent, so they live under Pod
+		// server agents are sessions of the global agent, so they live under it
 		return "agent", baseURL
 	case "repository":
 		return "repository", baseURL

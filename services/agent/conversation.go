@@ -160,7 +160,7 @@ func EnsureResidentConversation(ctx context.Context) (*agent_model.Conversation,
 	session := &agent_model.Conversation{
 		Kind: agent_model.ConversationKindResident,
 		// the resident session keeps this name, so it is never renamed by the model
-		Title:    "Pod",
+		Title:    "Agent",
 		TitleSet: true,
 	}
 	if err := db.Insert(ctx, session); err != nil {
@@ -192,7 +192,7 @@ func defaultConversationTitle(kind string) string {
 	case agent_model.ConversationKindServer:
 		return "Server agent"
 	}
-	return "Pod"
+	return "Agent"
 }
 
 // GetConversation returns a session the doer may open.
@@ -349,7 +349,7 @@ func (ErrConversationImmutable) Is(target error) bool {
 }
 
 // SetConversationTitle renames a session. The resident session is not renamed: it is the
-// instance-wide agent and is always called Pod.
+// instance-wide agent and always carries the agent's own name.
 func SetConversationTitle(ctx context.Context, conversation *agent_model.Conversation, title string) error {
 	if conversation.Kind == agent_model.ConversationKindResident {
 		return ErrConversationImmutable{}

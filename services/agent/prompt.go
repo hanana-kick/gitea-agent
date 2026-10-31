@@ -99,21 +99,21 @@ func clipLine(text string, limit int) string {
 func scopePrompt(ctx context.Context, conversation *agent_model.Conversation) string {
 	switch conversation.Kind {
 	case agent_model.ConversationKindResident:
-		return "You are Pod, the resident agent of this Gitea instance. You look after the whole " +
-			"instance and keep your context between conversations."
+		return "You are the agent of this Gitea instance. You look after the whole instance and " +
+			"keep your context between conversations."
 	case agent_model.ConversationKindServer:
-		return "You are Pod, working in a throwaway server session of this Gitea instance. You have " +
-			"the same reach as the resident Pod agent, but your context is kept apart from it and is " +
+		return "You are the agent, working in a throwaway server session of this Gitea instance. You " +
+			"have the same reach as the resident agent, but your context is kept apart from it and is " +
 			"meant to be discarded when this session ends."
 	case agent_model.ConversationKindRepository:
 		name := ""
 		if repo, err := repo_model.GetRepositoryByID(ctx, conversation.RepoID); err == nil && repo != nil {
 			name = repo.FullName()
 		}
-		return "You are Pod, working in a session bound to the repository " + name + ". You are " +
+		return "You are the agent, working in a session bound to the repository " + name + ". You are " +
 			"expected to work on that repository: code changes, pull requests and CI."
 	}
-	return "You are Pod, an agent of this Gitea instance."
+	return "You are the agent of this Gitea instance."
 }
 
 // A task is written "/skill @subject" and then whatever the reader wants. The two are

@@ -71,7 +71,7 @@ func TestBuildPromptKeepsTheConversationOnly(t *testing.T) {
 	// the scope prompt, then the summary standing in for the older transcript, then the exchange
 	require.Len(t, prompt, 5)
 	assert.Equal(t, []string{"system", "system", "user", "assistant", "user"}, rolesOf(prompt))
-	assert.Contains(t, prompt[0].Content, "resident agent")
+	assert.Contains(t, prompt[0].Content, "the agent of this Gitea instance")
 	assert.NotContains(t, prompt[0].Content, "call the tools below", "no tools means no tool instructions")
 	assert.Contains(t, prompt[1].Content, "Earlier in this conversation: Looked at CI")
 	assert.Equal(t, "and now", prompt[4].Content)
