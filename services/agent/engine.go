@@ -640,6 +640,16 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 		if len(message.ToolCalls) == 0 {
 			return answerResult{Content: message.Content, Reasoning: reasoning.String(), Model: model}, nil
 		}
+		// a gateway may leave a call unnamed, and a call has to be named back when its result
+		// is returned, or the two cannot be lined up
+		for i := range message.ToolCalls {
+			if message.ToolCalls[i].ID == "" {
+				message.ToolCalls[i].ID = fmt.Sprintf("call_%d_%d", round, i)
+			}
+			if message.ToolCalls[i].Type == "" {
+				message.ToolCalls[i].Type = "function"
+			}
+		}
 		// the calls are what the reader watches happen; the answer starts after them
 		e.broker.publish(conversation.ID, 0, Event{Name: EventDelta, Data: DeltaState{RunID: run.ID, Reset: true}})
 		messages = append(messages, *message)
@@ -678,6 +688,11 @@ func runUser(ctx context.Context, run *agent_model.Run) (*user_model.User, error
 // callTool makes one call the model asked for, records it in the transcript and returns
 // what the model gets to read.
 func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, doer *user_model.User, call llm.ToolCall) string {
+	// a tool that takes nothing is called with nothing; a gateway that sends no arguments at
+	// all is read as the empty object the tool expects
+	if strings.TrimSpace(call.Function.Arguments) == "" {
+		call.Function.Arguments = "{}"
+	}
 	session := agent_tools.Session{Kind: conversation.Kind, RepoID: conversation.RepoID}
 	tool, decision, err := agent_tools.Check(ctx, session, call.Function.Name)
 	switch {

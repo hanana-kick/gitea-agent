@@ -43,6 +43,12 @@ type scriptedModel struct {
 	args   string
 	answer string // what it says once the call has been answered
 
+	// chunks are raw stream chunks, for the shapes a test has to write itself: a call split
+	// across chunks, two calls at once, a call with no id. alwaysCall keeps calling after it
+	// has been answered, which is how the round limit is reached.
+	chunks     []map[string]any
+	alwaysCall bool
+
 	mu       sync.Mutex
 	requests []scriptedRequest
 }
@@ -92,6 +98,14 @@ func (m *scriptedModel) serve(w http.ResponseWriter, r *http.Request) {
 		writeAnswer(w, body.Stream, m.answer)
 		return
 	}
+	if len(m.chunks) > 0 {
+		if answered && !m.alwaysCall {
+			writeAnswer(w, body.Stream, m.answer)
+			return
+		}
+		streamChunks(w, m.chunks...)
+		return
+	}
 	if !answered {
 		writeCall(w, body.Stream, m.call, m.args)
 		return
@@ -126,7 +140,7 @@ func writeCall(w http.ResponseWriter, stream bool, name, args string) {
 		}})
 		return
 	}
-	writeStream(w, map[string]any{"choices": []any{
+	streamChunks(w, map[string]any{"choices": []any{
 		map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{call}}, "finish_reason": nil},
 	}})
 }
@@ -138,7 +152,7 @@ func writeAnswer(w http.ResponseWriter, stream bool, answer string) {
 		}})
 		return
 	}
-	writeStream(w, map[string]any{"choices": []any{
+	streamChunks(w, map[string]any{"choices": []any{
 		map[string]any{"index": 0, "delta": map[string]any{"content": answer}, "finish_reason": nil},
 	}})
 }
@@ -147,6 +161,19 @@ func writeStream(w http.ResponseWriter, chunk map[string]any) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	payload, _ := json.Marshal(chunk) // a test script is always encodable
 	fmt.Fprintf(w, "data: %s\n\n", payload)
+}
+
+// openStream says that more chunks follow; the caller ends the stream itself.
+func openStream(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+}
+
+// streamChunks writes streamed chunks and ends the stream.
+func streamChunks(w http.ResponseWriter, chunks ...map[string]any) {
+	openStream(w)
+	for _, chunk := range chunks {
+		writeStream(w, chunk)
+	}
 	fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
@@ -382,4 +409,178 @@ func TestEngineReadsAPullRequestChange(t *testing.T) {
 	record := toolRecord(t, conversation.ID, "gitea_read_pull_request")
 	require.NotEmpty(t, record)
 	assert.Contains(t, record, "files changed, +")
+}
+
+// A call arrives the way a gateway really sends one: the name once, the arguments in pieces.
+// What the tool finally runs with is the assembled call, not the first piece.
+func TestEngineAssemblesACallThatArrivesInPieces(t *testing.T) {
+	model := newScriptedModel(t, "", "", "the readme is short")
+	model.chunks = streamedCall([]map[string]any{
+		{"name": "gitea_read_file", "arguments": `{"pa`},
+		{"arguments": `th":"REA`},
+		{"arguments": `DME.md"}`},
+	})
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "read the readme")
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+
+	record := toolRecord(t, conversation.ID, "gitea_read_file")
+	require.NotEmpty(t, record)
+	assert.Contains(t, record, `{"path":"README.md"}`)
+	assert.Contains(t, record, "`README.md` at master")
+}
+
+// Two calls in one message are both run, and both answers name the call they answer.
+func TestEngineAnswersEveryCallOfARound(t *testing.T) {
+	model := newScriptedModel(t, "", "", "both were read")
+	model.chunks = streamedCall([]map[string]any{
+		{"index": 0, "id": "call_7", "name": "gitea_read_file", "arguments": `{"path":"README.md"}`},
+		{"index": 1, "id": "call_8", "name": "gitea_read_issue", "arguments": `{"index":1}`},
+	})
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "read the readme and issue 1")
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+
+	assert.Contains(t, toolRecord(t, conversation.ID, "gitea_read_file"), "`README.md` at master")
+	assert.Contains(t, toolRecord(t, conversation.ID, "gitea_read_issue"), "user2/repo1 #1")
+
+	// the model is told which answer belongs to which call, and the call it asked for is
+	// replayed exactly as it was made
+	requests := model.requestsMade()
+	require.Len(t, requests, 2)
+	replayed := requests[1].Messages
+	var assistantCalls []string
+	results := map[string]string{}
+	for _, message := range replayed {
+		if message.Role == "assistant" {
+			for _, call := range message.ToolCalls {
+				assistantCalls = append(assistantCalls, call.ID)
+			}
+		}
+		if message.Role == "tool" {
+			results[message.ToolCallID] = message.Content
+		}
+	}
+	assert.Equal(t, []string{"call_7", "call_8"}, assistantCalls)
+	assert.Contains(t, results, "call_7")
+	assert.Contains(t, results, "call_8")
+	assert.Contains(t, results["call_7"], "`README.md` at master")
+}
+
+// A gateway that leaves a call unnamed still gets an answer the provider can line up.
+func TestEngineNamesACallTheProviderLeftUnnamed(t *testing.T) {
+	model := newScriptedModel(t, "", "", "read it")
+	model.chunks = streamedCall([]map[string]any{
+		{"name": "gitea_read_file", "arguments": `{"path":"README.md"}`},
+	})
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "read the readme")
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+
+	requests := model.requestsMade()
+	require.Len(t, requests, 2)
+	for _, message := range requests[1].Messages {
+		if message.Role != "tool" {
+			continue
+		}
+		assert.NotEmpty(t, message.ToolCallID, "an answer with no call id cannot be lined up")
+		assert.NotEmpty(t, message.Content)
+	}
+}
+
+// A model that only ever calls tools is stopped at the round limit instead of running forever,
+// and its reader is told why.
+func TestEngineStopsAModelThatOnlyCallsTools(t *testing.T) {
+	model := newScriptedModel(t, "", "", "I could not settle on an answer")
+	model.alwaysCall = true
+	model.chunks = streamedCall([]map[string]any{
+		{"name": "gitea_read_file", "arguments": `{"path":"README.md"}`},
+	})
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "keep reading")
+	// the last round is asked without tools, so a model with nothing to say still ends the run
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	assert.Equal(t, "I could not settle on an answer", messagesOf(t, conversation.ID)[len(messagesOf(t, conversation.ID))-1].Content)
+
+	// and it does not call forever: the tools are asked for a bounded number of times
+	assert.LessOrEqual(t, len(model.requestsMade()), engineToolRounds)
+	reads := 0
+	for _, message := range messagesOf(t, conversation.ID) {
+		if message.Role == agent_model.MessageRoleTool {
+			reads++
+		}
+	}
+	assert.Equal(t, engineToolRounds-1, reads, "one round goes without tools, so it cannot call")
+}
+
+// streamedCall writes one message's worth of calls as a gateway streams them: each piece
+// carries what it knows, and the pieces of one call share its index.
+func streamedCall(calls []map[string]any) []map[string]any {
+	chunks := make([]map[string]any, 0, len(calls)+1)
+	for _, call := range calls {
+		index := 0 // the pieces of one call share its index; separate calls carry their own
+		if given, ok := call["index"].(int); ok {
+			index = given
+		}
+		fn := map[string]any{"arguments": call["arguments"]}
+		if name, ok := call["name"]; ok {
+			fn["name"] = name
+		}
+		piece := map[string]any{"index": index, "type": "function", "function": fn}
+		if id, ok := call["id"]; ok {
+			piece["id"] = id
+		}
+		chunks = append(chunks, map[string]any{"choices": []any{
+			map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{piece}}, "finish_reason": nil},
+		}})
+	}
+	return chunks
+}
+
+// A gateway that sends the arguments as an object rather than as text still gets its call run:
+// the call is worth more than the shape it arrived in.
+func TestEngineRunsACallWhoseArgumentsCameAsAnObject(t *testing.T) {
+	model := newScriptedModel(t, "", "", "read it")
+	model.chunks = streamedCall([]map[string]any{
+		{"name": "gitea_read_file", "arguments": map[string]any{"path": "README.md"}},
+	})
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "read the readme")
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+
+	record := toolRecord(t, conversation.ID, "gitea_read_file")
+	require.NotEmpty(t, record)
+	assert.Contains(t, record, "`README.md` at master")
+}
+
+// A tool that takes nothing is called with no arguments, and a model that makes up a tool is
+// told so instead of the run dying on it.
+func TestEngineAnswersCallsWithNoArgumentsAndCallsToNothing(t *testing.T) {
+	model := newScriptedModel(t, "", "", "nothing and nowhere")
+	model.chunks = streamedCall([]map[string]any{
+		{"index": 0, "id": "call_1", "name": "gitea_search_issues", "arguments": ""},
+		{"index": 1, "id": "call_2", "name": "gitea_nonesuch", "arguments": `{"anything":true}`},
+	})
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	run := runTurn(t, conversation, user, "look around")
+	require.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+
+	// the tool that takes nothing ran
+	searched := toolRecord(t, conversation.ID, "gitea_search_issues")
+	require.NotEmpty(t, searched)
+	assert.NotContains(t, searched, "could not run")
+
+	// the made-up one is answered, and the run carries on to an answer
+	madeUp := toolRecord(t, conversation.ID, "gitea_nonesuch")
+	require.NotEmpty(t, madeUp)
+	assert.Contains(t, madeUp, "unknown tool")
+
+	final := messagesOf(t, conversation.ID)
+	assert.Equal(t, "nothing and nowhere", final[len(final)-1].Content)
 }

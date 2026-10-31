@@ -338,8 +338,11 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 						ID       string `json:"id"`
 						Type     string `json:"type"`
 						Function struct {
-							Name      string `json:"name"`
-							Arguments string `json:"arguments"`
+							Name string `json:"name"`
+							// the standard sends the arguments as JSON text, in pieces; a
+							// gateway that sends the object itself is read here too, rather
+							// than dropping the call it is making
+							Arguments any `json:"arguments"`
 						} `json:"function"`
 					} `json:"tool_calls"`
 				} `json:"delta"`
@@ -380,7 +383,15 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 			if piece.Function.Name == "" {
 				piece.Function.Name = call.Function.Name
 			}
-			piece.Function.Arguments += call.Function.Arguments
+			switch arguments := call.Function.Arguments.(type) {
+			case string:
+				piece.Function.Arguments += arguments
+			case nil:
+			default:
+				if encoded, err := json.Marshal(arguments); err == nil {
+					piece.Function.Arguments += string(encoded)
+				}
+			}
 		}
 		thought := delta.Reasoning + delta.ReasoningContent
 		if delta.Content == "" && thought == "" {
