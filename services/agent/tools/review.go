@@ -62,7 +62,11 @@ func (reviewPullRequestTool) review(ctx context.Context, doer *user_model.User, 
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", err
 	}
-	repository, err := resolveRepo(ctx, doer, session, params.Repository, unit_model.TypePullRequests)
+	actor, err := actorOf(ctx, doer, session)
+	if err != nil {
+		return "", err
+	}
+	repository, err := resolveRepo(ctx, actor, session, params.Repository, unit_model.TypePullRequests)
 	if err != nil {
 		return "", err
 	}
@@ -78,7 +82,7 @@ func (reviewPullRequestTool) review(ctx context.Context, doer *user_model.User, 
 		return "", err
 	}
 	// a review of one's own pull request is refused by the service, and said here in words
-	if issue.PosterID == doer.ID {
+	if issue.PosterID == actor.ID {
 		return "That pull request is yours: you cannot approve or reject it yourself.", nil
 	}
 
@@ -95,7 +99,7 @@ func (reviewPullRequestTool) review(ctx context.Context, doer *user_model.User, 
 	}
 	defer gitRepo.Close()
 
-	review, comment, err := pull_service.SubmitReview(ctx, doer, gitRepo, issue, verdict,
+	review, comment, err := pull_service.SubmitReview(ctx, actor, gitRepo, issue, verdict,
 		strings.TrimSpace(params.Body), issue.PullRequest.GetGitHeadRefName(), nil)
 	if err != nil {
 		return "", err
@@ -264,7 +268,11 @@ func (commentPullRequestTool) comment(ctx context.Context, doer *user_model.User
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", err
 	}
-	repository, err := resolveRepo(ctx, doer, session, params.Repository, unit_model.TypeIssues)
+	actor, err := actorOf(ctx, doer, session)
+	if err != nil {
+		return "", err
+	}
+	repository, err := resolveRepo(ctx, actor, session, params.Repository, unit_model.TypeIssues)
 	if err != nil {
 		return "", err
 	}
@@ -276,7 +284,7 @@ func (commentPullRequestTool) comment(ctx context.Context, doer *user_model.User
 	if body == "" {
 		return "The body argument is required: an empty comment says nothing.", nil
 	}
-	comment, err := issues_service.CreateIssueComment(ctx, doer, repository, issue, body, nil)
+	comment, err := issues_service.CreateIssueComment(ctx, actor, repository, issue, body, nil)
 	if err != nil {
 		return "", err
 	}

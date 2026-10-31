@@ -19,6 +19,11 @@ import (
 
 var notifiers []Notifier
 
+// CommentListener is told about every new issue comment after the notifiers. The agent uses it
+// to answer the comments that name it; nothing else depends on it, so it may be nil.
+var CommentListener func(ctx context.Context, doer *user_model.User, repo *repo_model.Repository,
+	issue *issues_model.Issue, comment *issues_model.Comment, mentions []*user_model.User)
+
 // RegisterNotifier providers method to receive notify messages
 func RegisterNotifier(notifier Notifier) {
 	go notifier.Run()
@@ -67,6 +72,9 @@ func CreateIssueComment(ctx context.Context, doer *user_model.User, repo *repo_m
 
 	for _, notifier := range notifiers {
 		notifier.CreateIssueComment(ctx, doer, repo, issue, comment, mentions)
+	}
+	if CommentListener != nil {
+		CommentListener(ctx, doer, repo, issue, comment, mentions)
 	}
 }
 

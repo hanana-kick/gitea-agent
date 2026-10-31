@@ -71,6 +71,9 @@ type Session struct {
 	Kind string
 	// RepoID is the repository a repository session works inside, so its tools stay there; 0 for a session that is not bound to one.
 	RepoID int64
+	// ActorID is who writes on the surface the session works on, when that is not the user who
+	// asked: an agent session reads with the asking user's rights and writes as the agent.
+	ActorID int64
 }
 
 // Tool is one capability the agent may call.

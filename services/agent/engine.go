@@ -146,6 +146,7 @@ func InitEngine(ctx context.Context) error {
 	if err := recoverRuns(ctx); err != nil {
 		return err
 	}
+	InitMentions()
 	for range engineWorkers {
 		go engine.work()
 	}
@@ -588,7 +589,7 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 	if err != nil && !errors.Is(err, errRunUserUnknown{}) {
 		return answerResult{}, err
 	}
-	session := agent_tools.Session{Kind: conversation.Kind, RepoID: conversation.RepoID}
+	session := e.sessionFor(ctx, conversation)
 	offerings, err := agent_tools.Available(ctx, session)
 	if err != nil {
 		return answerResult{}, err
@@ -696,7 +697,7 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 	if strings.TrimSpace(call.Function.Arguments) == "" {
 		call.Function.Arguments = "{}"
 	}
-	session := agent_tools.Session{Kind: conversation.Kind, RepoID: conversation.RepoID}
+	session := e.sessionFor(ctx, conversation)
 	tool, decision, err := agent_tools.Check(ctx, session, call.Function.Name)
 	switch {
 	case err != nil:
@@ -717,6 +718,16 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 		return e.recordTool(ctx, conversation, call, "The tool could not run: "+err.Error())
 	}
 	return e.recordTool(ctx, conversation, call, output)
+}
+
+// sessionFor is the session a run works in. A session the agent owns is one it answers for on a
+// surface: its reads stay with the asking user, and its writes carry the agent's own name.
+func (e *Engine) sessionFor(ctx context.Context, conversation *agent_model.Conversation) agent_tools.Session {
+	session := agent_tools.Session{Kind: conversation.Kind, RepoID: conversation.RepoID}
+	if agent := UserOf(ctx); agent != nil && conversation.OwnerID == agent.ID {
+		session.ActorID = agent.ID
+	}
+	return session
 }
 
 // recordTool puts one call and its result in the transcript, and hands the same result

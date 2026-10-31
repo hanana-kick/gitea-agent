@@ -62,7 +62,11 @@ func (createBranchTool) create(ctx context.Context, doer *user_model.User, sessi
 	if params.Branch == "" {
 		return "The branch argument is required.", nil
 	}
-	repository, err := resolveRepo(ctx, doer, session, params.Repository, unit_model.TypeCode)
+	actor, err := actorOf(ctx, doer, session)
+	if err != nil {
+		return "", err
+	}
+	repository, err := resolveRepo(ctx, actor, session, params.Repository, unit_model.TypeCode)
 	if err != nil {
 		return "", err
 	}
@@ -81,7 +85,7 @@ func (createBranchTool) create(ctx context.Context, doer *user_model.User, sessi
 	if from == "" {
 		from = repository.DefaultBranch
 	}
-	if err := repo_service.CreateNewBranch(ctx, doer, repository, gitRepo, from, params.Branch); err != nil {
+	if err := repo_service.CreateNewBranch(ctx, actor, repository, gitRepo, from, params.Branch); err != nil {
 		return "", err
 	}
 	log.Trace("Agent tool gitea_create_branch created %s of %s for user %d", params.Branch, repository.FullName(), doer.ID)
@@ -132,7 +136,11 @@ func (deleteBranchTool) del(ctx context.Context, doer *user_model.User, session 
 	if params.Branch == "" {
 		return "The branch argument is required.", nil
 	}
-	repository, err := resolveRepo(ctx, doer, session, params.Repository, unit_model.TypeCode)
+	actor, err := actorOf(ctx, doer, session)
+	if err != nil {
+		return "", err
+	}
+	repository, err := resolveRepo(ctx, actor, session, params.Repository, unit_model.TypeCode)
 	if err != nil {
 		return "", err
 	}
@@ -144,7 +152,7 @@ func (deleteBranchTool) del(ctx context.Context, doer *user_model.User, session 
 		return "", err
 	}
 	defer gitRepo.Close()
-	if err := repo_service.DeleteBranch(ctx, doer, repository, gitRepo, params.Branch); err != nil {
+	if err := repo_service.DeleteBranch(ctx, actor, repository, gitRepo, params.Branch); err != nil {
 		return "", err
 	}
 	log.Trace("Agent tool gitea_delete_branch deleted %s of %s for user %d", params.Branch, repository.FullName(), doer.ID)
@@ -200,7 +208,11 @@ func (moveFileTool) move(ctx context.Context, doer *user_model.User, session Ses
 	if params.Branch == "" || !ok || from == "" || !toOK || to == "" || strings.TrimSpace(params.Message) == "" {
 		return "The branch, from, to and message arguments are required.", nil
 	}
-	repository, err := resolveRepo(ctx, doer, session, params.Repository, unit_model.TypeCode)
+	actor, err := actorOf(ctx, doer, session)
+	if err != nil {
+		return "", err
+	}
+	repository, err := resolveRepo(ctx, actor, session, params.Repository, unit_model.TypeCode)
 	if err != nil {
 		return "", err
 	}
@@ -208,7 +220,7 @@ func (moveFileTool) move(ctx context.Context, doer *user_model.User, session Ses
 		return fmt.Sprintf("The branch %s is the default branch of %s: commit to a branch of its own and open a pull request.",
 			params.Branch, repository.FullName()), nil
 	}
-	_, err = files_service.ChangeRepoFiles(ctx, repository, doer, &files_service.ChangeRepoFilesOptions{
+	_, err = files_service.ChangeRepoFiles(ctx, repository, actor, &files_service.ChangeRepoFilesOptions{
 		OldBranch: repository.DefaultBranch,
 		NewBranch: params.Branch,
 		Message:   strings.TrimSpace(params.Message),
@@ -273,7 +285,11 @@ func (patchFileTool) patch(ctx context.Context, doer *user_model.User, session S
 	if params.Branch == "" || diff == "" || strings.TrimSpace(params.Message) == "" {
 		return "The branch, diff and message arguments are required.", nil
 	}
-	repository, err := resolveRepo(ctx, doer, session, params.Repository, unit_model.TypeCode)
+	actor, err := actorOf(ctx, doer, session)
+	if err != nil {
+		return "", err
+	}
+	repository, err := resolveRepo(ctx, actor, session, params.Repository, unit_model.TypeCode)
 	if err != nil {
 		return "", err
 	}
@@ -285,7 +301,7 @@ func (patchFileTool) patch(ctx context.Context, doer *user_model.User, session S
 		// a patch without its header is applied against the named file
 		diff = fmt.Sprintf("diff --git a/%s b/%s\n%s", params.Path, params.Path, diff)
 	}
-	response, err := files_service.ApplyDiffPatch(reqctx.FromContext(ctx), repository, doer, &files_service.ApplyDiffPatchOptions{
+	response, err := files_service.ApplyDiffPatch(reqctx.FromContext(ctx), repository, actor, &files_service.ApplyDiffPatchOptions{
 		OldBranch: repository.DefaultBranch,
 		NewBranch: params.Branch,
 		Message:   strings.TrimSpace(params.Message),

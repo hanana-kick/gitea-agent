@@ -378,7 +378,11 @@ func (commitFilesTool) commit(ctx context.Context, doer *user_model.User, sessio
 	if params.Branch == "" || strings.TrimSpace(params.Message) == "" {
 		return "The branch and message arguments are required.", nil
 	}
-	repository, err := resolveRepo(ctx, doer, session, params.Repository, unit_model.TypeCode)
+	actor, err := actorOf(ctx, doer, session)
+	if err != nil {
+		return "", err
+	}
+	repository, err := resolveRepo(ctx, actor, session, params.Repository, unit_model.TypeCode)
 	if err != nil {
 		return "", err
 	}
@@ -414,7 +418,7 @@ func (commitFilesTool) commit(ctx context.Context, doer *user_model.User, sessio
 	if base == "" {
 		base = repository.DefaultBranch
 	}
-	response, err := files_service.ChangeRepoFiles(ctx, repository, doer, &files_service.ChangeRepoFilesOptions{
+	response, err := files_service.ChangeRepoFiles(ctx, repository, actor, &files_service.ChangeRepoFilesOptions{
 		OldBranch: base,
 		NewBranch: params.Branch,
 		Message:   strings.TrimSpace(params.Message),

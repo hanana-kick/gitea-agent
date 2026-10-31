@@ -66,6 +66,19 @@ func resolveRepo(ctx context.Context, doer *user_model.User, session Session, na
 	return repository, nil
 }
 
+// actorOf is the account a write is made as: the agent for a session it answers for, and the
+// user who asked otherwise.
+func actorOf(ctx context.Context, doer *user_model.User, session Session) (*user_model.User, error) {
+	if session.ActorID == 0 || session.ActorID == doer.ID {
+		return doer, nil
+	}
+	actor, err := user_model.GetUserByID(ctx, session.ActorID)
+	if err != nil {
+		return nil, err
+	}
+	return actor, nil
+}
+
 // searchScope is the repository a search is confined to: the one the session works in, the
 // one it named, or none at all, which reaches as far as the user can see.
 func searchScope(ctx context.Context, doer *user_model.User, session Session, name string) (int64, error) {
