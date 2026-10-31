@@ -6,6 +6,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	agent_model "gitea.dev/models/agent"
@@ -240,8 +241,8 @@ type readIssueTool struct{}
 func (readIssueTool) Name() string { return "gitea_read_issue" }
 
 func (readIssueTool) Description() string {
-	return "Read one issue or pull request: its title, state, body, and for a pull request the " +
-		"branches it merges. Use the number gitea_search_issues showed for it."
+	return "Read one issue or pull request: its title, state, body, its discussion, and for a pull " +
+		"request the branches it merges. Use the number gitea_search_issues showed for it."
 }
 
 func (readIssueTool) Scope() Scope { return ScopeUser }
@@ -346,7 +347,69 @@ func (readIssueTool) Run(ctx context.Context, doer *user_model.User, session Ses
 		// the model reads markdown itself, so the stored source costs it fewer tokens than rendered HTML
 		out = append(out, issue.Content)
 	}
+	discussion, err := issueDiscussion(ctx, issue)
+	if err != nil {
+		return "", err
+	}
+	if discussion != "" {
+		out = append(out, discussion)
+	}
 	return clip(strings.Join(out, "\n\n")), nil
+}
+
+// issueDiscussion reads what was said on an issue: an issue is its discussion as much as the
+// body it was opened with, and the newest words are what became of it.
+func issueDiscussion(ctx context.Context, issue *issues_model.Issue) (string, error) {
+	// what was said, not what happened: labels, references and pushes are the bookkeeping of
+	// an issue, not a word in it
+	wanted := []issues_model.CommentType{
+		issues_model.CommentTypeComment, issues_model.CommentTypeCode, issues_model.CommentTypeReview,
+	}
+	total, err := db_list.GetEngine(ctx).Where("issue_id = ?", issue.ID).
+		In("type", issues_model.CommentTypeComment, issues_model.CommentTypeCode, issues_model.CommentTypeReview).
+		Count(new(issues_model.Comment))
+	if err != nil {
+		return "", err
+	}
+	if total == 0 {
+		return "", nil
+	}
+	// the newest words are the last page of them
+	const pageSize = 30
+	comments, err := issues_model.FindComments(ctx, &issues_model.FindCommentsOptions{
+		IssueID: issue.ID,
+		// the zero type is a plain comment, not "any": asking for every type is what leaves the
+		// bookkeeping in, which is then dropped below
+		Type:        issues_model.CommentTypeUndefined,
+		ListOptions: db_list.ListOptions{Page: int((total-1)/pageSize + 1), PageSize: pageSize},
+	})
+	if err != nil {
+		return "", err
+	}
+	said := make([]string, 0, len(comments))
+	for _, comment := range comments {
+		if !slices.Contains(wanted, comment.Type) {
+			continue
+		}
+		if err := comment.LoadPoster(ctx); err != nil {
+			return "", err
+		}
+		author := "someone"
+		if comment.Poster != nil {
+			author = comment.Poster.Name
+		}
+		if comment.Type == issues_model.CommentTypeCode && comment.TreePath != "" {
+			author += fmt.Sprintf(" (on %s:%d)", comment.TreePath, comment.Line)
+		}
+		said = append(said, "- "+author+": "+strings.TrimSpace(comment.Content))
+	}
+	if len(said) == 0 {
+		return "", nil
+	}
+	if len(said) > 20 {
+		said = said[len(said)-20:]
+	}
+	return fmt.Sprintf("%d comments, the last %d of them:\n%s", total, len(said), strings.Join(said, "\n")), nil
 }
 
 // pullRequestLine says what a pull request merges where, which is what reading one is for.

@@ -97,6 +97,13 @@ func TestReadIssueUsesTheNumberTheSearchShows(t *testing.T) {
 	assert.Contains(t, pull, "branch1")
 	assert.Contains(t, pull, "master")
 
+	// what was said on an issue is part of reading it, code comments with the line they are on
+	pullComments, err := readIssueTool{}.Run(ctx, owner, session, `{"index":2}`)
+	require.NoError(t, err)
+	assert.Contains(t, pullComments, "comments, the last ")
+	assert.Contains(t, pullComments, " (on ")
+	assert.Contains(t, pullComments, "- ")
+
 	missing, err := readIssueTool{}.Run(ctx, owner, session, `{"index":999}`)
 	require.NoError(t, err)
 	assert.Contains(t, missing, "There is no issue or pull request with that number in user2/repo1.")
