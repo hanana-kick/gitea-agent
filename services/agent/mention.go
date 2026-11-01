@@ -109,7 +109,9 @@ func reportMention(ctx context.Context, requestID, runID int64, repo *repo_model
 	if agent == nil {
 		return
 	}
-	finished := waitForRun(ctx, runID)
+	finished := waitForRun(ctx, runID, func(waiting *agent_model.Run) {
+		waitingText(ctx, waiting)
+	})
 	if finished == nil {
 		log.Trace("Agent mention: run %d could not be followed", runID)
 		return
@@ -181,6 +183,51 @@ func answeredText(ctx context.Context, run *agent_model.Run) string {
 	return ""
 }
 
+// waitingText says in the thread that the run waits for its reader, and where to answer it. The
+// comment is written once per waiting call, so a reader who comes back later still finds it.
+func waitingText(ctx context.Context, run *agent_model.Run) {
+	if run.StatusCommentID == 0 || !markWaitingNote(run.ID) {
+		return
+	}
+	agent := UserOf(ctx)
+	comment := statusComment(ctx, run.StatusCommentID)
+	if agent == nil || comment == nil {
+		return
+	}
+	call := ""
+	pending, err := PendingApprovals(ctx, run.ConversationID)
+	if err == nil {
+		for _, approval := range pending {
+			if approval.RunID == run.ID {
+				call = approval.Tool
+			}
+		}
+	}
+	if call == "" {
+		return
+	}
+	reader := readerOf(ctx, run)
+	note := fmt.Sprintf("%s: %s — [%s](%s/-/agent/%d)",
+		statusText(reader, "agent.status_waiting"), call, statusText(reader, "agent.status_waiting_link"), setting.AppSubURL, run.ConversationID)
+	previous := comment.Content
+	comment.Content = note
+	if err := issues_service.UpdateComment(ctx, comment, comment.ContentVersion, agent, previous); err != nil {
+		log.Error("Agent mention: saying what run %d waits for failed: %v", run.ID, err)
+	}
+}
+
+// markWaitingNote reports whether the waiting note of a run still has to be written: it is
+// written once per waiting call, however often the poll looks at the run.
+func markWaitingNote(runID int64) bool {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+	if engine.waited[runID] {
+		return false
+	}
+	engine.waited[runID] = true
+	return true
+}
+
 // statusComment is the comment a run says how it is going in, when it still stands.
 func statusComment(ctx context.Context, id int64) *issues_model.Comment {
 	if id == 0 {
@@ -194,13 +241,17 @@ func statusComment(ctx context.Context, id int64) *issues_model.Comment {
 }
 
 // waitForRun waits until the run is no longer active, telling a run that is already over from
-// one this process no longer knows.
-func waitForRun(ctx context.Context, runID int64) *agent_model.Run {
+// one this process no longer knows. A run that waits for its reader is handed to onWaiting, so
+// the thread can say what it waits for; the reader may come back hours later.
+func waitForRun(ctx context.Context, runID int64, onWaiting func(*agent_model.Run)) *agent_model.Run {
 	for {
 		run := &agent_model.Run{}
 		has, err := db.GetEngine(ctx).ID(runID).Get(run)
 		if err != nil || !has {
 			return nil
+		}
+		if run.Status == agent_model.RunStatusWaiting && onWaiting != nil {
+			onWaiting(run)
 		}
 		if !agent_model.IsRunActive(run.Status) {
 			return run

@@ -206,3 +206,42 @@ func TestStatusCommentIsTakenBackWhenTheModelAnswered(t *testing.T) {
 	_, err = issues_model.GetCommentByID(ctx, note.ID)
 	require.Error(t, err, "the working note is taken back once the answer is in the thread")
 }
+
+// A run that waited for an approval when the server restarted cannot be resumed: it ends, and
+// the thread that was told it waits is told that instead of waiting forever.
+func TestWaitingRunDoesNotOutliveARestart(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{ID: 1})
+	note, err := issues_service.CreateIssueComment(ctx, agentUser, repo, issue, statusText(nil, "agent.status_working"), nil)
+	require.NoError(t, err)
+
+	run := &agent_model.Run{ConversationID: 1, UserID: 1, Status: agent_model.RunStatusWaiting, StatusCommentID: note.ID}
+	require.NoError(t, db.Insert(ctx, run))
+	approval := &agent_model.ToolApproval{ConversationID: 1, RunID: run.ID, Tool: "gitea_commit_files", Arguments: "{}", Status: agent_model.ToolApprovalPending}
+	require.NoError(t, db.Insert(ctx, approval))
+
+	require.NoError(t, recoverRuns(ctx))
+
+	recovered := &agent_model.Run{}
+	has, err := db.GetEngine(ctx).ID(run.ID).Get(recovered)
+	require.NoError(t, err)
+	require.True(t, has)
+	assert.Equal(t, agent_model.RunStatusFailed, recovered.Status)
+	assert.Contains(t, recovered.Error, "approval the restart closed")
+
+	closed := &agent_model.ToolApproval{}
+	has, err = db.GetEngine(ctx).ID(approval.ID).Get(closed)
+	require.NoError(t, err)
+	require.True(t, has)
+	assert.NotEqual(t, agent_model.ToolApprovalPending, closed.Status)
+
+	settled, err := issues_model.GetCommentByID(ctx, note.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, statusText(nil, "agent.status_working"), settled.Content)
+}

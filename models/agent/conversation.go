@@ -86,6 +86,7 @@ func (Message) TableName() string {
 // Run statuses. A run is one server-side execution of the agent for a user message.
 const (
 	RunStatusQueued    = "queued"
+	RunStatusWaiting   = "waiting" // paused on a call that waits for its reader, however long that takes
 	RunStatusRunning   = "running"
 	RunStatusSucceeded = "succeeded"
 	RunStatusFailed    = "failed"
@@ -94,7 +95,7 @@ const (
 
 // IsRunActive reports whether the run is still going to produce output.
 func IsRunActive(status string) bool {
-	return status == RunStatusQueued || status == RunStatusRunning
+	return status == RunStatusQueued || status == RunStatusRunning || status == RunStatusWaiting
 }
 
 // Run is one server-side agent execution. It is stored before the work starts so a

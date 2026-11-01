@@ -395,7 +395,8 @@ func TestEngineWaitsForTheApprovalOfAManualTool(t *testing.T) {
 	assert.Empty(t, toolRecord(t, conversation.ID, "gitea_read_file"), "the call ran before it was allowed")
 	latest, err := LatestRun(ctx, conversation.ID)
 	require.NoError(t, err)
-	require.True(t, agent_model.IsRunActive(latest.Status), "the run did not wait for the answer")
+	require.Equal(t, agent_model.RunStatusWaiting, latest.Status, "the run was put down, not held")
+	assert.Empty(t, approval.Result, "nothing ran yet")
 
 	require.NoError(t, ResolveApproval(ctx, conversation.ID, approval.ID, user.ID, true))
 	for time.Now().Before(deadline) {
@@ -408,6 +409,13 @@ func TestEngineWaitsForTheApprovalOfAManualTool(t *testing.T) {
 	}
 	require.Equal(t, agent_model.RunStatusSucceeded, latest.Status, latest.Error)
 	assert.Contains(t, toolRecord(t, conversation.ID, "gitea_read_file"), "`README.md` at master")
+
+	settled := &agent_model.ToolApproval{}
+	hasSettled, err := db.GetEngine(ctx).ID(approval.ID).Get(settled)
+	require.NoError(t, err)
+	require.True(t, hasSettled)
+	// the outcome stays on the call: a resumed model that asks for it again reads it back
+	assert.Contains(t, settled.Result, "`README.md` at master")
 
 	answered, err := PendingApprovals(ctx, conversation.ID)
 	require.NoError(t, err)

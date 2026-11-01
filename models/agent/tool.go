@@ -36,7 +36,9 @@ type ToolApproval struct {
 	RunID          int64  `xorm:"INDEX NOT NULL"`
 	Tool           string `xorm:"VARCHAR(160) NOT NULL"`
 	Arguments      string `xorm:"TEXT NOT NULL"`
-	Status         string `xorm:"VARCHAR(16) NOT NULL"`
+	// Result is what the call returned, kept until the run that asked for it reads it back.
+	Result string `xorm:"TEXT"`
+	Status string `xorm:"VARCHAR(16) NOT NULL"`
 	// DecidedUserID is the user who answered, so a shared session cannot decide twice.
 	DecidedUserID int64              `xorm:"NOT NULL DEFAULT 0"`
 	CreatedUnix   timeutil.TimeStamp `xorm:"created NOT NULL"`
