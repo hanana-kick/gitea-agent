@@ -63,6 +63,50 @@ func answerReview(ctx context.Context, pr *issues_model.PullRequest, review *iss
 	requestMention(ctx, review.Reviewer, pr.Issue.Repo, pr.Issue, review.Content, mentions)
 }
 
+// answerIssue answers an issue or a pull request whose description names the agent: a change
+// opened with a question in it is a request like a comment.
+func answerIssue(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, issue *issues_model.Issue, mentions []*user_model.User) {
+	if issue == nil {
+		return
+	}
+	if repo == nil {
+		if err := issue.LoadRepo(ctx); err != nil {
+			log.Error("Agent mention: loading the repository of issue %d failed: %v", issue.ID, err)
+			return
+		}
+		repo = issue.Repo
+	}
+	if doer == nil {
+		doer = issue.Poster
+	}
+	requestMention(ctx, doer, repo, issue, issue.Content, mentions)
+}
+
+// answerCodeComment answers a review comment written on a line of a change: the question is
+// about that line, so the run is told where it is.
+func answerCodeComment(ctx context.Context, pr *issues_model.PullRequest, comment *issues_model.Comment, mentions []*user_model.User) {
+	if pr == nil || comment == nil {
+		return
+	}
+	if err := pr.LoadIssue(ctx); err != nil {
+		log.Error("Agent mention: loading the issue of pull request %d failed: %v", pr.ID, err)
+		return
+	}
+	if err := pr.Issue.LoadRepo(ctx); err != nil {
+		log.Error("Agent mention: loading the repository of pull request %d failed: %v", pr.ID, err)
+		return
+	}
+	location := comment.TreePath
+	if line := comment.UnsignedLine(); line > 0 {
+		location = fmt.Sprintf("%s line %d", location, line)
+	}
+	body := fmt.Sprintf("[review comment] A comment on %s of the change says:\n%s", location, strings.TrimSpace(comment.Content))
+	if pr.HeadBranch != "" && comment.TreePath != "" {
+		body += fmt.Sprintf("\nThe change is on %s: gitea_read_file reads that file at that ref.", pr.HeadBranch)
+	}
+	requestMention(ctx, comment.Poster, pr.Issue.Repo, pr.Issue, body, mentions)
+}
+
 // requestMention is one request made on the surface: it starts the run that answers it, tells the
 // thread the work began, and follows the run to the end.
 func requestMention(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, issue *issues_model.Issue, body string, mentions []*user_model.User) {
@@ -463,4 +507,6 @@ func InitMentions() {
 	}
 	notify_service.CommentListener = answerMention
 	notify_service.ReviewListener = answerReview
+	notify_service.IssueListener = answerIssue
+	notify_service.CodeCommentListener = answerCodeComment
 }

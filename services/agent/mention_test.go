@@ -307,3 +307,58 @@ func TestReviewBodyMentionStartsARun(t *testing.T) {
 	require.NotEmpty(t, messages)
 	assert.Contains(t, messages[len(messages)-1].Content, "이 변경 봐줘")
 }
+
+// A pull request whose description names the agent asks a question the moment it is opened, and
+// a review comment on a line asks one about that line.
+func TestBodyAndCodeCommentMentionsStartRuns(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+	InitMentions()
+	defer func() {
+		notify_service.IssueListener = nil
+		notify_service.CodeCommentListener = nil
+	}()
+
+	pr := unittest.AssertExistsAndLoadBean(t, &issues_model.PullRequest{ID: 3})
+	require.NoError(t, pr.LoadIssue(ctx))
+	require.NoError(t, pr.Issue.LoadRepo(ctx))
+	mentioner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	pr.Issue.Poster = mentioner
+	pr.Issue.Content = "@" + agentUser.Name + " 이 변경 설명을 요약해줘"
+
+	require.NotNil(t, notify_service.IssueListener)
+	notify_service.IssueListener(ctx, mentioner, pr.Issue.Repo, pr.Issue, []*user_model.User{agentUser})
+
+	sessions, err := findConversations(ctx, agent_model.ConversationKindRepository, agentUser.ID)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	messages, err := ListMessages(ctx, sessions[0].ID, 10)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	assert.Contains(t, messages[0].Content, "이 변경 설명을 요약해줘")
+
+	// the change is read to the end before the line comment is answered, so clear what the body
+	// left behind
+	_, err = db.GetEngine(ctx).Where("conversation_id = ?", sessions[0].ID).Delete(new(agent_model.Run))
+	require.NoError(t, err)
+	_, err = db.GetEngine(ctx).Where("conversation_id = ?", sessions[0].ID).Delete(new(agent_model.Message))
+	require.NoError(t, err)
+
+	codeComment := &issues_model.Comment{
+		ID: 1, IssueID: pr.IssueID, PosterID: mentioner.ID, Poster: mentioner,
+		Type: issues_model.CommentTypeCode, Content: "@" + agentUser.Name + " 이 줄 왜 이래?",
+		TreePath: "README.md", Line: 3,
+	}
+	require.NotNil(t, notify_service.CodeCommentListener)
+	notify_service.CodeCommentListener(ctx, pr, codeComment, []*user_model.User{agentUser})
+
+	messages, err = ListMessages(ctx, sessions[0].ID, 10)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	assert.Contains(t, messages[0].Content, "review comment")
+	assert.Contains(t, messages[0].Content, "README.md line 3")
+	assert.Contains(t, messages[0].Content, "이 줄 왜 이래?")
+}

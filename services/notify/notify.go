@@ -19,6 +19,16 @@ import (
 
 var notifiers []Notifier
 
+// IssueListener is told about every issue and pull request that is opened after the notifiers,
+// so the agent can answer one whose description names it.
+var IssueListener func(ctx context.Context, doer *user_model.User, repo *repo_model.Repository,
+	issue *issues_model.Issue, mentions []*user_model.User)
+
+// CodeCommentListener is told about every review comment written on a line of a pull request
+// after the notifiers, so the agent can answer one that names it on the change itself.
+var CodeCommentListener func(ctx context.Context, pr *issues_model.PullRequest,
+	comment *issues_model.Comment, mentions []*user_model.User)
+
 // CommentListener is told about every new issue comment after the notifiers. The agent uses it
 // to answer the comments that name it; nothing else depends on it, so it may be nil.
 var CommentListener func(ctx context.Context, doer *user_model.User, repo *repo_model.Repository,
@@ -88,6 +98,9 @@ func NewIssue(ctx context.Context, issue *issues_model.Issue, mentions []*user_m
 	for _, notifier := range notifiers {
 		notifier.NewIssue(ctx, issue, mentions)
 	}
+	if IssueListener != nil {
+		IssueListener(ctx, issue.Poster, issue.Repo, issue, mentions)
+	}
 }
 
 // IssueChangeStatus notifies close or reopen issue to notifiers
@@ -130,6 +143,9 @@ func NewPullRequest(ctx context.Context, pr *issues_model.PullRequest, mentions 
 	for _, notifier := range notifiers {
 		notifier.NewPullRequest(ctx, pr, mentions)
 	}
+	if IssueListener != nil {
+		IssueListener(ctx, pr.Issue.Poster, pr.Issue.Repo, pr.Issue, mentions)
+	}
 }
 
 // PullRequestSynchronized notifies Synchronized pull request
@@ -161,6 +177,9 @@ func PullRequestCodeComment(ctx context.Context, pr *issues_model.PullRequest, c
 	}
 	for _, notifier := range notifiers {
 		notifier.PullRequestCodeComment(ctx, pr, comment, mentions)
+	}
+	if CodeCommentListener != nil {
+		CodeCommentListener(ctx, pr, comment, mentions)
 	}
 }
 
