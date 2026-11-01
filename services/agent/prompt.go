@@ -40,6 +40,18 @@ func messageFiles(message *agent_model.Message, attachments []*agent_model.Attac
 	return builder.String(), images
 }
 
+// intentPrompt says how much a request has to spell out. A clear one is carried out; only one
+// that cannot be carried out as written is answered with a question. It is written for the
+// model, so it stays in English.
+func intentPrompt() string {
+	return "Carry out what you are asked for. When a request is clear about what should change and " +
+		"where, do it: look up what you need, make the change, and report what you did. Do not " +
+		"answer a clear request with a plan, and do not ask whether you may go ahead — the reader " +
+		"who asked has already answered that. Ask back only when the request cannot be carried out " +
+		"as written: it names no subject, two asks contradict each other, or it wants something no " +
+		"tool of yours can do. Then ask one short question, or say what is missing, and stop."
+}
+
 // toolsPrompt tells the model what it may look up for itself. It is written for the
 // model, so it stays in English.
 func toolsPrompt(offerings []agent_tools.Tool) string {
@@ -224,6 +236,7 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 	system := scopePrompt(ctx, conversation) + "\n\n" +
 		"You answer through a chat transcript. Answer in the language the user writes in, " +
 		"and keep answers short unless asked for detail.\n\n" +
+		intentPrompt() + "\n\n" +
 		toolsPrompt(offerings)
 	if landing := landingPrompt(offerings); landing != "" {
 		system += "\n\n" + landing

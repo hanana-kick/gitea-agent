@@ -269,3 +269,13 @@ func TestLandingPromptFollowsTheOfferedTools(t *testing.T) {
 	// neither: nothing to say
 	assert.Empty(t, landingPrompt([]agent_tools.Tool{find("gitea_read_issue")}))
 }
+
+// A clear request is carried out rather than answered with a plan, and only one that cannot be
+// carried out as written is answered with a question.
+func TestIntentPromptCarriesOutClearRequests(t *testing.T) {
+	rule := intentPrompt()
+	assert.Contains(t, rule, "Carry out what you are asked for")
+	assert.Contains(t, rule, "do not ask whether you may go ahead")
+	assert.Contains(t, rule, "it names no subject")
+	assert.Contains(t, rule, "ask one short question")
+}
