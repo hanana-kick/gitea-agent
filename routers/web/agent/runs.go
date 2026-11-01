@@ -5,13 +5,19 @@ package agent
 
 import (
 	stdctx "context"
+	"errors"
+	"fmt"
 	"net/http"
+	"time"
 
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	"gitea.dev/modules/json"
+	"gitea.dev/modules/setting"
 	"gitea.dev/modules/timeutil"
+	agent_service "gitea.dev/services/agent"
 	"gitea.dev/services/context"
 )
 
@@ -110,7 +116,59 @@ func Runs(ctx *context.Context) {
 	ctx.Data["Running"] = countOf(rows, agent_model.RunStatusRunning)
 	ctx.Data["Waiting"] = countOf(rows, agent_model.RunStatusWaiting)
 	ctx.Data["Failed"] = countOf(rows, agent_model.RunStatusFailed)
+	ctx.Data["RunsEventsURL"] = setting.AppSubURL + "/-/admin/agent/runs/events"
 	ctx.HTML(http.StatusOK, tplAgentRuns)
+}
+
+// RunsEvents streams every run change to the monitoring page, so the table follows the agent
+// without a reload.
+func RunsEvents(ctx *context.Context) {
+	flusher, ok := ctx.Resp.(http.Flusher)
+	if !ok {
+		ctx.ServerError("agent runs events", errors.New("the response writer does not support streaming"))
+		return
+	}
+	header := ctx.Resp.Header()
+	header.Set("Content-Type", "text/event-stream")
+	header.Set("Cache-Control", "no-cache")
+	header.Set("Connection", "keep-alive")
+	header.Set("X-Accel-Buffering", "no")
+	ctx.Resp.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	runs, unsubscribe := agent_service.SubscribeAllRunEvents()
+	defer unsubscribe()
+
+	heartbeat := time.NewTicker(eventsHeartbeat)
+	defer heartbeat.Stop()
+
+	clientGone := ctx.Req.Context().Done()
+	for {
+		select {
+		case <-clientGone:
+			return
+		case <-heartbeat.C:
+			if _, err := fmt.Fprint(ctx.Resp, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case event, ok := <-runs:
+			if !ok {
+				return
+			}
+			if event.Name != agent_service.EventRun {
+				continue
+			}
+			payload, err := json.Marshal(event.Data)
+			if err != nil {
+				continue
+			}
+			if _, err := fmt.Fprintf(ctx.Resp, "data: %s\n\n", payload); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func countOf(rows []*agentRunRow, status string) int {

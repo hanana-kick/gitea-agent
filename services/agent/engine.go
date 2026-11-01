@@ -130,6 +130,7 @@ type Engine struct {
 	locks     map[int64]*sync.Mutex        // serializes the runs of one conversation
 	approvals map[int64]chan bool          // approval ID -> the waiting run
 	waited    map[int64]bool               // runs whose waiting note the thread already carries
+	progress  map[int64]string             // the tool a run last said it was reading with
 }
 
 var engine = &Engine{
@@ -139,6 +140,7 @@ var engine = &Engine{
 	locks:     make(map[int64]*sync.Mutex),
 	approvals: make(map[int64]chan bool),
 	waited:    make(map[int64]bool),
+	progress:  make(map[int64]string),
 }
 
 // InitEngine recovers the runs a restart interrupted and starts the workers.
@@ -1067,11 +1069,14 @@ type eventBroker struct {
 	// runs are the watchers of the run changes of one user's conversations, so a page
 	// can mark the sessions that are answering without seeing anybody else's.
 	runs map[int64]map[chan Event]struct{}
+	// all are the watchers of every run change: the page that monitors the instance.
+	all map[chan Event]struct{}
 }
 
 func newEventBroker() *eventBroker {
 	return &eventBroker{
 		subs: make(map[int64]map[chan Event]struct{}),
+		all:  make(map[chan Event]struct{}),
 		runs: make(map[int64]map[chan Event]struct{}),
 	}
 }
@@ -1116,6 +1121,35 @@ func (b *eventBroker) publish(conversationID, owner int64, event Event) {
 		default:
 		}
 	}
+	for ch := range b.all {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
+}
+
+// subscribeAll listens to every run change, for the page that watches the instance.
+func (b *eventBroker) subscribeAll() (<-chan Event, func()) {
+	ch := make(chan Event, 64)
+	b.mu.Lock()
+	b.all[ch] = struct{}{}
+	b.mu.Unlock()
+
+	return ch, func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if _, ok := b.all[ch]; ok {
+			delete(b.all, ch)
+			close(ch)
+		}
+	}
+}
+
+// SubscribeAllRunEvents listens to every run change; the pages that use it check for themselves
+// that their reader may watch the instance.
+func SubscribeAllRunEvents() (<-chan Event, func()) {
+	return engine.broker.subscribeAll()
 }
 
 // subscribeRuns listens to the run changes of one user's conversations.

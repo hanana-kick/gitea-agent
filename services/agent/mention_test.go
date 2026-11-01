@@ -245,3 +245,30 @@ func TestWaitingRunDoesNotOutliveARestart(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEqual(t, statusText(nil, "agent.status_working"), settled.Content)
 }
+
+// A busy thread cannot turn a burst of comments into a burst of model calls.
+func TestMentionStopsAtTheRateLimit(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+	InitMentions()
+	defer func() { notify_service.CommentListener = nil }()
+
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{ID: 1})
+	mentioner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	session, err := repositorySessionOf(ctx, agentUser, repo)
+	require.NoError(t, err)
+	for range mentionRunsPerMinute * 60 {
+		require.NoError(t, db.Insert(ctx, &agent_model.Run{ConversationID: session.ID, UserID: mentioner.ID, Status: agent_model.RunStatusSucceeded}))
+	}
+
+	comment := &issues_model.Comment{ID: 1, IssueID: issue.ID, Content: "@" + agentUser.Name + " 또 하나"}
+	notify_service.CreateIssueComment(ctx, mentioner, repo, issue, comment, []*user_model.User{agentUser})
+
+	messages, err := ListMessages(ctx, session.ID, 10)
+	require.NoError(t, err)
+	assert.Empty(t, messages, "the thread is too busy to reach the agent again this minute")
+}

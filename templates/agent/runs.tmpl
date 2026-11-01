@@ -1,5 +1,5 @@
 {{/* the runs of the agent: what it is doing, what it did, and why it stopped */}}
-<div class="ui container admin-page agent-runs">
+<div class="ui container admin-page agent-runs" data-events-url="{{.RunsEventsURL}}">
 	<h4 class="ui top attached header">{{ctx.Locale.Tr "agent.runs_title"}}</h4>
 	<div class="ui attached segment">
 		<div class="tw-flex tw-items-center tw-gap-2 tw-flex-wrap">
@@ -24,9 +24,9 @@
 		</thead>
 		<tbody>
 			{{range .Runs}}
-				<tr>
+				<tr data-run-id="{{.ID}}">
 					<td><a href="{{AppSubUrl}}/-/agent/{{.SessionID}}">#{{.ID}}</a></td>
-					<td>
+					<td class="agent-runs-state">
 						{{if eq .Status "running"}}<span class="ui tiny green label">{{ctx.Locale.Tr "agent.runs_status_running"}}</span>
 						{{else if eq .Status "waiting"}}<span class="ui tiny orange label">{{ctx.Locale.Tr "agent.runs_status_waiting"}}{{if .WaitingTool}}: {{.WaitingTool}}{{end}}</span>
 						{{else if eq .Status "failed"}}<span class="ui tiny red label">{{ctx.Locale.Tr "agent.runs_status_failed"}}</span>
@@ -40,7 +40,7 @@
 					<td>{{.User}}</td>
 					<td>{{.Model}}</td>
 					<td>{{.DurationText}}</td>
-					<td class="tw-break-anywhere">{{.Error}}</td>
+					<td class="tw-break-anywhere agent-runs-reason">{{.Error}}</td>
 				</tr>
 			{{else}}
 				<tr><td colspan="7">{{ctx.Locale.Tr "agent.runs_empty"}}</td></tr>

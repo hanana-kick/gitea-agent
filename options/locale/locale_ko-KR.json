@@ -3494,6 +3494,7 @@
   "agent.runs_empty": "실행 기록이 없습니다.",
   "agent.status_waiting": "승인을 기다리는 중",
   "agent.status_waiting_link": "세션에서 승인하기",
+  "agent.status_working_on": "작업 중… (%s 도구 사용 중)",
   "agent.status_working": "작업 중…",
   "agent.status_failed": "이 작업을 끝내지 못했습니다",
   "agent.status_stopped": "답변 전에 중단했습니다",

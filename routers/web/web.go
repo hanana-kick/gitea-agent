@@ -966,6 +966,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			m.Combo("/roles").Get(agent_web.ModelRoles).Post(agent_web.ModelRolesPost)
 			m.Combo("/tools").Get(agent_web.Tools).Post(agent_web.ToolsPost)
 			m.Get("/runs", agent_web.Runs)
+			m.Get("/runs/events", agent_web.RunsEvents)
 			m.Combo("/skills").Get(agent_web.Skills).Post(agent_web.SkillsPost)
 			m.Post("/skills/delete", agent_web.SkillsDelete)
 		})

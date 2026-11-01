@@ -17,10 +17,15 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
+	"gitea.dev/modules/timeutil"
 	"gitea.dev/modules/translation"
 	issues_service "gitea.dev/services/issue"
 	notify_service "gitea.dev/services/notify"
 )
+
+// mentionRunsPerMinute bounds how often a repository may reach the agent in one minute, so one
+// busy thread cannot spend the instance's model budget.
+const mentionRunsPerMinute = 6
 
 // AgentUser is the account the agent writes as on the surfaces it works on; nil when the
 // instance has not named one, and then the agent answers nothing on its own.
@@ -59,7 +64,19 @@ func answerMention(ctx context.Context, doer *user_model.User, repo *repo_model.
 		log.Error("Agent mention: the session of %s failed: %v", repo.FullName(), err)
 		return
 	}
-	// one mention at a time per repository: a burst of comments must not stack runs
+	// one mention at a time per repository, and a handful a minute: a burst of comments must not
+	// become a burst of model calls
+	recent, err := db.GetEngine(ctx).Where("conversation_id = ?", session.ID).
+		And("created_unix > ?", timeutil.TimeStampNow()-timeutil.TimeStamp(mentionRunsPerMinute*60)).
+		Count(new(agent_model.Run))
+	if err != nil {
+		log.Error("Agent mention: counting the runs of %s failed: %v", repo.FullName(), err)
+		return
+	}
+	if recent >= mentionRunsPerMinute*60 {
+		log.Trace("Agent mention: %s is answering often, so this comment waits", repo.FullName())
+		return
+	}
 	if active, err := ActiveRun(ctx, session.ID); err != nil {
 		log.Error("Agent mention: reading the active run of %s failed: %v", repo.FullName(), err)
 		return
@@ -89,6 +106,12 @@ func answerMention(ctx context.Context, doer *user_model.User, repo *repo_model.
 	reportCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	go func() {
 		defer cancel()
+		defer func() {
+			// a report is a courtesy to the thread; it must never be the reason the instance stops
+			if recovered := recover(); recovered != nil {
+				log.Error("Agent mention: reporting run %d panicked: %v", run.ID, recovered)
+			}
+		}()
 		reportMention(reportCtx, message.ID, run.ID, repo, issue)
 	}()
 }
@@ -109,8 +132,12 @@ func reportMention(ctx context.Context, requestID, runID int64, repo *repo_model
 	if agent == nil {
 		return
 	}
-	finished := waitForRun(ctx, runID, func(waiting *agent_model.Run) {
-		waitingText(ctx, waiting)
+	finished := waitForRun(ctx, runID, func(active *agent_model.Run) {
+		if active.Status == agent_model.RunStatusWaiting {
+			waitingText(ctx, active)
+			return
+		}
+		progressText(ctx, active, requestID)
 	})
 	if finished == nil {
 		log.Trace("Agent mention: run %d could not be followed", runID)
@@ -216,6 +243,61 @@ func waitingText(ctx context.Context, run *agent_model.Run) {
 	}
 }
 
+// progressText says in the thread what the run is reading with, once per tool: a reader can tell
+// work from a stall without a comment for every call.
+func progressText(ctx context.Context, run *agent_model.Run, requestID int64) {
+	if run.StatusCommentID == 0 {
+		return
+	}
+	tool := lastToolOf(ctx, run.ConversationID, requestID)
+	if tool == "" || !markProgress(run.ID, tool) {
+		return
+	}
+	agent := UserOf(ctx)
+	comment := statusComment(ctx, run.StatusCommentID)
+	if agent == nil || comment == nil {
+		return
+	}
+	reader := readerOf(ctx, run)
+	previous := comment.Content
+	comment.Content = fmt.Sprintf(statusText(reader, "agent.status_working_on"), tool)
+	if err := issues_service.UpdateComment(ctx, comment, comment.ContentVersion, agent, previous); err != nil {
+		log.Error("Agent mention: saying what run %d reads with failed: %v", run.ID, err)
+	}
+}
+
+// lastToolOf is the tool the transcript shows the run used last, after the request.
+func lastToolOf(ctx context.Context, conversationID, requestID int64) string {
+	messages, err := ListMessages(ctx, conversationID, 30)
+	if err != nil {
+		return ""
+	}
+	seen := false
+	for _, message := range messages {
+		if message.ID == requestID {
+			seen = true
+			continue
+		}
+		if !seen || message.Role != agent_model.MessageRoleTool {
+			continue
+		}
+		name, _, _ := strings.Cut(message.Content, " ")
+		return strings.TrimSpace(name)
+	}
+	return ""
+}
+
+// markProgress reports whether a run just started reading with a different tool.
+func markProgress(runID int64, tool string) bool {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+	if engine.progress[runID] == tool {
+		return false
+	}
+	engine.progress[runID] = tool
+	return true
+}
+
 // markWaitingNote reports whether the waiting note of a run still has to be written: it is
 // written once per waiting call, however often the poll looks at the run.
 func markWaitingNote(runID int64) bool {
@@ -243,15 +325,15 @@ func statusComment(ctx context.Context, id int64) *issues_model.Comment {
 // waitForRun waits until the run is no longer active, telling a run that is already over from
 // one this process no longer knows. A run that waits for its reader is handed to onWaiting, so
 // the thread can say what it waits for; the reader may come back hours later.
-func waitForRun(ctx context.Context, runID int64, onWaiting func(*agent_model.Run)) *agent_model.Run {
+func waitForRun(ctx context.Context, runID int64, onActive func(*agent_model.Run)) *agent_model.Run {
 	for {
 		run := &agent_model.Run{}
 		has, err := db.GetEngine(ctx).ID(runID).Get(run)
 		if err != nil || !has {
 			return nil
 		}
-		if run.Status == agent_model.RunStatusWaiting && onWaiting != nil {
-			onWaiting(run)
+		if agent_model.IsRunActive(run.Status) && onActive != nil {
+			onActive(run)
 		}
 		if !agent_model.IsRunActive(run.Status) {
 			return run

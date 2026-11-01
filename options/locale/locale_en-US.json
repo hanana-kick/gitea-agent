@@ -3495,6 +3495,7 @@
   "agent.runs_empty": "No runs yet.",
   "agent.status_waiting": "Waiting for your approval",
   "agent.status_waiting_link": "Approve it in the session",
+  "agent.status_working_on": "Working on it… (reading with %s)",
   "agent.status_working": "Working on it…",
   "agent.status_failed": "I could not finish this one",
   "agent.status_stopped": "I stopped before answering this one",
