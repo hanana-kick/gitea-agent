@@ -236,12 +236,7 @@ func answeredText(ctx context.Context, run *agent_model.Run) string {
 // waitingText says in the thread that the run waits for its reader, and where to answer it. The
 // comment is written once per waiting call, so a reader who comes back later still finds it.
 func waitingText(ctx context.Context, run *agent_model.Run) {
-	if run.StatusCommentID == 0 || !markWaitingNote(run.ID) {
-		return
-	}
-	agent := UserOf(ctx)
-	comment := statusComment(ctx, run.StatusCommentID)
-	if agent == nil || comment == nil {
+	if run.StatusCommentID == 0 {
 		return
 	}
 	call := ""
@@ -253,7 +248,14 @@ func waitingText(ctx context.Context, run *agent_model.Run) {
 			}
 		}
 	}
-	if call == "" {
+	// the note names the call that waits now, so a run that waits twice for two different calls
+	// says which one it is on
+	if call == "" || !markWaitingNote(run.ID, call) {
+		return
+	}
+	agent := UserOf(ctx)
+	comment := statusComment(ctx, run.StatusCommentID)
+	if agent == nil || comment == nil {
 		return
 	}
 	reader := readerOf(ctx, run)
@@ -337,13 +339,13 @@ func markProgress(runID int64, tool string) bool {
 
 // markWaitingNote reports whether the waiting note of a run still has to be written: it is
 // written once per waiting call, however often the poll looks at the run.
-func markWaitingNote(runID int64) bool {
+func markWaitingNote(runID int64, call string) bool {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
-	if engine.waited[runID] {
+	if engine.waited[runID] == call {
 		return false
 	}
-	engine.waited[runID] = true
+	engine.waited[runID] = call
 	return true
 }
 

@@ -129,7 +129,7 @@ type Engine struct {
 	cancels   map[int64]context.CancelFunc // conversation ID -> cancel of the active run
 	locks     map[int64]*sync.Mutex        // serializes the runs of one conversation
 	approvals map[int64]chan bool          // approval ID -> the waiting run
-	waited    map[int64]bool               // runs whose waiting note the thread already carries
+	waited    map[int64]string             // run -> the call its waiting note names
 	progress  map[int64]string             // the tool a run last said it was reading with
 }
 
@@ -139,7 +139,7 @@ var engine = &Engine{
 	cancels:   make(map[int64]context.CancelFunc),
 	locks:     make(map[int64]*sync.Mutex),
 	approvals: make(map[int64]chan bool),
-	waited:    make(map[int64]bool),
+	waited:    make(map[int64]string),
 	progress:  make(map[int64]string),
 }
 
@@ -1031,6 +1031,11 @@ func (e *Engine) finishRun(ctx context.Context, run *agent_model.Run, status, re
 		log.Error("Agent engine: unable to finish run %d: %v", run.ID, err)
 		return
 	}
+	// what the run said in its thread is history, so the notes it took are its own
+	e.mu.Lock()
+	delete(e.waited, run.ID)
+	delete(e.progress, run.ID)
+	e.mu.Unlock()
 	e.publishRun(run.ConversationID, run)
 }
 

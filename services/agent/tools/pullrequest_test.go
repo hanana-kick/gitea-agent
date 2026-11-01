@@ -59,3 +59,29 @@ func TestReadPullRequestReadsItsChanges(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, none, "The index argument is required.")
 }
+
+// Opening a pull request refuses what a reader would not want asked of them: a change that is
+// not there, a change already asked for, or a pair of branches that mean nothing together.
+func TestCreatePullRequestRefusesWhatItCannotOpen(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	owner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	session := Session{Kind: agent_model.ConversationKindRepository, RepoID: 1}
+
+	none, err := newPullRequestTool{}.Run(ctx, owner, session, `{}`)
+	require.NoError(t, err)
+	assert.Contains(t, none, "The head and title arguments are required.")
+
+	same, err := newPullRequestTool{}.Run(ctx, owner, session, `{"head":"branch2","base":"branch2","title":"t"}`)
+	require.NoError(t, err)
+	assert.Contains(t, same, "would change nothing")
+
+	// the default branch is where changes land, not where one is asked from
+	toDefault, err := newPullRequestTool{}.Run(ctx, owner, session, `{"head":"master","base":"branch2","title":"t"}`)
+	require.NoError(t, err)
+	assert.Contains(t, toDefault, "changes land in")
+
+	unknown, err := newPullRequestTool{}.Run(ctx, owner, session, `{"head":"nowhere","title":"t"}`)
+	require.NoError(t, err)
+	assert.Contains(t, unknown, "is not in user2/repo1")
+}
