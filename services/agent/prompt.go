@@ -62,6 +62,33 @@ func toolsPrompt(offerings []agent_tools.Tool) string {
 	return strings.TrimRight(builder.String(), "\n")
 }
 
+// landingPrompt says what to do with a change once it is a pull request. Whether it lands now
+// or waits for a reader is the agent's own call, and it has to say which one it made; a session
+// that cannot merge is told to leave it. It is written for the model, so it stays in English.
+func landingPrompt(offerings []agent_tools.Tool) string {
+	offered := make(map[string]bool, len(offerings))
+	for _, tool := range offerings {
+		offered[tool.Name()] = true
+	}
+	switch {
+	case offered["gitea_create_pull_request"] && offered["gitea_merge_pull_request"]:
+		return "A change you make reaches the branch it is meant for as a pull request you open " +
+			"yourself. Once it is open, decide what becomes of it, and say in one line what you " +
+			"decided and why: when the change is small, you have read it back and it does what was " +
+			"asked, approve it with gitea_review_pull_request and land it with " +
+			"gitea_merge_pull_request; when it is bigger than you can check, or anything about it is " +
+			"uncertain, or it wants a decision that is not yours to make, leave it open for a reader. " +
+			"Never land a change you have not read."
+	case offered["gitea_create_pull_request"]:
+		return "A change you make reaches the branch it is meant for as a pull request: open one " +
+			"with gitea_create_pull_request, and leave the merge to a reader."
+	case offered["gitea_merge_pull_request"]:
+		return "A pull request is landed only when it is what was asked for and you have read what " +
+			"it changes; otherwise leave it open and say what still has to be decided."
+	}
+	return ""
+}
+
 // skillCatalogPrompt lists the skills of a session by name and one line each. The steps
 // themselves stay out of the prompt until the model opens a skill, so the catalog costs
 // the prompt a line per skill. It is written for the model, so it stays in English.
@@ -198,6 +225,9 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 		"You answer through a chat transcript. Answer in the language the user writes in, " +
 		"and keep answers short unless asked for detail.\n\n" +
 		toolsPrompt(offerings)
+	if landing := landingPrompt(offerings); landing != "" {
+		system += "\n\n" + landing
+	}
 	if skills := skillCatalogPrompt(catalog); skills != "" {
 		system += "\n\n" + skills
 	}

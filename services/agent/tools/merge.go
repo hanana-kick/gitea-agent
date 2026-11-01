@@ -29,9 +29,9 @@ func (mergePullRequestTool) Name() string { return "gitea_merge_pull_request" }
 
 func (mergePullRequestTool) Description() string {
 	return "Merge a pull request into the branch it was asked for, once its checks and reviews " +
-		"allow it. Only the merge styles the repository allows are accepted, and a branch " +
-		"protection rule that is not satisfied refuses the merge. gitea_read_pull_request reads " +
-		"what the change does first."
+		"allow it: land a change you have read and that does what was asked, and leave one you " +
+		"could not check for a reader. Only the merge styles the repository allows are accepted, " +
+		"and a branch protection rule that is not satisfied refuses the merge."
 }
 
 func (mergePullRequestTool) Scope() Scope { return ScopeRepository }

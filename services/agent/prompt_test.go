@@ -240,3 +240,32 @@ func (fakeWriteTool) Writes() bool             { return true }
 func (fakeWriteTool) Run(context.Context, *user_model.User, agent_tools.Session, string) (string, error) {
 	return "", nil
 }
+
+// What happens to a change once it is a pull request depends on what the session can do: a
+// session that can open and land one decides for itself, and says so.
+func TestLandingPromptFollowsTheOfferedTools(t *testing.T) {
+	registry := agent_tools.Registry()
+	find := func(name string) agent_tools.Tool {
+		tool, ok := agent_tools.Find(name)
+		require.True(t, ok, "%s is registered", name)
+		return tool
+	}
+	_ = registry
+
+	// open and land: the decision is the agent's
+	both := landingPrompt([]agent_tools.Tool{find("gitea_create_pull_request"), find("gitea_merge_pull_request")})
+	assert.Contains(t, both, "decide what becomes of it")
+	assert.Contains(t, both, "leave it open for a reader")
+	assert.Contains(t, both, "Never land a change you have not read")
+
+	// land only: nothing to open, so it only says when not to land
+	land := landingPrompt([]agent_tools.Tool{find("gitea_merge_pull_request")})
+	assert.Contains(t, land, "leave it open")
+
+	// open only: a reader lands it
+	open := landingPrompt([]agent_tools.Tool{find("gitea_create_pull_request")})
+	assert.Contains(t, open, "leave the merge to a reader")
+
+	// neither: nothing to say
+	assert.Empty(t, landingPrompt([]agent_tools.Tool{find("gitea_read_issue")}))
+}
