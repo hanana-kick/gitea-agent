@@ -23,10 +23,6 @@ import (
 	notify_service "gitea.dev/services/notify"
 )
 
-// mentionRunsPerMinute bounds how often a repository may reach the agent in one minute, so one
-// busy thread cannot spend the instance's model budget.
-const mentionRunsPerMinute = 6
-
 // AgentUser is the account the agent writes as on the surfaces it works on; nil when the
 // instance has not named one, and then the agent answers nothing on its own.
 func UserOf(ctx context.Context) *user_model.User {
@@ -43,8 +39,35 @@ func UserOf(ctx context.Context) *user_model.User {
 // answerMention starts a run for a comment that named the agent. The run reads what the
 // mentioning user may read, and the answer is meant for the thread it came from.
 func answerMention(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, issue *issues_model.Issue, comment *issues_model.Comment, mentions []*user_model.User) {
+	if comment == nil {
+		return
+	}
+	requestMention(ctx, doer, repo, issue, comment.Content, mentions)
+}
+
+// answerReview answers a review body that names the agent: a review is a request made on the
+// surface like any other.
+func answerReview(ctx context.Context, pr *issues_model.PullRequest, review *issues_model.Review, _ *issues_model.Comment, mentions []*user_model.User) {
 	agent := UserOf(ctx)
-	if agent == nil || doer == nil || repo == nil || issue == nil || comment == nil {
+	if agent == nil || pr == nil || review == nil || review.Reviewer == nil || review.ReviewerID == agent.ID {
+		return
+	}
+	if err := pr.LoadIssue(ctx); err != nil {
+		log.Error("Agent mention: loading the issue of pull request %d failed: %v", pr.ID, err)
+		return
+	}
+	if err := pr.Issue.LoadRepo(ctx); err != nil {
+		log.Error("Agent mention: loading the repository of pull request %d failed: %v", pr.ID, err)
+		return
+	}
+	requestMention(ctx, review.Reviewer, pr.Issue.Repo, pr.Issue, review.Content, mentions)
+}
+
+// requestMention is one request made on the surface: it starts the run that answers it, tells the
+// thread the work began, and follows the run to the end.
+func requestMention(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, issue *issues_model.Issue, body string, mentions []*user_model.User) {
+	agent := UserOf(ctx)
+	if agent == nil || doer == nil || repo == nil || issue == nil {
 		return
 	}
 	// an agent does not answer itself: the comments it writes carry its own name, and would
@@ -67,13 +90,13 @@ func answerMention(ctx context.Context, doer *user_model.User, repo *repo_model.
 	// one mention at a time per repository, and a handful a minute: a burst of comments must not
 	// become a burst of model calls
 	recent, err := db.GetEngine(ctx).Where("conversation_id = ?", session.ID).
-		And("created_unix > ?", timeutil.TimeStampNow()-timeutil.TimeStamp(mentionRunsPerMinute*60)).
+		And("created_unix > ?", timeutil.TimeStampNow()-timeutil.TimeStamp(setting.Agent.MentionsPerMinute*60)).
 		Count(new(agent_model.Run))
 	if err != nil {
 		log.Error("Agent mention: counting the runs of %s failed: %v", repo.FullName(), err)
 		return
 	}
-	if recent >= mentionRunsPerMinute*60 {
+	if recent >= int64(setting.Agent.MentionsPerMinute) {
 		log.Trace("Agent mention: %s is answering often, so this comment waits", repo.FullName())
 		return
 	}
@@ -84,7 +107,7 @@ func answerMention(ctx context.Context, doer *user_model.User, repo *repo_model.
 		log.Trace("Agent mention: %s is already answering, so this comment waits", repo.FullName())
 		return
 	}
-	message, run, err := SubmitUserMessage(ctx, session, doer.ID, mentionRequest(repo, issue, doer, comment))
+	message, run, err := SubmitUserMessage(ctx, session, doer.ID, mentionRequest(repo, issue, doer, body))
 	if err != nil {
 		log.Error("Agent mention: starting a run for %s#%d failed: %v", repo.FullName(), issue.Index, err)
 		return
@@ -234,8 +257,8 @@ func waitingText(ctx context.Context, run *agent_model.Run) {
 		return
 	}
 	reader := readerOf(ctx, run)
-	note := fmt.Sprintf("%s: %s — [%s](%s/-/agent/%d)",
-		statusText(reader, "agent.status_waiting"), call, statusText(reader, "agent.status_waiting_link"), setting.AppSubURL, run.ConversationID)
+	note := fmt.Sprintf("%s: %s — [%s](%s/-/agent/approvals/%d)",
+		statusText(reader, "agent.status_waiting"), call, statusText(reader, "agent.status_waiting_link"), setting.AppSubURL, approvalID(ctx, run))
 	previous := comment.Content
 	comment.Content = note
 	if err := issues_service.UpdateComment(ctx, comment, comment.ContentVersion, agent, previous); err != nil {
@@ -285,6 +308,20 @@ func lastToolOf(ctx context.Context, conversationID, requestID int64) string {
 		return strings.TrimSpace(name)
 	}
 	return ""
+}
+
+// approvalID is the call a waiting run waits for, so the thread can link to its page.
+func approvalID(ctx context.Context, run *agent_model.Run) int64 {
+	pending, err := PendingApprovals(ctx, run.ConversationID)
+	if err != nil {
+		return 0
+	}
+	for _, approval := range pending {
+		if approval.RunID == run.ID {
+			return approval.ID
+		}
+	}
+	return 0
 }
 
 // markProgress reports whether a run just started reading with a different tool.
@@ -371,13 +408,13 @@ func mentionAnswer(ctx context.Context, conversationID, requestID int64) string 
 
 // mentionRequest is what the run is told: where the mention came from, and where the answer
 // belongs. It is written for the model, so it stays in English.
-func mentionRequest(repo *repo_model.Repository, issue *issues_model.Issue, doer *user_model.User, comment *issues_model.Comment) string {
+func mentionRequest(repo *repo_model.Repository, issue *issues_model.Issue, doer *user_model.User, body string) string {
 	builder := strings.Builder{}
 	fmt.Fprintf(&builder, "[mention] @%s was named by @%s in a comment on %s #%d, %q.\n",
 		setting.Agent.Username, doer.Name, repo.FullName(), issue.Index, issue.Title)
 	fmt.Fprintf(&builder, "Answer in that thread with gitea_comment_issue (repository %s, index %d) once you have something to say; "+
 		"gitea_read_issue and gitea_read_pull_request read what it is about.\n", repo.FullName(), issue.Index)
-	builder.WriteString(strings.TrimSpace(comment.Content))
+	builder.WriteString(strings.TrimSpace(body))
 	return builder.String()
 }
 
@@ -423,4 +460,5 @@ func InitMentions() {
 		return
 	}
 	notify_service.CommentListener = answerMention
+	notify_service.ReviewListener = answerReview
 }

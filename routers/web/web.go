@@ -586,6 +586,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		m.Get("/list", agent_web.ChatList)
 		m.Get("/events", agent_web.ChatEventsAll)
 		m.Combo("/new").Get(agent_web.ChatDraft).Post(agent_web.ChatDraftCreate)
+		m.Get("/approvals/{aid}", agent_web.Approval)
 		m.Get("/{id}", agent_web.ChatSession)
 		m.Get("/{id}/events", agent_web.ChatEvents)
 		m.Get("/{id}/export", agent_web.ChatExport)

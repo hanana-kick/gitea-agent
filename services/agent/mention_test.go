@@ -261,7 +261,7 @@ func TestMentionStopsAtTheRateLimit(t *testing.T) {
 	mentioner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
 	session, err := repositorySessionOf(ctx, agentUser, repo)
 	require.NoError(t, err)
-	for range mentionRunsPerMinute * 60 {
+	for range setting.Agent.MentionsPerMinute {
 		require.NoError(t, db.Insert(ctx, &agent_model.Run{ConversationID: session.ID, UserID: mentioner.ID, Status: agent_model.RunStatusSucceeded}))
 	}
 
@@ -271,4 +271,39 @@ func TestMentionStopsAtTheRateLimit(t *testing.T) {
 	messages, err := ListMessages(ctx, session.ID, 10)
 	require.NoError(t, err)
 	assert.Empty(t, messages, "the thread is too busy to reach the agent again this minute")
+}
+
+// A review body that names the agent is a request like a comment, and is answered the same way.
+func TestReviewBodyMentionStartsARun(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+	InitMentions()
+	defer func() {
+		notify_service.CommentListener = nil
+		notify_service.ReviewListener = nil
+	}()
+
+	pr := unittest.AssertExistsAndLoadBean(t, &issues_model.PullRequest{ID: 1})
+	require.NoError(t, pr.LoadIssue(ctx))
+	require.NoError(t, pr.Issue.LoadRepo(ctx))
+	reviewer := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	review := &issues_model.Review{
+		ID: 1, IssueID: pr.IssueID, ReviewerID: reviewer.ID, Reviewer: reviewer,
+		Type: issues_model.ReviewTypeComment, Content: "@" + agentUser.Name + " 이 변경 봐줘",
+	}
+
+	// the listener the notifier calls, as the notifier itself is registered by the app
+	require.NotNil(t, notify_service.ReviewListener)
+	notify_service.ReviewListener(ctx, pr, review, nil, []*user_model.User{agentUser})
+
+	sessions, err := findConversations(ctx, agent_model.ConversationKindRepository, agentUser.ID)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	messages, err := ListMessages(ctx, sessions[0].ID, 10)
+	require.NoError(t, err)
+	require.NotEmpty(t, messages)
+	assert.Contains(t, messages[len(messages)-1].Content, "이 변경 봐줘")
 }

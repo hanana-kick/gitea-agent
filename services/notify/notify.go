@@ -24,6 +24,11 @@ var notifiers []Notifier
 var CommentListener func(ctx context.Context, doer *user_model.User, repo *repo_model.Repository,
 	issue *issues_model.Issue, comment *issues_model.Comment, mentions []*user_model.User)
 
+// ReviewListener is told about every submitted review after the notifiers, so the agent can
+// answer a review body that names it. Nothing else depends on it, so it may be nil.
+var ReviewListener func(ctx context.Context, pr *issues_model.PullRequest, review *issues_model.Review,
+	comment *issues_model.Comment, mentions []*user_model.User)
+
 // RegisterNotifier providers method to receive notify messages
 func RegisterNotifier(notifier Notifier) {
 	go notifier.Run()
@@ -142,6 +147,9 @@ func PullRequestReview(ctx context.Context, pr *issues_model.PullRequest, review
 	}
 	for _, notifier := range notifiers {
 		notifier.PullRequestReview(ctx, pr, review, comment, mentions)
+	}
+	if ReviewListener != nil {
+		ReviewListener(ctx, pr, review, comment, mentions)
 	}
 }
 
