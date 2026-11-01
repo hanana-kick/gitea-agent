@@ -17,6 +17,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
+	"gitea.dev/modules/translation"
 	issues_service "gitea.dev/services/issue"
 	notify_service "gitea.dev/services/notify"
 )
@@ -71,6 +72,17 @@ func answerMention(ctx context.Context, doer *user_model.User, repo *repo_model.
 		log.Error("Agent mention: starting a run for %s#%d failed: %v", repo.FullName(), issue.Index, err)
 		return
 	}
+	// the thread is told the agent is working before it can answer, so a reader knows the work
+	// started even when the answer takes a while or never comes
+	note, err := issues_service.CreateIssueComment(ctx, agent, repo, issue, statusText(doer, "agent.status_working"), nil)
+	if err != nil {
+		log.Error("Agent mention: saying that a run started on %s#%d failed: %v", repo.FullName(), issue.Index, err)
+	} else {
+		run.ReplyRepoID, run.ReplyIssueID, run.StatusCommentID = repo.ID, issue.ID, note.ID
+		if _, err := db.GetEngine(ctx).ID(run.ID).Cols("reply_repo_id", "reply_issue_id", "status_comment_id").Update(run); err != nil {
+			log.Error("Agent mention: recording the status comment of run %d failed: %v", run.ID, err)
+		}
+	}
 	// the thread has to hear how this ended: a run that fails, or one whose answer never reached
 	// the surface, is otherwise invisible to everyone but a log. The report outlives the request
 	// that started it, which ends as soon as the comment is stored.
@@ -81,7 +93,17 @@ func answerMention(ctx context.Context, doer *user_model.User, repo *repo_model.
 	}()
 }
 
-// reportMention says how a mention run ended, when the model did not say it itself.
+// statusText is one line in the language of the reader the agent is answering.
+func statusText(reader *user_model.User, key string) string {
+	lang := "en-US"
+	if reader != nil && reader.Language != "" {
+		lang = reader.Language
+	}
+	return translation.NewLocale(lang).TrString(key)
+}
+
+// reportMention says how a mention run ended by settling the comment it opened with: the thread
+// knows what happened without a new comment for every step.
 func reportMention(ctx context.Context, requestID, runID int64, repo *repo_model.Repository, issue *issues_model.Issue) {
 	agent := UserOf(ctx)
 	if agent == nil {
@@ -92,28 +114,83 @@ func reportMention(ctx context.Context, requestID, runID int64, repo *repo_model
 		log.Trace("Agent mention: run %d could not be followed", runID)
 		return
 	}
-	said := mentionAnswer(ctx, issue.ID, requestID)
-	if finished.Status == agent_model.RunStatusSucceeded && said != "" {
-		return // the model answered in the thread itself
-	}
-	var body string
-	switch finished.Status {
-	case agent_model.RunStatusFailed:
-		body = "I could not finish this one: " + strings.TrimSpace(finished.Error)
-	case agent_model.RunStatusCanceled:
-		body = "I stopped before answering this one."
-	default:
-		if said == "" {
-			return
+	note, answered := endingText(ctx, finished, mentionAnswer(ctx, finished.ConversationID, requestID))
+	comment := statusComment(ctx, finished.StatusCommentID)
+	if answered {
+		// the model answered in the thread itself: the comment that said it was working has done
+		// its job and is taken back rather than left standing
+		if comment != nil {
+			if err := issues_service.DeleteComment(ctx, agent, comment); err != nil {
+				log.Error("Agent mention: taking back the status comment of run %d failed: %v", runID, err)
+			}
 		}
-		body = said
-	}
-	if strings.TrimSpace(body) == "" {
 		return
 	}
-	if _, err := issues_service.CreateIssueComment(ctx, agent, repo, issue, body, nil); err != nil {
-		log.Error("Agent mention: reporting on %s#%d failed: %v", repo.FullName(), issue.Index, err)
+	if note == "" {
+		return
 	}
+	if comment == nil {
+		if _, err := issues_service.CreateIssueComment(ctx, agent, repo, issue, note, nil); err != nil {
+			log.Error("Agent mention: reporting on %s#%d failed: %v", repo.FullName(), issue.Index, err)
+		}
+		return
+	}
+	previous := comment.Content
+	comment.Content = note
+	if err := issues_service.UpdateComment(ctx, comment, comment.ContentVersion, agent, previous); err != nil {
+		log.Error("Agent mention: updating the status comment of run %d failed: %v", runID, err)
+		return
+	}
+	log.Trace("Agent mention: run %d settled its status comment", runID)
+}
+
+// endingText is what the thread is left with when a run ends: the failure, the stop, or the
+// answer the model kept to itself. answered says the model already wrote in the thread.
+func endingText(ctx context.Context, run *agent_model.Run, said string) (text string, answered bool) {
+	var reader *user_model.User
+	if run.UserID != 0 {
+		if user, err := user_model.GetUserByID(ctx, run.UserID); err == nil {
+			reader = user
+		}
+	}
+	switch run.Status {
+	case agent_model.RunStatusFailed:
+		return statusText(reader, "agent.status_failed") + ": " + strings.TrimSpace(run.Error), false
+	case agent_model.RunStatusCanceled:
+		return statusText(reader, "agent.status_stopped"), false
+	case agent_model.RunStatusSucceeded:
+		if said != "" {
+			return "", true
+		}
+		return answeredText(ctx, run), false
+	}
+	return "", false
+}
+
+// answeredText is the last thing the model said, for a run whose answer never reached the thread.
+func answeredText(ctx context.Context, run *agent_model.Run) string {
+	messages, err := ListMessages(ctx, run.ConversationID, 20)
+	if err != nil {
+		return ""
+	}
+	for _, message := range slices.Backward(messages) {
+		if message.Role == agent_model.MessageRoleAssistant && strings.TrimSpace(message.Content) != "" {
+			return strings.TrimSpace(message.Content)
+		}
+	}
+	return ""
+}
+
+// statusComment is the comment a run says how it is going in, when it still stands.
+func statusComment(ctx context.Context, id int64) *issues_model.Comment {
+	if id == 0 {
+		return nil
+	}
+	comment, err := issues_model.GetCommentByID(ctx, id)
+	if err != nil {
+		return nil
+	}
+	return comment
 }
 
 // waitForRun waits until the run is no longer active, telling a run that is already over from
@@ -138,8 +215,8 @@ func waitForRun(ctx context.Context, runID int64) *agent_model.Run {
 
 // mentionAnswer is what the model wrote in the thread itself, when it did: the comment it made
 // after the request, if any.
-func mentionAnswer(ctx context.Context, issueID, requestID int64) string {
-	messages, err := ListMessages(ctx, issueID, 60)
+func mentionAnswer(ctx context.Context, conversationID, requestID int64) string {
+	messages, err := ListMessages(ctx, conversationID, 60)
 	if err != nil {
 		return ""
 	}
@@ -184,6 +261,26 @@ func repositorySessionOf(ctx context.Context, owner *user_model.User, repo *repo
 		}
 	}
 	return CreateConversation(ctx, agent_model.ConversationKindRepository, owner.ID, repo.ID, repo.FullName())
+}
+
+// settleInterruptedRun leaves the failure in the thread a dead run opened with a status comment.
+func settleInterruptedRun(ctx context.Context, run *agent_model.Run) {
+	if run.StatusCommentID == 0 {
+		return
+	}
+	agent := UserOf(ctx)
+	if agent == nil {
+		return
+	}
+	comment, err := issues_model.GetCommentByID(ctx, run.StatusCommentID)
+	if err != nil {
+		return
+	}
+	previous := comment.Content
+	comment.Content = statusText(readerOf(ctx, run), "agent.status_interrupted")
+	if err := issues_service.UpdateComment(ctx, comment, comment.ContentVersion, agent, previous); err != nil {
+		log.Error("Agent engine: settling the status comment of run %d failed: %v", run.ID, err)
+	}
 }
 
 // InitMentions makes the agent answer the comments that name it. It is called once, at start

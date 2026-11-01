@@ -155,6 +155,12 @@ func InitEngine(ctx context.Context) error {
 
 // recoverRuns fails the runs that were in flight and re-queues the ones that never started.
 func recoverRuns(ctx context.Context) error {
+	interrupted := make([]*agent_model.Run, 0, 8)
+	if err := db.GetEngine(ctx).
+		Where("status = ?", agent_model.RunStatusRunning).
+		Find(&interrupted); err != nil {
+		return err
+	}
 	if _, err := db.GetEngine(ctx).
 		Where("status = ?", agent_model.RunStatusRunning).
 		Cols("status", "error", "finished_unix").
@@ -164,6 +170,10 @@ func recoverRuns(ctx context.Context) error {
 			FinishedUnix: timeutil.TimeStampNow(),
 		}); err != nil {
 		return err
+	}
+	// a thread that was told the agent is working hears how it ended, or it waits forever
+	for _, run := range interrupted {
+		settleInterruptedRun(ctx, run)
 	}
 
 	// a call that waited for its reader belongs to a run that just died: nobody can answer it
@@ -682,6 +692,18 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 type errRunUserUnknown struct{}
 
 func (errRunUserUnknown) Error() string { return "the user of this run is unknown" }
+
+// readerOf is the user a run answers, when it is still known.
+func readerOf(ctx context.Context, run *agent_model.Run) *user_model.User {
+	if run.UserID == 0 {
+		return nil
+	}
+	user, err := user_model.GetUserByID(ctx, run.UserID)
+	if err != nil {
+		return nil
+	}
+	return user
+}
 
 // runUser returns the user whose message started the run.
 func runUser(ctx context.Context, run *agent_model.Run) (*user_model.User, error) {

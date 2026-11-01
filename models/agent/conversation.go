@@ -107,6 +107,12 @@ type Run struct {
 	Status string `xorm:"VARCHAR(16) NOT NULL"`
 	Model  string `xorm:"VARCHAR(160) NOT NULL DEFAULT ''"` // model that answered
 	Error  string `xorm:"TEXT"`                             // failure reason, when failed
+	// ReplyRepoID and ReplyIssueID name the thread a run reports into, when it was asked for on
+	// the surface rather than in the chat.
+	ReplyRepoID  int64 `xorm:"NOT NULL DEFAULT 0"`
+	ReplyIssueID int64 `xorm:"NOT NULL DEFAULT 0"`
+	// StatusCommentID is the comment a reader watches to see how the run is going.
+	StatusCommentID int64 `xorm:"NOT NULL DEFAULT 0"`
 
 	CreatedUnix  timeutil.TimeStamp `xorm:"created NOT NULL"`
 	StartedUnix  timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`

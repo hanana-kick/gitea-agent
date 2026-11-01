@@ -14,6 +14,7 @@ import (
 	"gitea.dev/models/unittest"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/setting"
+	issues_service "gitea.dev/services/issue"
 	notify_service "gitea.dev/services/notify"
 
 	"github.com/stretchr/testify/assert"
@@ -55,6 +56,12 @@ func TestMentionStartsARunForTheMentioningUser(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, run)
 	assert.Equal(t, mentioner.ID, run.UserID, "the run reads what the mentioning user may read")
+	// the thread is told the work started, before there is an answer to give
+	require.NotZero(t, run.StatusCommentID)
+	note, err := issues_model.GetCommentByID(ctx, run.StatusCommentID)
+	require.NoError(t, err)
+	assert.Equal(t, agentUser.ID, note.PosterID, "the working note is the agent's own")
+	assert.Equal(t, issue.ID, note.IssueID)
 
 	// the agent answering itself would name it again, forever
 	before := len(messages)
@@ -126,6 +133,76 @@ func TestMentionReportsWhatTheThreadDidNotHear(t *testing.T) {
 	comments, err := issues_model.FindComments(ctx, &issues_model.FindCommentsOptions{IssueID: issue.ID})
 	require.NoError(t, err)
 	require.Greater(t, int64(len(comments)), before)
-	assert.Contains(t, comments[len(comments)-1].Content, "I could not finish this one")
+	assert.Contains(t, comments[len(comments)-1].Content, "the model did not answer in time")
 	assert.Equal(t, agent.ID, comments[len(comments)-1].PosterID)
+}
+
+// The comment that said the agent was working is the one that says how it ended: a thread keeps
+// one line per run, not a comment for every step.
+func TestStatusCommentIsSettledInPlace(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{ID: 1})
+
+	note, err := issues_service.CreateIssueComment(ctx, agentUser, repo, issue, statusText(nil, "agent.status_working"), nil)
+	require.NoError(t, err)
+
+	run := &agent_model.Run{
+		ConversationID: 1, UserID: 1, Status: agent_model.RunStatusFailed,
+		Error: "the model did not answer in time", StatusCommentID: note.ID, ReplyRepoID: repo.ID, ReplyIssueID: issue.ID,
+	}
+	require.NoError(t, db.Insert(ctx, run))
+	request, err := AppendMessage(ctx, 1, agent_model.MessageRoleUser, "[mention] …", "")
+	require.NoError(t, err)
+
+	reportMention(ctx, request.ID, run.ID, repo, issue)
+
+	settled, err := issues_model.GetCommentByID(ctx, note.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, statusText(nil, "agent.status_working"), settled.Content)
+	assert.Contains(t, settled.Content, "the model did not answer in time")
+
+	// a run the server lost mid-flight settles the same way
+	dead := &agent_model.Run{
+		ConversationID: 1, UserID: 1, Status: agent_model.RunStatusFailed,
+		Error: "interrupted by a server restart", StatusCommentID: note.ID,
+	}
+	settleInterruptedRun(ctx, dead)
+	settled, err = issues_model.GetCommentByID(ctx, note.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, statusText(nil, "agent.status_working"), settled.Content)
+}
+
+// A run whose answer the model wrote itself leaves no working note behind: one line per run, and
+// the answer is the line.
+func TestStatusCommentIsTakenBackWhenTheModelAnswered(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{ID: 1})
+	note, err := issues_service.CreateIssueComment(ctx, agentUser, repo, issue, statusText(nil, "agent.status_working"), nil)
+	require.NoError(t, err)
+
+	conversation, err := CreateConversation(ctx, agent_model.ConversationKindRepository, agentUser.ID, repo.ID, "agent session")
+	require.NoError(t, err)
+	run := &agent_model.Run{ConversationID: conversation.ID, UserID: 1, Status: agent_model.RunStatusSucceeded, StatusCommentID: note.ID}
+	require.NoError(t, db.Insert(ctx, run))
+	request, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleUser, "[mention] …", "")
+	require.NoError(t, err)
+	_, err = AppendMessage(ctx, conversation.ID, agent_model.MessageRoleTool, "gitea_comment_issue {\"index\":1} | Commented on #1.", "")
+	require.NoError(t, err)
+
+	reportMention(ctx, request.ID, run.ID, repo, issue)
+
+	_, err = issues_model.GetCommentByID(ctx, note.ID)
+	require.Error(t, err, "the working note is taken back once the answer is in the thread")
 }
