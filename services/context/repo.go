@@ -800,6 +800,43 @@ func repoAssignmentPrepareRepoTransfer(ctx *Context, data *repoAssignmentPrepare
 	}
 }
 
+// A repository can publish a page: the files committed under this directory on the branch it is
+// read at are served as they are, with no build step in between.
+const (
+	RepoPagesDir   = "public"
+	RepoPagesIndex = "index.html"
+)
+
+// RepoPagesURL is where the published page of the repository is served from.
+func (r *Repository) RepoPagesURL() string {
+	return r.RepoLink + "/-/site/"
+}
+
+// repoPagesURL is where the page of a repository is served from, or "" when it publishes none.
+// The check is one tree lookup on the branch a page is read at.
+func repoPagesURL(ctx *Context) string {
+	if ctx.Repo == nil || ctx.Repo.GitRepo == nil || ctx.Repo.Repository == nil {
+		return ""
+	}
+	commit, err := ctx.Repo.GitRepo.GetBranchCommit(ctx, ctx.Repo.Repository.DefaultBranch)
+	if err != nil {
+		return ""
+	}
+	entry, err := commit.GetTreeEntryByPath(ctx, ctx.Repo.GitRepo, path.Join(RepoPagesDir, RepoPagesIndex))
+	if err != nil || entry == nil || entry.IsDir() {
+		return ""
+	}
+	return ctx.Repo.RepoPagesURL()
+}
+
+// repoAssignmentPreparePages tells a repository page where its published page is, so the link to
+// it is in front of a reader wherever they are in the repository.
+func repoAssignmentPreparePages(ctx *Context, _ *repoAssignmentPrepareDataStruct) {
+	if url := repoPagesURL(ctx); url != "" {
+		ctx.Data["RepoPagesURL"] = url
+	}
+}
+
 // RepoAssignment returns a middleware to handle repository assignment
 func RepoAssignment(ctx *Context) {
 	repoAssignmentPreCheck(ctx)
@@ -813,6 +850,7 @@ func RepoAssignment(ctx *Context) {
 		repoAssignmentPrepareTemplateData,
 		repoAssignmentAutoRedirectNotReady,
 		repoAssignmentPrepareGitRepo,
+		repoAssignmentPreparePages,
 		repoAssignmentPrepareRepoTransfer,
 		repoAssignmentPrepareBranches,
 		repoAssignmentPreparePullRequests,

@@ -126,6 +126,10 @@
 						</a>
 					{{end}}
 
+					{{/* a published page is for every reader, signed in or not */}}
+					{{if .RepoPagesURL}}
+						<a class="{{if .PageIsRepoPages}}active {{end}}item" href="{{.RepoPagesURL}}">{{svg "octicon-globe" 16}} {{ctx.Locale.Tr "repo.pages"}}</a>
+					{{end}}
 					{{if .IsSigned}}
 						{{/* the agent of this repository has a screen of its own under the repository path */}}
 						<a class="{{if .PageIsRepoAgent}}active {{end}}item" href="{{.RepoLink}}/agent">

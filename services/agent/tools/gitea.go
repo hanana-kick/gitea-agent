@@ -55,6 +55,7 @@ func (GiteaTools) Registry() []Tool {
 		patchFileTool{},
 		reviewPullRequestTool{},
 		mergePullRequestTool{},
+		createReleaseTool{},
 		readReviewsTool{},
 		commentPullRequestTool{},
 	}

@@ -24,7 +24,7 @@ func TestRegistryIsStableAndComplete(t *testing.T) {
 	}
 	assert.Equal(t, []string{
 		"gitea_comment_issue", "gitea_commit_files", "gitea_create_branch", "gitea_create_pull_request",
-		"gitea_delete_branch",
+		"gitea_create_release", "gitea_delete_branch",
 		"gitea_list_actions_runs", "gitea_list_branches", "gitea_list_commits", "gitea_list_files",
 		"gitea_list_repos", "gitea_merge_pull_request", "gitea_move_file", "gitea_patch_file",
 		"gitea_read_commit", "gitea_read_file",

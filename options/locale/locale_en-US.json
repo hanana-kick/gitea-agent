@@ -1182,6 +1182,7 @@
   "repo.branches": "Branches",
   "repo.tags": "Tags",
   "repo.issues": "Issues",
+  "repo.pages": "Site",
   "repo.pulls": "Pull Requests",
   "repo.projects": "Projects",
   "repo.packages": "Packages",

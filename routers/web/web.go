@@ -1590,6 +1590,14 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	}, optSignIn, context.RepoAssignment, repo.MustBeNotEmpty, reqRepoReleaseReader)
 	// end "/{username}/{reponame}": repo releases
 
+	// the page a repository publishes: what is committed under public/ is served as it is
+	m.Group("/{username}/{reponame}", func() {
+		m.Group("/-/site", func() {
+			m.Get("", repo.Pages)
+			m.Get("/*", repo.Pages)
+		})
+	}, optSignIn, context.RepoAssignment, repo.MustBeNotEmpty, reqUnitCodeReader)
+
 	m.Group("/{username}/{reponame}", func() { // to maintain compatibility with old attachments
 		m.Get("/attachments/{uuid}", webAuth.AllowBasic, webAuth.AllowOAuth2, repo.GetAttachment)
 	}, optSignIn, context.RepoAssignment)
