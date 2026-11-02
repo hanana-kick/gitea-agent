@@ -369,8 +369,12 @@ func (commitFilesTool) commit(ctx context.Context, doer *user_model.User, sessio
 		params.Repository, params.Branch = loose.Repository, loose.Branch
 		params.Base, params.Message = loose.Base, loose.Message
 		if files, ok := loose.Files.(string); ok {
+			// a model may send the array as text, or as text that was itself encoded once more
 			if json.Unmarshal([]byte(files), &params.Files) != nil {
-				return "", err
+				var nested string
+				if json.Unmarshal([]byte(files), &nested) != nil || json.Unmarshal([]byte(nested), &params.Files) != nil {
+					return "", err
+				}
 			}
 		}
 	}
@@ -418,8 +422,13 @@ func (commitFilesTool) commit(ctx context.Context, doer *user_model.User, sessio
 	if base == "" {
 		base = repository.DefaultBranch
 	}
+	gitRepo, err := git.OpenRepository(ctx, repository)
+	if err != nil {
+		return "", err
+	}
+	defer gitRepo.Close()
 	response, err := files_service.ChangeRepoFiles(ctx, repository, actor, &files_service.ChangeRepoFilesOptions{
-		OldBranch: base,
+		OldBranch: oldBranchFor(ctx, gitRepo, params.Branch, base),
 		NewBranch: params.Branch,
 		Message:   strings.TrimSpace(params.Message),
 		Files:     files,

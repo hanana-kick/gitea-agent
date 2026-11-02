@@ -5,8 +5,10 @@ import (
 	"testing"
 
 	agent_model "gitea.dev/models/agent"
+	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unittest"
 	user_model "gitea.dev/models/user"
+	"gitea.dev/modules/git"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,4 +44,21 @@ func TestPatchToolAppliesADiffOnABranchOfItsOwn(t *testing.T) {
 	missing, err := patchFileTool{}.Run(ctx, owner, session, `{"branch":"patched","path":"README.md","message":"m"}`)
 	require.NoError(t, err)
 	assert.Contains(t, missing, "The branch, diff and message arguments are required.")
+}
+
+// A change goes to the branch it names: from that branch when it is already there, and from the
+// base when the branch is still to be made.
+func TestOldBranchForFollowsTheBranchState(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	gitRepo, err := git.OpenRepository(ctx, repo)
+	require.NoError(t, err)
+	defer gitRepo.Close()
+
+	// branch2 is in the fixture's git repository, so a commit to it updates it
+	assert.Equal(t, "branch2", oldBranchFor(ctx, gitRepo, "branch2", "master"))
+	// one that is not there yet is made from the base
+	assert.Equal(t, "master", oldBranchFor(ctx, gitRepo, "branch-that-is-not-there", "master"))
+	assert.Equal(t, "branch1", oldBranchFor(ctx, gitRepo, "branch-that-is-not-there", "branch1"))
 }

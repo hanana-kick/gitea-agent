@@ -18,6 +18,17 @@ import (
 	files_service "gitea.dev/services/repository/files"
 )
 
+// oldBranchFor is the branch a change is written from: the branch itself when it is already
+// there, so a commit to a branch that exists updates it, and the base when the branch is still to
+// be made. Gitea refuses a change that would create a branch it already has, which would leave a
+// model that made the branch first with nothing but a refusal to retry.
+func oldBranchFor(ctx context.Context, gitRepo *git.Repository, branch, base string) string {
+	if git.IsBranchExist(ctx, gitRepo, branch) {
+		return branch
+	}
+	return base
+}
+
 // createBranchTool makes a branch, so the changes of a review or a fix have somewhere to land
 // that is not the default branch.
 type createBranchTool struct{}
@@ -220,8 +231,13 @@ func (moveFileTool) move(ctx context.Context, doer *user_model.User, session Ses
 		return fmt.Sprintf("The branch %s is the default branch of %s: commit to a branch of its own and open a pull request.",
 			params.Branch, repository.FullName()), nil
 	}
+	gitRepo, err := git.OpenRepository(ctx, repository)
+	if err != nil {
+		return "", err
+	}
+	defer gitRepo.Close()
 	_, err = files_service.ChangeRepoFiles(ctx, repository, actor, &files_service.ChangeRepoFilesOptions{
-		OldBranch: repository.DefaultBranch,
+		OldBranch: oldBranchFor(ctx, gitRepo, params.Branch, repository.DefaultBranch),
 		NewBranch: params.Branch,
 		Message:   strings.TrimSpace(params.Message),
 		Files: []*files_service.ChangeRepoFile{{
@@ -301,8 +317,13 @@ func (patchFileTool) patch(ctx context.Context, doer *user_model.User, session S
 		// a patch without its header is applied against the named file
 		diff = fmt.Sprintf("diff --git a/%s b/%s\n%s", params.Path, params.Path, diff)
 	}
+	gitRepo, err := git.OpenRepository(ctx, repository)
+	if err != nil {
+		return "", err
+	}
+	defer gitRepo.Close()
 	response, err := files_service.ApplyDiffPatch(reqctx.FromContext(ctx), repository, actor, &files_service.ApplyDiffPatchOptions{
-		OldBranch: repository.DefaultBranch,
+		OldBranch: oldBranchFor(ctx, gitRepo, params.Branch, repository.DefaultBranch),
 		NewBranch: params.Branch,
 		Message:   strings.TrimSpace(params.Message),
 		Content:   diff,
