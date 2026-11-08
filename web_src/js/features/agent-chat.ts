@@ -4,7 +4,7 @@
 import {GET, POST} from '../modules/fetch.ts';
 import {errorMessage} from '../modules/errors.ts';
 import {toggleElem} from '../utils/dom.ts';
-import {followAgentLive, markSessionBusy, runIsBusy} from '../modules/agent-live.ts';
+import {followAgentLive, markSessionBusy, queuePlaceText, runIsBusy} from '../modules/agent-live.ts';
 import type {AgentApproval, AgentDelta, AgentMessage, AgentRun} from '../modules/agent-live.ts';
 import {initAttachmentList, initComposerKeys, initDraftComposer, fitLayout} from './agent-chat/composer.ts';
 import {initComposerInput} from './agent-chat/input.ts';
@@ -140,32 +140,68 @@ export function initAgentChat() {
 
   // the block under the last message says what its answer is doing; the stored message
   // replaces it once the run succeeds
-  type AgentChatPendingState = 'queued' | 'running' | 'reasoning' | 'streaming' | 'failed' | 'canceled';
+  type AgentChatPendingState = 'queued' | 'waiting' | 'running' | 'reasoning' | 'streaming' | 'failed' | 'canceled';
 
   let pendingEl = messagesEl.querySelector<HTMLElement>('.agent-chat-pending');
   let pendingRunID = Number(pendingEl?.getAttribute('data-run-id') ?? 0);
+  // the run the transcript is showing as waiting, and the clock that keeps its wait honest
+  let queuedRun: AgentRun | undefined;
+  let queuedTicker = 0;
 
   function dropPending() {
     pendingEl?.remove();
     pendingEl = null;
   }
 
+  // A block the server rendered holds only what the server knows: a run waits. The pieces a
+  // delta writes into are added here, so a delta never reaches into a block that lacks them.
   function ensurePending(): HTMLElement {
-    if (pendingEl) return pendingEl;
-    for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
-    const el = document.createElement('div');
-    el.className = 'agent-chat-message assistant agent-chat-pending';
+    if (!pendingEl) {
+      for (const el of messagesEl.querySelectorAll('.agent-chat-empty')) el.remove();
+      const el = document.createElement('div');
+      el.className = 'agent-chat-message assistant agent-chat-pending';
+      el.append(buildThought(), buildBubble());
+      messagesEl.append(el);
+      pendingEl = el;
+    }
+    if (!pendingEl.querySelector('.agent-chat-bubble')) {
+      pendingEl.append(buildBubble());
+    }
+    if (!pendingEl.querySelector('.agent-chat-thought')) {
+      pendingEl.prepend(buildThought());
+    }
+    const bubbleEl = pendingEl.querySelector<HTMLElement>('.agent-chat-bubble')!;
+    if (!bubbleEl.querySelector('.agent-chat-pending-status')) {
+      bubbleEl.prepend(buildStatus());
+    }
+    if (!bubbleEl.querySelector('.agent-chat-live-text')) {
+      const liveEl = document.createElement('div');
+      liveEl.className = 'agent-chat-live-text';
+      bubbleEl.append(liveEl);
+    }
+    return pendingEl;
+  }
+
+  function buildThought(): HTMLElement {
     const labelEl = document.createElement('span');
     labelEl.textContent = labels.thought;
-    const thoughtEl = buildApprovalThought(labelEl);
+    return buildApprovalThought(labelEl);
+  }
+
+  function buildBubble(): HTMLElement {
     const bubbleEl = document.createElement('div');
     bubbleEl.className = 'agent-chat-bubble';
-    bubbleEl.innerHTML = `<div class="agent-chat-pending-status"><span class="agent-chat-reasoning-dots"><i></i><i></i><i></i></span><span class="agent-chat-pending-label"></span></div>
-      <div class="agent-chat-live-text"></div>`;
-    el.append(thoughtEl, bubbleEl);
-    messagesEl.append(el);
-    pendingEl = el;
-    return el;
+    const liveEl = document.createElement('div');
+    liveEl.className = 'agent-chat-live-text';
+    bubbleEl.append(buildStatus(), liveEl);
+    return bubbleEl;
+  }
+
+  function buildStatus(): HTMLElement {
+    const statusEl = document.createElement('div');
+    statusEl.className = 'agent-chat-pending-status';
+    statusEl.innerHTML = `<span class="agent-chat-reasoning-dots"><i></i><i></i><i></i></span><span class="agent-chat-pending-label"></span>`;
+    return statusEl;
   }
 
   function setPendingState(state: AgentChatPendingState, text: string) {
@@ -220,18 +256,56 @@ export function initAgentChat() {
     if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
+  // queuedLabel is what a run waiting for a worker says: its place in the queue, and how long it
+  // has been waiting there. What a run costs cannot be known; what it has waited is a fact.
+  function queuedLabel(labels: AgentChatLabels, run: AgentRun): string {
+    if (!run.queuePosition) return labels.queued;
+    const place = queuePlaceText(labels, run);
+    return place ? `${labels.queued} (${place})` : labels.queued;
+  }
+
+  function stopQueuedTicker() {
+    if (queuedTicker) window.clearInterval(queuedTicker);
+    queuedTicker = 0;
+    queuedRun = undefined;
+  }
+
+  // a run that keeps waiting waits longer, and no other event says so
+  function showQueued(run: AgentRun) {
+    queuedRun = run;
+    setPendingState('queued', queuedLabel(labels, run));
+    if (queuedTicker || !run.queueSince) return;
+    queuedTicker = window.setInterval(() => {
+      if (!queuedRun?.queueSince) return stopQueuedTicker();
+      setPendingState('queued', queuedLabel(labels, queuedRun));
+    }, 5000);
+  }
+
   function applyRun(run: AgentRun) {
     currentRunID = run.id;
     markSessionBusy(elConversationID, runIsBusy(run), sessionBusyLabel);
     if (run.status === 'queued' || run.status === 'running') {
       setBusy(true);
       const state = pendingEl?.getAttribute('data-state');
-      if (run.status === 'queued' || !state || state === 'queued') {
-        setPendingState(run.status === 'queued' ? 'queued' : 'running', run.status === 'queued' ? labels.queued : labels.running);
+      if (run.status === 'queued') {
+        // a run that waits says where it stands and how long it has waited, so a queue reads as
+        // a queue and not as a stall
+        showQueued(run);
+      } else if (!state || state === 'queued') {
+        stopQueuedTicker();
+        setPendingState('running', labels.running);
       }
       return;
     }
     setBusy(false);
+    stopQueuedTicker();
+    if (run.status === 'waiting') {
+      // the run is not over: what it waits for is said under the message, beside the card its
+      // reader answers, so the wait is never read as an end
+      setPendingState('waiting', labels.waiting);
+      pendingRunID = run.id;
+      return;
+    }
     dropApprovals(run.id);
     if (run.status === 'succeeded') {
       dropPending(); // the stored message takes its place

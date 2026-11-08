@@ -152,6 +152,12 @@ type swaggerParameterBodies struct {
 	EditReactionOption api.EditReactionOption
 
 	// in:body
+	UpdatePagesOption api.UpdatePagesOption
+
+	// in:body
+	DeployPagesOption api.DeployPagesOption
+
+	// in:body
 	CreateBranchRepoOption api.CreateBranchRepoOption
 	// in:body
 	UpdateBranchRepoOption api.UpdateBranchRepoOption

@@ -243,16 +243,24 @@ func CanUseRepository(ctx context.Context, doer *user_model.User, repo *repo_mod
 	return perm.CanWrite(unit_model.TypeCode), nil
 }
 
-// DeleteConversation removes a session and its transcript. The resident session stays.
+// DeleteConversation removes a session and everything it holds: its transcript, the runs that
+// answered in it, the calls a reader answered and the files sent with it. The resident session
+// stays.
 func DeleteConversation(ctx context.Context, session *agent_model.Conversation) error {
 	if session.Kind == agent_model.ConversationKindResident {
 		return ErrResidentUndeletable{}
 	}
-	if _, err := db.GetEngine(ctx).Where("conversation_id = ?", session.ID).Delete(&agent_model.Message{}); err != nil {
+	if err := agent_model.DeleteConversationData(ctx, session.ID); err != nil {
 		return err
 	}
-	_, err := db.DeleteByID[agent_model.Conversation](ctx, session.ID)
-	return err
+	if _, err := db.DeleteByID[agent_model.Conversation](ctx, session.ID); err != nil {
+		return err
+	}
+	if err := RemoveConversationAttachments(session.ID); err != nil {
+		// the session is gone either way; a file that stayed behind is worth a log, not a failure
+		log.Error("remove attachments of conversation %d: %v", session.ID, err)
+	}
+	return nil
 }
 
 // ListMessages returns the newest messages of a session, oldest first. The transcript is

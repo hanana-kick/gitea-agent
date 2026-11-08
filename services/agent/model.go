@@ -111,11 +111,6 @@ func Answer(ctx context.Context, ref string, req llm.ChatRequest) (reply, model 
 	return textOf(answer(ctx, ref, req, nil))
 }
 
-// AnswerStream does the same but reports the answer as it arrives.
-func AnswerStream(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.OnDelta) (reply, model string, err error) {
-	return textOf(answer(ctx, ref, req, onDelta))
-}
-
 // AnswerMessage asks the session model and returns its message, tool calls included, so
 // the caller can carry a tool round on to the real answer.
 func AnswerMessage(ctx context.Context, ref string, req llm.ChatRequest, onDelta llm.OnDelta) (*llm.Message, string, error) {

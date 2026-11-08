@@ -5,6 +5,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -44,6 +45,19 @@ func (createReleaseTool) Args() []Arg {
 		{Name: "prerelease", Optional: true, Type: "boolean", Description: "Mark it as a prerelease"},
 		{Name: "draft", Optional: true, Type: "boolean", Description: "Keep it as a draft until a reader publishes it"},
 	}
+}
+
+// latestReleaseTag names the newest release a repository published, or "" when it published
+// none yet: the tag a release note is generated from.
+func latestReleaseTag(ctx context.Context, repoID int64) (string, error) {
+	latest, err := repo_model.GetLatestReleaseByRepoID(ctx, repoID)
+	if err != nil {
+		if _, ok := errors.AsType[repo_model.ErrReleaseNotExist](err); ok {
+			return "", nil
+		}
+		return "", err
+	}
+	return latest.TagName, nil
 }
 
 func (createReleaseTool) Run(ctx context.Context, doer *user_model.User, session Session, args string) (string, error) {
@@ -101,11 +115,15 @@ func (createReleaseTool) create(ctx context.Context, doer *user_model.User, sess
 	}
 	notes := strings.TrimSpace(params.Notes)
 	if notes == "" {
-		// the commits since the last release are what a reader wants to know about
-		generated, err := release_service.GenerateReleaseNotes(ctx, repository, gitRepo, release_service.GenerateReleaseNotesOptions{
-			TagName:   tag,
-			TagTarget: target,
-		})
+		// the commits since the last release are what a reader wants to know about, and a
+		// repository that already published one has nothing to compare against until it is named
+		options := release_service.GenerateReleaseNotesOptions{TagName: tag, TagTarget: target}
+		if previous, err := latestReleaseTag(ctx, repository.ID); err != nil {
+			return "", err
+		} else if previous != "" && previous != tag {
+			options.PreviousTag = previous
+		}
+		generated, err := release_service.GenerateReleaseNotes(ctx, repository, gitRepo, options)
 		if err != nil {
 			return "", err
 		}
@@ -143,10 +161,8 @@ func (createReleaseTool) create(ctx context.Context, doer *user_model.User, sess
 		state = " (prerelease)"
 	}
 	published := ""
-	if entry, err := gitRepo.GetBranchCommit(ctx, target); err == nil {
-		if entry, err := entry.GetTreeEntryByPath(ctx, gitRepo, "public/index.html"); err == nil && !entry.IsDir() {
-			published = fmt.Sprintf("\nThe page this repository publishes is served at %s/-/site/.", repository.Link())
-		}
+	if pages, has, err := repo_model.GetPages(ctx, repository.ID); err == nil && has && pages.Source == repo_model.PagesSourceBranch {
+		published = fmt.Sprintf("\nThe pages of this repository are served at %s.", repository.PagesURL())
 	}
 	return fmt.Sprintf("Released %s in %s from %s%s: %s/releases/tag/%s\n%s%s",
 		tag, repository.FullName(), target, state, repository.Link(), tag, notes, published), nil

@@ -1502,6 +1502,12 @@ func Routes() *web.Router {
 					})
 				}, reqRepoReader(unit.TypeReleases))
 				m.Post("/mirror-sync", reqToken(), reqRepoWriter(unit.TypeCode), mustNotBeArchived, repo.MirrorSync)
+				m.Group("/pages", func() {
+					m.Get("", repo.GetPages)
+					m.Put("", reqToken(), reqRepoWriter(unit.TypeCode), mustNotBeArchived, bind(api.UpdatePagesOption{}), repo.UpdatePages)
+					m.Post("/deploy", reqToken(), reqRepoWriter(unit.TypeCode), mustNotBeArchived, bind(api.DeployPagesOption{}), repo.DeployPages)
+					m.Delete("", reqToken(), reqRepoWriter(unit.TypeCode), repo.DeletePages)
+				}, reqToken(), reqRepoReader(unit.TypeCode))
 				m.Post("/push_mirrors-sync", reqAdmin(), reqToken(), mustNotBeArchived, repo.PushMirrorSync)
 				m.Group("/push_mirrors", func() {
 					m.Combo("").Get(repo.ListPushMirrors).

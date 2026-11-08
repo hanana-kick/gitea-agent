@@ -1,0 +1,199 @@
+{{template "repo/settings/layout_head" (dict "pageClass" "repository settings")}}
+<div class="repo-setting-content">
+	{{$pagesSource := ""}}
+	{{$pagesBranch := .Repository.DefaultBranch}}
+	{{$pagesDir := "/"}}
+	{{$pagesCustomDomain := ""}}
+	{{with .Pages}}
+		{{$pagesSource = .Source}}
+		{{if .Branch}}{{$pagesBranch = .Branch}}{{end}}
+		{{if .Dir}}{{$pagesDir = .Dir}}{{end}}
+		{{$pagesCustomDomain = .CustomDomain}}
+	{{end}}
+
+	<h4 class="ui top attached header">
+		{{ctx.Locale.Tr "repo.settings.pages"}}
+	</h4>
+	<div class="ui attached segment">
+		<p>{{ctx.Locale.Tr "repo.settings.pages_desc"}}</p>
+		{{if .Pages}}
+			{{if or .PagesLiveCommit .PagesLiveDeployment}}
+				<div class="ui positive message">
+					<div class="header">{{ctx.Locale.Tr "repo.settings.pages_live"}}</div>
+					<p><a href="{{.PagesURL}}">{{.PagesURL}}</a></p>
+					<p>
+						{{if eq $pagesSource "branch"}}
+							{{ctx.Locale.Tr "repo.settings.pages_live_branch" (ShortSha .PagesLiveCommit) $pagesBranch $pagesDir}}
+						{{else if .PagesLiveDeployment}}
+							{{$liveRun := index .PagesRuns .PagesLiveDeployment.RunID}}
+							{{if $liveRun}}
+								{{ctx.Locale.Tr "repo.settings.pages_live_actions"}} <a href="{{$liveRun.Link}}">#{{$liveRun.Index}}</a>
+							{{else}}
+								{{ctx.Locale.Tr "repo.settings.pages_live_commit" (ShortSha .PagesLiveDeployment.CommitSHA)}}
+							{{end}}
+						{{end}}
+					</p>
+					<p>
+						<a class="ui primary button" href="{{.PagesURL}}">{{ctx.Locale.Tr "repo.settings.pages_visit"}}</a>
+					</p>
+				</div>
+			{{else}}
+				<div class="ui warning message">{{ctx.Locale.Tr "repo.settings.pages_not_served"}}</div>
+			{{end}}
+		{{else}}
+			<div class="ui info message">{{ctx.Locale.Tr "repo.settings.pages_not_published"}}</div>
+		{{end}}
+
+		<form class="ui form" action="{{.RepoLink}}/settings/pages" method="post">
+			<div class="grouped fields">
+				<label>{{ctx.Locale.Tr "repo.settings.pages_source"}}</label>
+				<div class="field">
+					<div class="ui radio checkbox">
+						<input type="radio" name="source" value="branch" {{if eq $pagesSource "branch"}}checked{{end}}>
+						<label>{{ctx.Locale.Tr "repo.settings.pages_source_branch"}}</label>
+					</div>
+					<div class="tw-mt-2 tw-flex tw-flex-wrap tw-items-center tw-gap-2">
+						<div class="ui dropdown selection search tw-flex-1 tw-max-w-96">
+							{{svg "octicon-triangle-down" 14 "dropdown icon"}}
+							<input type="hidden" name="branch" value="{{$pagesBranch}}">
+							<div class="default text">{{$pagesBranch}}</div>
+							<div class="menu">
+								{{range .Branches}}
+									<div class="item" data-value="{{.}}">{{.}}</div>
+								{{end}}
+							</div>
+						</div>
+						<div class="ui dropdown selection">
+							{{svg "octicon-triangle-down" 14 "dropdown icon"}}
+							<input type="hidden" name="dir" value="{{$pagesDir}}">
+							<div class="default text">{{if eq $pagesDir "/"}}{{ctx.Locale.Tr "repo.settings.pages_dir_root"}}{{else}}{{$pagesDir}}{{end}}</div>
+							<div class="menu">
+								{{range .PagesDirs}}
+									<div class="item" data-value="{{.}}">{{if eq . "/"}}{{ctx.Locale.Tr "repo.settings.pages_dir_root"}}{{else}}{{.}}{{end}}</div>
+								{{end}}
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="field">
+					<div class="ui radio checkbox">
+						<input type="radio" name="source" value="actions" {{if eq $pagesSource "actions"}}checked{{end}}>
+						<label>{{ctx.Locale.Tr "repo.settings.pages_source_actions"}}</label>
+					</div>
+					<p class="help tw-mt-2">{{ctx.Locale.Tr "repo.settings.pages_actions_desc" .PagesArtifactName}}</p>
+					<div class="markup">
+						<pre class="code-block"><code>- uses: actions/upload-artifact@v4
+  with:
+    name: {{.PagesArtifactName}}
+    path: public</code></pre>
+					</div>
+				</div>
+			</div>
+			<div class="field">
+				<label for="pages-custom-domain">{{ctx.Locale.Tr "repo.settings.pages_custom_domain"}}</label>
+				<input id="pages-custom-domain" name="custom_domain" value="{{$pagesCustomDomain}}" placeholder="example.com">
+				<p class="help">{{ctx.Locale.Tr "repo.settings.pages_custom_domain_desc"}}</p>
+			</div>
+			<div class="field">
+				<button type="submit" class="ui primary button">{{ctx.Locale.Tr "repo.settings.pages_save"}}</button>
+			</div>
+		</form>
+	</div>
+
+	{{if .PagesDeployable}}
+		{{if eq $pagesSource "actions"}}
+			<h4 class="ui top attached header">
+				{{ctx.Locale.Tr "repo.settings.pages_artifacts"}}
+			</h4>
+			<div class="ui attached segment">
+				<div class="flex-divided-list items-with-main">
+					{{range .PagesArtifacts}}
+						<div class="item tw-items-center">
+							<div class="item-main">
+								<div class="item-title">
+									{{$artifactRun := index $.PagesRuns .RunID}}
+									{{if $artifactRun}}
+										<a href="{{$artifactRun.Link}}">{{$artifactRun.Title}}</a>
+									{{else}}
+										{{ctx.Locale.Tr "repo.settings.pages_artifact_run" .RunID}}
+									{{end}}
+								</div>
+								<div class="item-body">{{ShortSha .CommitSHA}} · {{DateUtils.TimeSince .CreatedUnix}} · {{FormatByteSize .FileSize}}</div>
+							</div>
+							<div class="item-trailing">
+								<form method="post" action="{{$.RepoLink}}/settings/pages/deploy">
+									<input type="hidden" name="artifact_id" value="{{.ID}}">
+									<button type="submit" class="ui primary tiny button">{{ctx.Locale.Tr "repo.settings.pages_deploy"}}</button>
+								</form>
+							</div>
+						</div>
+					{{else}}
+						<div class="item tw-text-center">{{ctx.Locale.Tr "repo.settings.pages_no_artifacts" .PagesArtifactName}}</div>
+					{{end}}
+				</div>
+			</div>
+		{{end}}
+	{{end}}
+
+	{{if .Pages}}
+		<h4 class="ui top attached header">
+			{{ctx.Locale.Tr "repo.settings.pages_deployments"}}
+		</h4>
+		<div class="ui attached segment">
+			<table class="ui table unstackable">
+				<thead>
+					<tr>
+						<th>{{ctx.Locale.Tr "repo.settings.pages_source"}}</th>
+						<th>{{ctx.Locale.Tr "repo.settings.pages_ref"}}</th>
+						<th>{{ctx.Locale.Tr "repo.settings.pages_status"}}</th>
+						<th>{{ctx.Locale.Tr "repo.settings.pages_when"}}</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .PagesDeployments}}
+						<tr>
+							<td>
+								{{if eq .Source "branch"}}{{ctx.Locale.Tr "repo.branch"}}{{else}}{{ctx.Locale.Tr "actions.actions"}}{{end}}
+							</td>
+							<td>
+								{{$deploymentRun := index $.PagesRuns .RunID}}
+								{{if $deploymentRun}}
+									<a href="{{$deploymentRun.Link}}">{{$deploymentRun.Title}}</a>
+									<span>{{ShortSha .CommitSHA}}</span>
+								{{else if .CommitSHA}}
+									{{ShortSha .CommitSHA}}
+								{{else}}
+									-
+								{{end}}
+							</td>
+							<td>
+								{{if eq .Status "built"}}
+									<span class="ui green label">{{ctx.Locale.Tr "repo.settings.pages_status_built"}}</span>
+								{{else}}
+									<span class="ui red label">{{ctx.Locale.Tr "repo.settings.pages_status_failed"}}</span>
+								{{end}}
+								{{if .Error}}<div class="tw-text-red tw-mt-1">{{.Error}}</div>{{end}}
+							</td>
+							<td>{{DateUtils.TimeSince .CreatedUnix}}</td>
+						</tr>
+					{{else}}
+						<tr>
+							<td colspan="4">{{ctx.Locale.Tr "repo.settings.pages_no_deployments"}}</td>
+						</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+
+		<h4 class="ui top attached header">
+			{{ctx.Locale.Tr "repo.settings.pages_unpublish"}}
+		</h4>
+		<div class="ui attached segment">
+			<p>{{ctx.Locale.Tr "repo.settings.pages_unpublish_desc"}}</p>
+			<form method="post" action="{{.RepoLink}}/settings/pages/unpublish">
+				<button type="submit" class="ui red button">{{ctx.Locale.Tr "repo.settings.pages_unpublish"}}</button>
+			</form>
+		</div>
+	{{end}}
+</div>
+{{template "repo/settings/layout_footer" .}}

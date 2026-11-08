@@ -189,7 +189,6 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 		prepareSkillCommands(ctx, sessionKindOf(session))
 	}
 	ctx.Data["Title"] = ctx.Tr("agent.chat_title")
-	ctx.Data["PageIsAgentChat"] = true
 	if promptRepo != nil {
 		prepareSuggestions(ctx, promptRepo)
 	}
@@ -266,15 +265,19 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 			return
 		}
 		labels := map[string]string{
-			"queued":    string(ctx.Tr("agent.chat_pending_queued")),
-			"running":   string(ctx.Tr("agent.chat_pending_running")),
-			"failed":    string(ctx.Tr("agent.chat_status_failed")),
-			"canceled":  string(ctx.Tr("agent.chat_status_canceled")),
-			"copy":      string(ctx.Tr("agent.chat_copy")),
-			"edit":      string(ctx.Tr("agent.chat_edit")),
-			"error":     string(ctx.Tr("agent.chat_status_error")),
-			"reasoning": string(ctx.Tr("agent.chat_reasoning")),
-			"thought":   string(ctx.Tr("agent.chat_thought")),
+			"queued":              string(ctx.Tr("agent.chat_pending_queued")),
+			"queuedAt":            string(ctx.Tr("agent.chat_queue_position")),
+			"queuedWaitedSeconds": string(ctx.Tr("agent.chat_queue_waited_seconds")),
+			"queuedWaitedMinutes": string(ctx.Tr("agent.chat_queue_waited_minutes")),
+			"waiting":             string(ctx.Tr("agent.chat_pending_waiting")),
+			"running":             string(ctx.Tr("agent.chat_pending_running")),
+			"failed":              string(ctx.Tr("agent.chat_status_failed")),
+			"canceled":            string(ctx.Tr("agent.chat_status_canceled")),
+			"copy":                string(ctx.Tr("agent.chat_copy")),
+			"edit":                string(ctx.Tr("agent.chat_edit")),
+			"error":               string(ctx.Tr("agent.chat_status_error")),
+			"reasoning":           string(ctx.Tr("agent.chat_reasoning")),
+			"thought":             string(ctx.Tr("agent.chat_thought")),
 		}
 		labelsJSON, err := json.Marshal(labels)
 		if err != nil {
@@ -283,7 +286,6 @@ func prepareChat(ctx *context.Context, session *agent_model.Conversation, repo *
 		}
 		ctx.Data["LabelsJSON"] = string(labelsJSON)
 		ctx.Data["RunActive"] = run != nil && agent_model.IsRunActive(run.Status)
-		ctx.Data["RunCancelable"] = run != nil && agent_model.IsRunActive(run.Status)
 		ctx.Data["PendingState"], ctx.Data["PendingText"] = pendingState(run, labels)
 		ctx.Data["PendingRunID"] = int64(0)
 		if run != nil {
@@ -846,10 +848,6 @@ func ChatSessionDelete(ctx *context.Context) {
 		chatError(ctx, err)
 		return
 	}
-	if err := agent_service.DeleteConversationAttachments(ctx, session.ID); err != nil {
-		ctx.ServerError("DeleteConversationAttachments", err)
-		return
-	}
 	if err := agent_service.DeleteConversation(ctx, session); err != nil {
 		if errors.Is(err, agent_service.ErrResidentUndeletable{}) {
 			ctx.Flash.Error(ctx.Tr("agent.chat_resident_undeletable"))
@@ -891,7 +889,7 @@ func ChatMessageEdit(ctx *context.Context) {
 		chatError(ctx, err)
 		return
 	}
-	if _, err := agent_service.EditUserMessage(ctx, session, ctx.PathParamInt64("mid"), ctx.FormString("content")); err != nil {
+	if _, _, err := agent_service.EditUserMessageAndRun(ctx, session, ctx.Doer.ID, ctx.PathParamInt64("mid"), ctx.FormString("content")); err != nil {
 		switch {
 		case errors.Is(err, agent_service.ErrMessageNotEditable{}):
 			ctx.Flash.Error(ctx.Tr("agent.chat_edit_only_user"))
@@ -902,10 +900,6 @@ func ChatMessageEdit(ctx *context.Context) {
 			ctx.Flash.Error(ctx.Tr("agent.chat_message_empty"))
 		}
 		ctx.Redirect(chatSessionURL(session.ID))
-		return
-	}
-	if _, err := agent_service.StartRun(ctx, session, ctx.Doer.ID); err != nil {
-		ctx.ServerError("StartRun", err)
 		return
 	}
 	ctx.Flash.Success(ctx.Tr("agent.chat_edited"))
@@ -1074,15 +1068,43 @@ func repositorySessionCount(list *agent_service.ConversationList) int {
 
 // pendingState describes what the answer to the last message is doing, so a reloaded
 // transcript shows the same thing the live one does.
+// queuedText is what a run waiting for a worker says: its place, when it is known, so a reader
+// sees how long the queue is rather than only that it waits.
+func queuedText(labels map[string]string, state agent_service.RunState) string {
+	if state.QueuePosition <= 0 {
+		return labels["queued"]
+	}
+	text := labels["queued"] + " (" + fmt.Sprintf(labels["queuedAt"], state.QueuePosition, state.QueueWaiting)
+	if waited := waitedText(labels, state.QueueWaitedSeconds); waited != "" {
+		text += ", " + waited
+	}
+	return text + ")"
+}
+
+// waitedText is how long a run has waited, in words: seconds while that reads better, minutes
+// past it. What a run costs cannot be known, so the wait itself is what is said.
+func waitedText(labels map[string]string, seconds int) string {
+	switch {
+	case seconds <= 0:
+		return ""
+	case seconds < 90:
+		return fmt.Sprintf(labels["queuedWaitedSeconds"], seconds)
+	default:
+		return fmt.Sprintf(labels["queuedWaitedMinutes"], seconds/60)
+	}
+}
+
 func pendingState(run *agent_model.Run, labels map[string]string) (state, text string) {
 	if run == nil {
 		return "", ""
 	}
 	switch run.Status {
 	case agent_model.RunStatusQueued:
-		return "queued", labels["queued"]
+		return "queued", queuedText(labels, agent_service.RunStateOf(run))
 	case agent_model.RunStatusRunning:
 		return "running", labels["running"]
+	case agent_model.RunStatusWaiting:
+		return "waiting", labels["waiting"]
 	case agent_model.RunStatusCanceled:
 		return "canceled", labels["canceled"]
 	case agent_model.RunStatusFailed:

@@ -166,12 +166,10 @@ func ListMessageAttachments(ctx context.Context, messageIDs []int64) (map[int64]
 	return byMessage, nil
 }
 
-// DeleteConversationAttachments removes the files of a conversation.
-func DeleteConversationAttachments(ctx context.Context, conversationID int64) error {
-	if _, err := db.GetEngine(ctx).Where("conversation_id = ?", conversationID).Delete(&agent_model.Attachment{}); err != nil {
-		return err
-	}
-	return os.RemoveAll(filepath.Join(setting.AppDataPath, "agent-attachments", strconv.FormatInt(conversationID, 10)))
+// RemoveConversationAttachments drops the files of a conversation, which deleting their rows
+// cannot do: the bytes are on disk.
+func RemoveConversationAttachments(conversationID int64) error {
+	return os.RemoveAll(agent_model.ConversationAttachmentDir(conversationID))
 }
 
 // attachmentTextLimit caps how much of a text file is handed to the model.

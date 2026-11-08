@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	agent_model "gitea.dev/models/agent"
@@ -33,6 +34,9 @@ type agentRunRow struct {
 	Error        string
 	Model        string
 	WaitingTool  string // the call a waiting run waits for
+	QueuePlace   string // where a run waiting for a worker stands
+	QueueWait    string // how long a waiting run has waited
+	Active       bool   // whether the run can still be stopped
 	SessionID    int64
 	Created      timeutil.TimeStamp
 	Started      timeutil.TimeStamp
@@ -44,7 +48,6 @@ type agentRunRow struct {
 // what it did, and why it stopped.
 func Runs(ctx *context.Context) {
 	ctx.Data["Title"] = ctx.Tr("agent.runs_title")
-	ctx.Data["PageIsAdminAgentRuns"] = true
 
 	status := ctx.FormTrim("status")
 	page := max(ctx.FormInt("page"), 1)
@@ -103,6 +106,11 @@ func Runs(ctx *context.Context) {
 		if call, ok := waiting[run.ID]; ok {
 			row.WaitingTool = call
 		}
+		row.Active = agent_model.IsRunActive(run.Status)
+		if state := agent_service.RunStateOf(run); state.QueuePosition > 0 {
+			row.QueuePlace = fmt.Sprintf("%d/%d", state.QueuePosition, state.QueueWaiting)
+			row.QueueWait = queueWaitedText(ctx, state.QueueWaitedSeconds)
+		}
 		if run.StartedUnix > 0 && run.FinishedUnix > 0 {
 			row.DurationText = (run.FinishedUnix - run.StartedUnix).AsTime().String()
 		}
@@ -113,11 +121,73 @@ func Runs(ctx *context.Context) {
 	ctx.Data["Status"] = status
 	ctx.Data["Page"] = page
 	ctx.Data["Total"] = count
-	ctx.Data["Running"] = countOf(rows, agent_model.RunStatusRunning)
-	ctx.Data["Waiting"] = countOf(rows, agent_model.RunStatusWaiting)
-	ctx.Data["Failed"] = countOf(rows, agent_model.RunStatusFailed)
+	labels := map[string]string{
+		"queued": agent_model.RunStatusQueued, "waiting": agent_model.RunStatusWaiting,
+		"running": agent_model.RunStatusRunning, "succeeded": agent_model.RunStatusSucceeded,
+		"failed": agent_model.RunStatusFailed, "canceled": agent_model.RunStatusCanceled,
+	}
+	for status, key := range map[string]string{
+		agent_model.RunStatusQueued:    "agent.runs_status_queued",
+		agent_model.RunStatusWaiting:   "agent.runs_status_waiting",
+		agent_model.RunStatusRunning:   "agent.runs_status_running",
+		agent_model.RunStatusSucceeded: "agent.runs_status_succeeded",
+		agent_model.RunStatusFailed:    "agent.runs_status_failed",
+		agent_model.RunStatusCanceled:  "agent.runs_status_canceled",
+	} {
+		labels[status] = string(ctx.Tr(key))
+	}
+	// the queue words are shared with the chat, so a waiting run is described the same way twice
+	labels["queuedAt"] = string(ctx.Tr("agent.chat_queue_position"))
+	labels["queuedWaitedSeconds"] = string(ctx.Tr("agent.chat_queue_waited_seconds"))
+	labels["queuedWaitedMinutes"] = string(ctx.Tr("agent.chat_queue_waited_minutes"))
+	encoded, err := json.Marshal(labels)
+	if err != nil {
+		ctx.ServerError("labels", err)
+		return
+	}
+	ctx.Data["LabelsJSON"] = string(encoded)
 	ctx.Data["RunsEventsURL"] = setting.AppSubURL + "/-/admin/agent/runs/events"
 	ctx.HTML(http.StatusOK, tplAgentRuns)
+}
+
+// RunTrace answers what one run handed its model, as it was written: the prompt, the tools it
+// was offered and the messages it sent. It is only there when the instance traces.
+func RunTrace(ctx *context.Context) {
+	body, err := agent_service.ReadPromptTrace(ctx.PathParamInt64("id"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			ctx.NotFound(err)
+			return
+		}
+		ctx.ServerError("read the prompt trace", err)
+		return
+	}
+	ctx.Resp.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = ctx.Resp.Write(body)
+}
+
+// RunStop stops one run of the agent: a run that waits in the queue or for a reader is finished
+// here, and one that is answering is told to stop.
+func RunStop(ctx *context.Context) {
+	run, exist, err := db.GetByID[agent_model.Run](ctx, ctx.PathParamInt64("id"))
+	if err != nil {
+		ctx.ServerError("find run", err)
+		return
+	}
+	if !exist {
+		ctx.NotFound(errors.New("no such run"))
+		return
+	}
+	if err := agent_service.CancelRun(run.ConversationID); err != nil {
+		if !errors.Is(err, agent_service.ErrNoActiveRun{}) {
+			ctx.ServerError("stop run", err)
+			return
+		}
+		ctx.Flash.Info(ctx.Tr("agent.runs_already_over"))
+	} else {
+		ctx.Flash.Success(ctx.Tr("agent.runs_stopped"))
+	}
+	ctx.Redirect(setting.AppSubURL + "/-/admin/agent/runs")
 }
 
 // RunsEvents streams every run change to the monitoring page, so the table follows the agent
@@ -138,6 +208,21 @@ func RunsEvents(ctx *context.Context) {
 
 	runs, unsubscribe := agent_service.SubscribeAllRunEvents()
 	defer unsubscribe()
+
+	// what is still going is sent first, so a page that connects mid-queue shows where every run
+	// stands rather than waiting for the next change
+	if states, err := agent_service.ActiveRunStates(ctx); err == nil {
+		for _, state := range states {
+			payload, err := json.Marshal(state)
+			if err != nil {
+				continue
+			}
+			if _, err := fmt.Fprintf(ctx.Resp, "data: %s\n\n", payload); err != nil {
+				return
+			}
+		}
+		flusher.Flush()
+	}
 
 	heartbeat := time.NewTicker(eventsHeartbeat)
 	defer heartbeat.Stop()
@@ -171,14 +256,16 @@ func RunsEvents(ctx *context.Context) {
 	}
 }
 
-func countOf(rows []*agentRunRow, status string) int {
-	shown := 0
-	for _, row := range rows {
-		if row.Status == status {
-			shown++
-		}
+// queueWaitedText is how long a run has waited, for the runs table.
+func queueWaitedText(ctx *context.Context, seconds int) string {
+	switch {
+	case seconds <= 0:
+		return ""
+	case seconds < 90:
+		return fmt.Sprintf(string(ctx.Tr("agent.chat_queue_waited_seconds")), seconds)
+	default:
+		return fmt.Sprintf(string(ctx.Tr("agent.chat_queue_waited_minutes")), seconds/60)
 	}
-	return shown
 }
 
 func conversationsByID(ctx stdctx.Context, ids []int64) (map[int64]*agent_model.Conversation, error) {

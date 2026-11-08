@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"gitea.dev/models/db"
+	"gitea.dev/modules/setting"
 	"gitea.dev/modules/timeutil"
 )
 
@@ -23,6 +24,11 @@ type Attachment struct {
 	Size           int64  `xorm:"NOT NULL DEFAULT 0"`
 
 	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
+}
+
+// ConversationAttachmentDir is the directory holding the files sent with one session.
+func ConversationAttachmentDir(conversationID int64) string {
+	return filepath.Join(setting.AppDataPath, "agent-attachments", strconv.FormatInt(conversationID, 10))
 }
 
 // SizeText renders the size the way the transcript shows it.

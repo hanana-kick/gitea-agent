@@ -968,6 +968,8 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			m.Combo("/tools").Get(agent_web.Tools).Post(agent_web.ToolsPost)
 			m.Get("/runs", agent_web.Runs)
 			m.Get("/runs/events", agent_web.RunsEvents)
+			m.Get("/runs/{id}/trace", agent_web.RunTrace)
+			m.Post("/runs/{id}/stop", agent_web.RunStop)
 			m.Combo("/skills").Get(agent_web.Skills).Post(agent_web.SkillsPost)
 			m.Post("/skills/delete", agent_web.SkillsDelete)
 		})
@@ -1254,6 +1256,13 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		m.Post("/avatar/delete", repo_setting.SettingsDeleteAvatar)
 
 		m.Combo("/public_access").Get(repo_setting.PublicAccess).Post(repo_setting.PublicAccessPost)
+
+		m.Group("/pages", func() {
+			m.Get("", repo_setting.PagesSettings)
+			m.Post("", web.Bind[*forms.PagesForm](), repo_setting.PagesSettingsPost)
+			m.Post("/deploy", web.Bind[*forms.DeployPagesForm](), repo_setting.PagesDeploy)
+			m.Post("/unpublish", repo_setting.PagesUnpublish)
+		})
 
 		m.Group("/collaboration", func() {
 			m.Combo("").Get(repo_setting.Collaboration).Post(repo_setting.CollaborationPost)
@@ -1590,9 +1599,10 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	}, optSignIn, context.RepoAssignment, repo.MustBeNotEmpty, reqRepoReleaseReader)
 	// end "/{username}/{reponame}": repo releases
 
-	// the page a repository publishes: what is committed under public/ is served as it is
+	// the pages a repository publishes: what a workflow deployed, or what is committed under the
+	// directory of the branch it publishes from
 	m.Group("/{username}/{reponame}", func() {
-		m.Group("/-/site", func() {
+		m.Group("/-/pages", func() {
 			m.Get("", repo.Pages)
 			m.Get("/*", repo.Pages)
 		})

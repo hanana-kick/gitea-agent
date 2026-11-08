@@ -3,7 +3,7 @@ import {svg} from '../../svg.ts';
 import {addDelegatedEventListener, createElementFromHTML, toggleElem} from '../../utils/dom.ts';
 import type {AgentApproval, AgentMessage} from '../../modules/agent-live.ts';
 
-export type AgentChatLabels = {queued: string, running: string, failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string, thought: string};
+export type AgentChatLabels = {queued: string, queuedAt: string, queuedWaitedSeconds: string, queuedWaitedMinutes: string, waiting: string, running: string, failed: string, canceled: string, error: string, copy: string, edit: string, reasoning: string, thought: string};
 
 // how many files of one kind a list shows before the rest waits behind a single button;
 // keep in step with chatAttachmentLimit in routers/web/agent/chat.go

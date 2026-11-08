@@ -800,40 +800,36 @@ func repoAssignmentPrepareRepoTransfer(ctx *Context, data *repoAssignmentPrepare
 	}
 }
 
-// A repository can publish a page: the files committed under this directory on the branch it is
-// read at are served as they are, with no build step in between.
-const (
-	RepoPagesDir   = "public"
-	RepoPagesIndex = "index.html"
-)
-
-// RepoPagesURL is where the published page of the repository is served from.
-func (r *Repository) RepoPagesURL() string {
-	return r.RepoLink + "/-/site/"
+// repoPagesLive reports whether the pages of the repository are there to be read: a branch that
+// carries the index of the published directory, or a deployment that was built.
+func repoPagesLive(ctx *Context) bool {
+	pages, has, err := repo_model.GetPages(ctx, ctx.Repo.Repository.ID)
+	if err != nil || !has {
+		return false
+	}
+	switch pages.Source {
+	case repo_model.PagesSourceBranch:
+		if ctx.Repo.GitRepo == nil {
+			return false
+		}
+		commit, err := ctx.Repo.GitRepo.GetBranchCommit(ctx, pages.Branch)
+		if err != nil {
+			return false
+		}
+		entry, err := commit.GetTreeEntryByPath(ctx, ctx.Repo.GitRepo, path.Join(strings.Trim(pages.Dir, "/"), repo_model.PagesIndex))
+		return err == nil && entry != nil && !entry.IsDir()
+	case repo_model.PagesSourceActions:
+		_, has, err := repo_model.GetLatestPagesDeployment(ctx, ctx.Repo.Repository.ID)
+		return err == nil && has
+	}
+	return false
 }
 
-// repoPagesURL is where the page of a repository is served from, or "" when it publishes none.
-// The check is one tree lookup on the branch a page is read at.
-func repoPagesURL(ctx *Context) string {
-	if ctx.Repo == nil || ctx.Repo.GitRepo == nil || ctx.Repo.Repository == nil {
-		return ""
-	}
-	commit, err := ctx.Repo.GitRepo.GetBranchCommit(ctx, ctx.Repo.Repository.DefaultBranch)
-	if err != nil {
-		return ""
-	}
-	entry, err := commit.GetTreeEntryByPath(ctx, ctx.Repo.GitRepo, path.Join(RepoPagesDir, RepoPagesIndex))
-	if err != nil || entry == nil || entry.IsDir() {
-		return ""
-	}
-	return ctx.Repo.RepoPagesURL()
-}
-
-// repoAssignmentPreparePages tells a repository page where its published page is, so the link to
-// it is in front of a reader wherever they are in the repository.
+// repoAssignmentPreparePages tells a repository page where its published pages are, so the link
+// to them is in front of a reader wherever they are in the repository.
 func repoAssignmentPreparePages(ctx *Context, _ *repoAssignmentPrepareDataStruct) {
-	if url := repoPagesURL(ctx); url != "" {
-		ctx.Data["RepoPagesURL"] = url
+	if repoPagesLive(ctx) {
+		ctx.Data["RepoPagesURL"] = ctx.Repo.Repository.PagesURL()
 	}
 }
 

@@ -109,27 +109,6 @@ func GetModelGroupBySlug(ctx context.Context, slug string) (*agent_model.ModelGr
 	return group, nil
 }
 
-// GetModelGroupByName returns a group by its key.
-func GetModelGroupByName(ctx context.Context, name string) (*agent_model.ModelGroup, error) {
-	name = agent_model.NormalizeGroupName(name)
-	if name == "" {
-		return nil, agent_model.ErrModelGroupNotFound{}
-	}
-	roles, err := db.Find[agent_model.ModelGroup](ctx, agent_model.FindModelGroupsOptions{
-		ListOptions: db.ListOptionsAll,
-		Keyword:     name,
-	})
-	if err != nil {
-		return nil, err
-	}
-	for _, group := range roles {
-		if group.Name == name {
-			return group, nil
-		}
-	}
-	return nil, agent_model.ErrModelGroupNotFound{}
-}
-
 // FindModelGroups returns one page of groups and the total number of matches.
 func FindModelGroups(ctx context.Context, opts agent_model.FindModelGroupsOptions) ([]*agent_model.ModelGroup, int64, error) {
 	return agent_model.FindModelGroups(ctx, opts)
@@ -153,21 +132,31 @@ func GroupMemberCounts(ctx context.Context) map[int64]int {
 	return counts
 }
 
-// DeleteModelGroup removes a group and its members.
+// DeleteModelGroup removes a group, its members, the memberships of the groups that named it and
+// the roles assigned to it, so nothing is left pointing at a group that is gone.
 func DeleteModelGroup(ctx context.Context, id int64) error {
-	if _, err := GetModelGroupByID(ctx, id); err != nil {
+	group, err := GetModelGroupByID(ctx, id)
+	if err != nil {
 		return err
 	}
-	if _, err := db.Delete[agent_model.ModelGroupMember](ctx, agent_model.FindGroupMembersOptions{
-		ListOptions: db.ListOptionsAll,
-		GroupID:     id,
-	}); err != nil {
-		return fmt.Errorf("delete group members: %w", err)
-	}
-	if _, err := db.DeleteByID[agent_model.ModelGroup](ctx, id); err != nil {
-		return fmt.Errorf("delete model group: %w", err)
-	}
-	return nil
+	return db.WithTx(ctx, func(ctx context.Context) error {
+		if err := ForgetModelRefs(ctx, ModelRefForGroup(group.Slug)); err != nil {
+			return err
+		}
+		if _, err := db.GetEngine(ctx).Where("member_group_id = ?", id).Delete(&agent_model.ModelGroupMember{}); err != nil {
+			return fmt.Errorf("delete memberships of group %d: %w", id, err)
+		}
+		if _, err := db.Delete[agent_model.ModelGroupMember](ctx, agent_model.FindGroupMembersOptions{
+			ListOptions: db.ListOptionsAll,
+			GroupID:     id,
+		}); err != nil {
+			return fmt.Errorf("delete group members: %w", err)
+		}
+		if _, err := db.DeleteByID[agent_model.ModelGroup](ctx, id); err != nil {
+			return fmt.Errorf("delete model group: %w", err)
+		}
+		return nil
+	})
 }
 
 // buildModelGroup validates the submitted fields and returns the group to store.

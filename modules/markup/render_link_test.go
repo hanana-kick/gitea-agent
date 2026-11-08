@@ -28,6 +28,10 @@ func TestResolveLinkRelative(t *testing.T) {
 	assert.Equal(t, "mailto:user@domain.com", resolveLinkRelative(ctx, "/a", "", "mailto:user@domain.com", false))
 	assert.Equal(t, "http://other/path/", resolveLinkRelative(ctx, "/a", "", "http://other/path/", false))
 
+	// "/-/" is the instance's own namespace, so a link to it stays where it points
+	assert.Equal(t, "/-/agent/approvals/117", resolveLinkRelative(ctx, "/owner/repo", "", "/-/agent/approvals/117", false))
+	assert.Equal(t, "/-/agent/approvals/117#a", resolveLinkRelative(ctx, "/owner/repo", "issues", "/-/agent/approvals/117#a", false))
+
 	// some users might have used absolute paths a lot, so if the prefix overlaps and has enough slashes, we should tolerate it
 	assert.Equal(t, "/owner/repo/foo/owner/repo/foo/bar/xxx", resolveLinkRelative(ctx, "/owner/repo/foo", "", "/owner/repo/foo/bar/xxx", false))
 	assert.Equal(t, "/owner/repo/foo/bar/xxx", resolveLinkRelative(ctx, "/owner/repo/foo/bar", "", "/owner/repo/foo/bar/xxx", false))

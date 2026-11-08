@@ -94,10 +94,20 @@ func ProviderNew(ctx *context.Context) {
 	renderProviderForm(ctx, nil, providerForm{}, nil, "")
 }
 
+// headersOf reads the header lines of the form. The field is optional: a provider with no
+// headers of its own is the usual one, and an empty field asks for exactly that.
+func headersOf(form providerForm) (map[string]string, error) {
+	headers, err := agent_service.ParseHeaderLines(form.HeadersRaw)
+	if err != nil && !errors.Is(err, agent_service.ErrHeadersEmpty{}) {
+		return nil, err
+	}
+	return headers, nil
+}
+
 // ProviderNewPost creates a provider from the form.
 func ProviderNewPost(ctx *context.Context) {
 	form := providerFormFrom(ctx)
-	headers, err := agent_service.ParseHeaderLines(form.HeadersRaw)
+	headers, err := headersOf(form)
 	if err != nil {
 		renderProviderForm(ctx, nil, form, catalogFrom(ctx), err.Error())
 		return
@@ -164,7 +174,7 @@ func ProviderEditPost(ctx *context.Context) {
 	}
 
 	form := providerFormFrom(ctx)
-	headers, err := agent_service.ParseHeaderLines(form.HeadersRaw)
+	headers, err := headersOf(form)
 	if err != nil {
 		renderProviderForm(ctx, p, form, catalogFrom(ctx), err.Error())
 		return
@@ -212,7 +222,7 @@ func ProviderEditFetchModels(ctx *context.Context) {
 
 func fetchModels(ctx *context.Context, p *agent_model.Provider) {
 	form := providerFormFrom(ctx)
-	headers, err := agent_service.ParseHeaderLines(form.HeadersRaw)
+	headers, err := headersOf(form)
 	if err != nil {
 		renderProviderForm(ctx, p, form, nil, err.Error())
 		return

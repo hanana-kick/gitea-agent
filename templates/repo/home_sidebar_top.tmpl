@@ -23,6 +23,12 @@
 			</a>
 		{{end}}
 
+		{{if .RepoPagesURL}}
+			<a class="flex-text-block" href="{{.RepoPagesURL}}">
+				{{svg "octicon-globe" 16 "tw-text-text"}} <span class="tw-text-primary">{{ctx.Locale.Tr "repo.pages"}}</span>
+			</a>
+		{{end}}
+
 		<div id="repo-topics" class="flex-text-block tw-flex-wrap tw-gap-1 tw-my-1 tw-text-text">
 			{{/* !!!! it SHOULD and MUST match the code in repo-home.ts */}}
 			{{range .Topics}}<a class="repo-topic ui large label gt-ellipsis" title={{.Name}} href="{{AppSubUrl}}/explore/repos?q={{.Name}}&topic=1">{{.Name}}</a>{{end}}

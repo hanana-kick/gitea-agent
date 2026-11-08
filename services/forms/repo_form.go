@@ -77,6 +77,21 @@ type MigrateRepoForm struct {
 }
 
 // RepoSettingForm form for changing repository settings
+// PagesForm is how a repository publishes its pages.
+type PagesForm struct {
+	middleware.FormDefaultValidator
+	Source       string `binding:"Required;In(branch,actions)"`
+	Branch       string
+	Dir          string
+	CustomDomain string
+}
+
+// DeployPagesForm names the artifact of a workflow run to publish as pages.
+type DeployPagesForm struct {
+	middleware.FormDefaultValidator
+	ArtifactID int64 `binding:"Required"`
+}
+
 type RepoSettingForm struct {
 	middleware.FormDefaultValidator
 	RepoName               string `binding:"TrimSpace;Required;AlphaDashDot;MaxSize(100)"`

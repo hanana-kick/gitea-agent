@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"gitea.dev/models/db"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/log"
+	"gitea.dev/modules/setting"
 	"gitea.dev/modules/timeutil"
 	llm "gitea.dev/services/agent/llm"
 	agent_skills "gitea.dev/services/agent/skills"
@@ -23,8 +25,10 @@ import (
 )
 
 const (
-	engineWorkers      = 4
-	engineQueueSize    = 256
+	engineWorkers   = setting.DefaultMaxConcurrentSessions
+	engineQueueSize = 256
+	// engineMaxWorkers caps what an instance may ask for, so one setting cannot overrun it
+	engineMaxWorkers   = 64
 	engineRunTimeout   = 10 * time.Minute
 	engineHistoryLimit = 40
 	enginePromptLimit  = 100 * 1024 // cap the transcript handed to the model
@@ -32,6 +36,12 @@ const (
 	// engineToolRounds caps how often one answer may stop to call tools before it has
 	// to answer without them, so a model that keeps calling still finishes.
 	engineToolRounds = 6
+
+	// sweepInterval is how often the engine looks for runs nothing is working on, and
+	// sweepGrace how long past its deadline a run is given before it is finished: every
+	// request ends, even when the worker that held it does not.
+	sweepInterval = time.Minute
+	sweepGrace    = 2 * time.Minute
 
 	engineNameHistoryLimit = 8
 	engineTitleTimeout     = 60 * time.Second
@@ -94,17 +104,33 @@ type RunState struct {
 	Status         string `json:"status"`
 	Error          string `json:"error"`
 	Cancelable     bool   `json:"cancelable"`
+	// QueuePosition is where a waiting run stands, counting from one, and QueueWaiting is how
+	// many runs wait altogether: a reader sees how long the wait is, not only that it waits.
+	QueuePosition int `json:"queuePosition,omitempty"`
+	QueueWaiting  int `json:"queueWaiting,omitempty"`
+	// QueueWaitedSeconds is how long a waiting run has been waiting, and QueueSince is when it
+	// was queued: how long a run takes is not knowable, how long this one has waited is.
+	QueueWaitedSeconds int   `json:"queueWaitedSeconds,omitempty"`
+	QueueSince         int64 `json:"queueSince,omitempty"`
 }
 
 // RunStateOf renders a run for the clients watching it.
 func RunStateOf(run *agent_model.Run) RunState {
-	return RunState{
+	state := RunState{
 		ID:             run.ID,
 		ConversationID: run.ConversationID,
 		Status:         run.Status,
 		Error:          run.Error,
 		Cancelable:     agent_model.IsRunActive(run.Status),
 	}
+	if run.Status == agent_model.RunStatusQueued {
+		if position, waiting := engine.queue.position(run.ID); waiting {
+			state.QueuePosition, state.QueueWaiting = position, engine.queue.waiting()
+			state.QueueSince = run.CreatedUnix.AsTime().Unix()
+			state.QueueWaitedSeconds = int(time.Since(run.CreatedUnix.AsTime()).Seconds())
+		}
+	}
+	return state
 }
 
 // ErrNoActiveRun is returned when there is nothing to cancel.
@@ -122,24 +148,24 @@ func (ErrNoActiveRun) Is(target error) bool {
 // sending and the answer is still produced and stored. Work uses a background context
 // because it outlives the request that started it.
 type Engine struct {
-	queue  chan int64
+	queue  *runQueue
 	broker *eventBroker
 
 	mu        sync.Mutex
 	cancels   map[int64]context.CancelFunc // conversation ID -> cancel of the active run
 	locks     map[int64]*sync.Mutex        // serializes the runs of one conversation
 	approvals map[int64]chan bool          // approval ID -> the waiting run
-	waited    map[int64]string             // run -> the call its waiting note names
+	waited    map[int64]int64              // run -> the approval its waiting note names
 	progress  map[int64]string             // the tool a run last said it was reading with
 }
 
 var engine = &Engine{
-	queue:     make(chan int64, engineQueueSize),
+	queue:     newRunQueue(),
 	broker:    newEventBroker(),
 	cancels:   make(map[int64]context.CancelFunc),
 	locks:     make(map[int64]*sync.Mutex),
 	approvals: make(map[int64]chan bool),
-	waited:    make(map[int64]string),
+	waited:    make(map[int64]int64),
 	progress:  make(map[int64]string),
 }
 
@@ -149,8 +175,12 @@ func InitEngine(ctx context.Context) error {
 		return err
 	}
 	InitMentions()
-	for range engineWorkers {
+	for range engineWorkerCount() {
 		go engine.work()
+	}
+	// a test calls sweepRuns itself, so the ticker would only race the rows it plants
+	if !setting.IsInTesting {
+		go engine.sweep()
 	}
 	return nil
 }
@@ -206,7 +236,7 @@ func recoverRuns(ctx context.Context) error {
 		return err
 	}
 	for _, run := range runs {
-		engine.enqueue(run.ID)
+		engine.enqueue(run.ID, runPriorityOf(ctx, run))
 	}
 	if len(runs) > 0 {
 		log.Info("Agent engine: re-queued %d run(s) after restart", len(runs))
@@ -216,17 +246,25 @@ func recoverRuns(ctx context.Context) error {
 
 // SubmitUserMessage stores a user message and starts a run for it. The caller does not
 // wait for the answer. The stored message is returned so files can be attached to it.
+//
+// The message and its run are stored together: a message with no run would be a request
+// nothing ever answers, and a run with no message would answer something that is not there.
 func SubmitUserMessage(ctx context.Context, conversation *agent_model.Conversation, userID int64, content string) (*agent_model.Message, *agent_model.Run, error) {
-	message, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleUser, content, "")
+	run := &agent_model.Run{ConversationID: conversation.ID, UserID: userID, Status: agent_model.RunStatusQueued}
+	message := &agent_model.Message{}
+	err := db.WithTx(ctx, func(ctx context.Context) error {
+		appended, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleUser, content, "")
+		if err != nil {
+			return err
+		}
+		message = appended
+		return db.Insert(ctx, run)
+	})
 	if err != nil {
 		return nil, nil, err
 	}
 	engine.broker.publish(conversation.ID, 0, Event{Name: EventMessage, Data: message.ID})
-
-	run, err := StartRun(ctx, conversation, userID)
-	if err != nil {
-		return nil, nil, err
-	}
+	engine.startQueuedRun(conversation, run)
 	return message, run, nil
 }
 
@@ -234,13 +272,72 @@ func SubmitUserMessage(ctx context.Context, conversation *agent_model.Conversati
 // answer, e.g. after an edit rewound the transcript. userID is who asked for it: the
 // tools of the run read only what that user may see.
 func StartRun(ctx context.Context, conversation *agent_model.Conversation, userID int64) (*agent_model.Run, error) {
+	run, err := newRun(ctx, conversation, userID)
+	if err != nil {
+		return nil, err
+	}
+	engine.startQueuedRun(conversation, run)
+	return run, nil
+}
+
+// newRun stores a queued run in the given context, which may be a caller's transaction, and
+// leaves it to the caller to hand it to a worker: a worker that found an uncommitted row
+// would drop the run.
+func newRun(ctx context.Context, conversation *agent_model.Conversation, userID int64) (*agent_model.Run, error) {
 	run := &agent_model.Run{ConversationID: conversation.ID, UserID: userID, Status: agent_model.RunStatusQueued}
 	if err := db.Insert(ctx, run); err != nil {
 		return nil, err
 	}
-	engine.enqueue(run.ID)
-	engine.publishRun(conversation.ID, run)
 	return run, nil
+}
+
+// startQueuedRun hands a stored run to a worker. It is called after the run is committed:
+// a worker that finds no row would drop the run.
+func (e *Engine) startQueuedRun(conversation *agent_model.Conversation, run *agent_model.Run) {
+	e.enqueue(run.ID, runIsPriority(conversation.Kind))
+	e.publishRun(conversation.ID, run)
+}
+
+// runIsPriority reports whether a run of that session goes ahead of the queue: the kinds the
+// instance named do, so the always-on session keeps the instance looked after while readers wait.
+func runIsPriority(kind string) bool {
+	kinds := setting.Agent.PriorityKinds
+	if len(kinds) == 0 {
+		kinds = setting.DefaultPriorityKinds
+	}
+	return slices.Contains(kinds, kind)
+}
+
+// runPriorityOf answers the same question for a run that is already stored.
+func runPriorityOf(ctx context.Context, run *agent_model.Run) bool {
+	conversation, exist, err := db.GetByID[agent_model.Conversation](ctx, run.ConversationID)
+	return err == nil && exist && runIsPriority(conversation.Kind)
+}
+
+// EditUserMessageAndRun rewrites a user message and starts the run that re-answers from it,
+// in one step: an edit that could not start its run would leave the reader with a request
+// nothing answers.
+func EditUserMessageAndRun(ctx context.Context, conversation *agent_model.Conversation, userID, messageID int64, content string) (*agent_model.Message, *agent_model.Run, error) {
+	run := &agent_model.Run{}
+	message := &agent_model.Message{}
+	err := db.WithTx(ctx, func(ctx context.Context) error {
+		edited, err := EditUserMessage(ctx, conversation, messageID, content)
+		if err != nil {
+			return err
+		}
+		message = edited
+		started, err := newRun(ctx, conversation, userID)
+		if err != nil {
+			return err
+		}
+		run = started
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	engine.startQueuedRun(conversation, run)
+	return message, run, nil
 }
 
 // CancelRun stops the run of a conversation, if one is active.
@@ -317,6 +414,22 @@ func BusyRuns(ctx context.Context, doer *user_model.User) ([]RunState, error) {
 	return states, nil
 }
 
+// ActiveRunStates is every run that is still going, with what the queue says about it: a page
+// that has just connected learns that state instead of waiting for the next change.
+func ActiveRunStates(ctx context.Context) ([]RunState, error) {
+	runs := make([]*agent_model.Run, 0, 16)
+	if err := db.GetEngine(ctx).In("status", []string{
+		agent_model.RunStatusQueued, agent_model.RunStatusRunning, agent_model.RunStatusWaiting,
+	}).OrderBy("id ASC").Find(&runs); err != nil {
+		return nil, fmt.Errorf("find active runs: %w", err)
+	}
+	states := make([]RunState, 0, len(runs))
+	for _, run := range runs {
+		states = append(states, RunStateOf(run))
+	}
+	return states, nil
+}
+
 // BusyConversationIDs returns the conversations that wait for or write an answer.
 func BusyConversationIDs(ctx context.Context) (map[int64]bool, error) {
 	ids := make([]int64, 0, 8)
@@ -360,23 +473,159 @@ func SubscribeRunEvents(userID int64) (<-chan Event, func()) {
 	return engine.broker.subscribeRuns(userID)
 }
 
-func (e *Engine) enqueue(runID int64) {
-	select {
-	case e.queue <- runID:
-	default:
-		// the queue is full: fail the run loudly instead of losing it
-		ctx := context.Background()
-		if _, err := db.GetEngine(ctx).ID(runID).Cols("status", "error", "finished_unix").
-			Update(&agent_model.Run{Status: agent_model.RunStatusFailed, Error: "the agent queue is full", FinishedUnix: timeutil.TimeStampNow()}); err != nil {
-			log.Error("Agent engine: unable to fail run %d: %v", runID, err)
+// enqueue hands a run to the queue. The queue has no capacity: a run waits for a worker
+// however many are already waiting, and says where it stands.
+func (e *Engine) enqueue(runID int64, priority bool) {
+	e.queue.push(runID, priority)
+}
+
+func (e *Engine) work() {
+	for {
+		e.executeSafely(e.queue.take())
+	}
+}
+
+// engineWorkerCount is how many sessions the agent answers at once: the instance says so, and a
+// request that arrives while that many are working waits in the queue.
+func engineWorkerCount() int {
+	workers := setting.Agent.MaxConcurrentSessions
+	if workers <= 0 {
+		workers = engineWorkers
+	}
+	return min(workers, engineMaxWorkers)
+}
+
+// sweepRuns finishes the runs nothing is working on any more, so that a request never rests
+// in a state that only a reader could tell from progress:
+//
+//   - running past its own deadline: the worker that held it is gone
+//   - queued for longer than a run may take: it never reached a worker
+//   - waiting without a call left to answer: nobody can continue it
+//
+// A run still inside the deadline, or waiting on a call that is really there, is left alone.
+func sweepRuns(ctx context.Context) error {
+	staleBefore := timeutil.TimeStampNow() - timeutil.TimeStamp((engineRunTimeout + sweepGrace).Seconds())
+	stale := make([]*agent_model.Run, 0, 8)
+	if err := db.GetEngine(ctx).Where("status = ?", agent_model.RunStatusRunning).
+		And("started_unix > 0").And("started_unix < ?", staleBefore).
+		Find(&stale); err != nil {
+		return fmt.Errorf("find running runs: %w", err)
+	}
+	neverStarted := make([]*agent_model.Run, 0, 8)
+	if err := db.GetEngine(ctx).Where("status = ?", agent_model.RunStatusQueued).
+		And("created_unix < ?", staleBefore).
+		Find(&neverStarted); err != nil {
+		return fmt.Errorf("find queued runs: %w", err)
+	}
+	waiting := make([]*agent_model.Run, 0, 8)
+	if err := db.GetEngine(ctx).Where("status = ?", agent_model.RunStatusWaiting).
+		And("started_unix > 0").And("started_unix < ?", staleBefore).
+		Find(&waiting); err != nil {
+		return fmt.Errorf("find waiting runs: %w", err)
+	}
+	for _, run := range stale {
+		if finishStrandedRun(ctx, run, "the model did not answer in time") {
+			log.Warn("Agent engine: run %d was left running by a lost worker", run.ID)
+		}
+	}
+	for _, run := range neverStarted {
+		if finishStrandedRun(ctx, run, "the run was never started") {
+			log.Warn("Agent engine: run %d was never handed to a worker", run.ID)
+		}
+	}
+	for _, run := range waiting {
+		if finishWaitingRun(ctx, run) {
+			log.Warn("Agent engine: run %d waited for something that is gone", run.ID)
+		}
+	}
+	return nil
+}
+
+// finishStrandedRun fails a run nothing is working on, holding its conversation while it
+// decides: a run a worker is on, or one that moved on since it was read, is left alone.
+func finishStrandedRun(ctx context.Context, run *agent_model.Run, reason string) bool {
+	lock := engine.conversationLock(run.ConversationID)
+	if !lock.TryLock() {
+		return false
+	}
+	defer lock.Unlock()
+	reloaded, exist, err := db.GetByID[agent_model.Run](ctx, run.ID)
+	if err != nil || !exist || reloaded.Status != run.Status {
+		return false
+	}
+	engine.finishRun(ctx, reloaded, agent_model.RunStatusFailed, reason)
+	return true
+}
+
+// finishWaitingRun fails a run whose call can no longer be answered: the call is gone, or the
+// only reader who could answer it is. It is decided under the conversation, so a reader
+// answering at the same moment wins rather than the sweep.
+func finishWaitingRun(ctx context.Context, run *agent_model.Run) bool {
+	lock := engine.conversationLock(run.ConversationID)
+	if !lock.TryLock() {
+		return false
+	}
+	defer lock.Unlock()
+	reloaded, exist, err := db.GetByID[agent_model.Run](ctx, run.ID)
+	if err != nil || !exist || reloaded.Status != agent_model.RunStatusWaiting {
+		return false
+	}
+	pending, err := PendingApprovals(ctx, reloaded.ConversationID)
+	if err != nil {
+		log.Error("Agent engine: unable to read the calls of run %d: %v", reloaded.ID, err)
+		return false
+	}
+	if !slices.ContainsFunc(pending, func(approval *agent_model.ToolApproval) bool {
+		return approval.RunID == reloaded.ID
+	}) {
+		engine.finishRun(ctx, reloaded, agent_model.RunStatusFailed, "the call it waited for is gone")
+		return true
+	}
+	// only the reader who asked may answer, so a reader who is gone leaves a run that nothing
+	// can continue
+	if reloaded.UserID == 0 {
+		return false
+	}
+	if _, err := user_model.GetUserByID(ctx, reloaded.UserID); err != nil {
+		if !user_model.IsErrUserNotExist(err) {
+			log.Error("Agent engine: unable to read the reader of run %d: %v", reloaded.ID, err)
+			return false
+		}
+		engine.finishRun(ctx, reloaded, agent_model.RunStatusFailed, "the reader who asked is gone")
+		return true
+	}
+	return false
+}
+
+// sweep looks for runs nothing is working on, periodically: only a restart used to do that.
+func (e *Engine) sweep() {
+	for {
+		time.Sleep(sweepInterval)
+		if err := sweepRuns(context.Background()); err != nil {
+			log.Error("Agent engine: sweeping runs failed: %v", err)
 		}
 	}
 }
 
-func (e *Engine) work() {
-	for runID := range e.queue {
-		e.execute(runID)
+// executeSafely keeps a run that panicked from resting as one that is still going, and keeps
+// the worker: a panic that killed it would leave every request behind it unanswered.
+func (e *Engine) executeSafely(runID int64) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Error("Agent engine: run %d panicked: %v\n%s", runID, recovered, debug.Stack())
+			e.failUnfinishedRun(context.Background(), runID, "the agent stopped unexpectedly")
+		}
+	}()
+	e.execute(runID)
+}
+
+// failUnfinishedRun fails a run nothing finished, unless something else already has.
+func (e *Engine) failUnfinishedRun(ctx context.Context, runID int64, reason string) {
+	run, exist, err := db.GetByID[agent_model.Run](ctx, runID)
+	if err != nil || !exist || !agent_model.IsRunActive(run.Status) {
+		return
 	}
+	e.finishRun(ctx, run, agent_model.RunStatusFailed, reason)
 }
 
 // execute runs one stored run to completion, whatever the state of its conversation's clients.
@@ -629,18 +878,17 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 	if err != nil {
 		return answerResult{}, err
 	}
-	// a run with no known user has nobody's rights to read with, so it gets no tools
-	doer, err := runUser(ctx, run)
-	if err != nil && !errors.Is(err, errRunUserUnknown{}) {
-		return answerResult{}, err
+	// every tool an agent calls runs with the agent's own rights, never the asker's: what the
+	// agent may read and write is decided once, by the account it works as. An instance that
+	// named no such account has no agent to answer with.
+	agent := UserOf(ctx)
+	if agent == nil {
+		return answerResult{}, ErrAgentNotConfigured{}
 	}
 	session := e.sessionFor(ctx, conversation)
 	offerings, err := agent_tools.Available(ctx, session)
 	if err != nil {
 		return answerResult{}, err
-	}
-	if doer == nil {
-		offerings = nil
 	}
 	// everything the model thought during the run, stored with the answer it ends in
 	var reasoning strings.Builder
@@ -681,14 +929,24 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 		if round == engineToolRounds-1 {
 			askedFor = nil
 		}
+		if setting.Agent.PromptTrace {
+			writePromptTrace(ctx, run, conversation, round, messages, askedFor)
+		}
 		message, answered, err := AnswerMessage(ctx, ref, llm.ChatRequest{Messages: messages, Tools: askedFor}, onDelta)
 		if err != nil {
 			return answerResult{}, err
 		}
 		model = answered
-		if len(message.ToolCalls) == 0 {
+		calls := message.ToolCalls
+		if len(calls) == 0 {
+			// a gateway that does not carry calls leaves the model writing them into the answer:
+			// the call is a call, and the words around it are what the reader is shown
+			calls, message.Content = llm.TextToolCalls(message.Content)
+		}
+		if len(calls) == 0 {
 			return answerResult{Content: message.Content, Reasoning: reasoning.String(), Model: model}, nil
 		}
+		message.ToolCalls = calls
 		// a call has to be named back when its result is returned, or the two cannot be lined
 		// up: a gateway may leave a call unnamed, and may name two calls alike
 		named := make(map[string]bool, len(message.ToolCalls))
@@ -706,7 +964,7 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 		e.broker.publish(conversation.ID, 0, Event{Name: EventDelta, Data: DeltaState{RunID: run.ID, Reset: true}})
 		messages = append(messages, *message)
 		for _, call := range message.ToolCalls {
-			content, err := e.callTool(ctx, conversation, run, doer, call)
+			content, err := e.callTool(ctx, conversation, run, agent, call)
 			if err != nil {
 				return answerResult{}, err
 			}
@@ -720,12 +978,6 @@ func (e *Engine) answer(ctx context.Context, conversation *agent_model.Conversat
 	return answerResult{}, errors.New("the agent kept calling tools without answering")
 }
 
-// errRunUserUnknown is a run whose asking user is gone or was never recorded; such a run
-// has nobody's rights to read with, so it gets no tools.
-type errRunUserUnknown struct{}
-
-func (errRunUserUnknown) Error() string { return "the user of this run is unknown" }
-
 // readerOf is the user a run answers, when it is still known.
 func readerOf(ctx context.Context, run *agent_model.Run) *user_model.User {
 	if run.UserID == 0 {
@@ -736,21 +988,6 @@ func readerOf(ctx context.Context, run *agent_model.Run) *user_model.User {
 		return nil
 	}
 	return user
-}
-
-// runUser returns the user whose message started the run.
-func runUser(ctx context.Context, run *agent_model.Run) (*user_model.User, error) {
-	if run.UserID == 0 {
-		return nil, errRunUserUnknown{}
-	}
-	user, err := user_model.GetUserByID(ctx, run.UserID)
-	if err != nil {
-		if user_model.IsErrUserNotExist(err) {
-			return nil, errRunUserUnknown{}
-		}
-		return nil, err
-	}
-	return user, nil
 }
 
 // callTool makes one call the model asked for, records it in the transcript and returns
@@ -935,6 +1172,12 @@ func PendingApprovals(ctx context.Context, conversationID int64) ([]*agent_model
 // ResolveApproval records what the reader decided about a pending call and wakes the run
 // waiting for it. A call left pending by a restart is still closed here.
 func ResolveApproval(ctx context.Context, conversationID, approvalID, decidedBy int64, allowed bool) error {
+	// the sweep of stranded runs decides under the same conversation, so a reader answering a
+	// call and the sweep closing it are never both right
+	lock := engine.conversationLock(conversationID)
+	lock.Lock()
+	defer lock.Unlock()
+
 	approval := &agent_model.ToolApproval{}
 	exist, err := db.GetEngine(ctx).ID(approvalID).
 		And("conversation_id = ?", conversationID).
@@ -978,7 +1221,7 @@ func ResolveApproval(ctx context.Context, conversationID, approvalID, decidedBy 
 		Update(&agent_model.Run{Status: agent_model.RunStatusQueued}); err != nil {
 		return err
 	}
-	engine.enqueue(run.ID)
+	engine.enqueue(run.ID, runPriorityOf(ctx, run))
 	return nil
 }
 
@@ -989,9 +1232,9 @@ func (e *Engine) runApprovedCall(ctx context.Context, conversationID int64, run 
 	if err != nil || !exist {
 		return "The session no longer exists."
 	}
-	doer := readerOf(ctx, run)
+	doer := UserOf(ctx)
 	if doer == nil {
-		return "No user belongs to this session, so tools cannot run."
+		return "No agent account is configured, so tools cannot run."
 	}
 	session := e.sessionFor(ctx, conversation)
 	tool, decision, err := agent_tools.Check(ctx, session, approval.Tool)
@@ -1030,6 +1273,11 @@ func (e *Engine) finishRun(ctx context.Context, run *agent_model.Run, status, re
 		Update(run); err != nil {
 		log.Error("Agent engine: unable to finish run %d: %v", run.ID, err)
 		return
+	}
+	// a run that is over has no call a reader could still answer: leaving one pending would let
+	// an answer run a write for a request that already ended
+	if err := expireApprovalsOf(ctx, run.ID); err != nil {
+		log.Error("Agent engine: unable to close the calls of run %d: %v", run.ID, err)
 	}
 	// what the run said in its thread is history, so the notes it took are its own
 	e.mu.Lock()

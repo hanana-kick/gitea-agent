@@ -84,6 +84,13 @@ export async function apiCreateFiles(requestContext: APIRequestContext, owner: s
   }), 'apiCreateFiles');
 }
 
+export async function apiSetPages(requestContext: APIRequestContext, owner: string, repo: string, pages: {source: string; branch?: string; dir?: string}, {headers}: {headers?: Record<string, string>} = {}) {
+  await apiRetry(() => requestContext.put(`${baseUrl()}/api/v1/repos/${owner}/${repo}/pages`, {
+    headers: headers || apiHeaders(),
+    data: pages,
+  }), 'apiSetPages');
+}
+
 export async function apiCancelStopwatch(requestContext: APIRequestContext, owner: string, repo: string, issueIndex: number, {headers}: {headers?: Record<string, string>} = {}) {
   await apiRetry(() => requestContext.delete(`${baseUrl()}/api/v1/repos/${owner}/${repo}/issues/${issueIndex}/stopwatch/delete`, {
     headers: headers || apiHeaders(),

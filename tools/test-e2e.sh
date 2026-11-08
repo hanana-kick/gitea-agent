@@ -114,6 +114,9 @@ DISABLE_REGISTRATION = false
 [ui.notification]
 EVENT_SOURCE_UPDATE_TIME = 500ms
 
+[agent]
+USERNAME = e2e-agent
+
 [log]
 MODE = console
 LEVEL = Warn

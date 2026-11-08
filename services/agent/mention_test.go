@@ -22,8 +22,8 @@ import (
 )
 
 // A comment that names the agent starts a run in the session of that repository, and the run
-// reads with the rights of the user who wrote it. A comment the agent wrote, or one that names
-// nobody, starts nothing.
+// answers for the user who wrote it while its tools work as the agent's own account. A comment
+// the agent wrote, or one that names nobody, starts nothing.
 func TestMentionStartsARunForTheMentioningUser(t *testing.T) {
 	require.NoError(t, unittest.PrepareTestDatabase())
 	ctx := context.Background()
@@ -55,7 +55,7 @@ func TestMentionStartsARunForTheMentioningUser(t *testing.T) {
 	run, err := LatestRun(ctx, sessions[0].ID)
 	require.NoError(t, err)
 	require.NotNil(t, run)
-	assert.Equal(t, mentioner.ID, run.UserID, "the run reads what the mentioning user may read")
+	assert.Equal(t, mentioner.ID, run.UserID, "the run answers for the user who asked")
 	// the thread is told the work started, before there is an answer to give
 	require.NotZero(t, run.StatusCommentID)
 	note, err := issues_model.GetCommentByID(ctx, run.StatusCommentID)

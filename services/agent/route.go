@@ -52,11 +52,6 @@ func ChatThroughGroup(ctx context.Context, role *agent_model.ModelGroup, req llm
 	return chatThroughGroup(ctx, role, req, nil)
 }
 
-// ChatThroughGroupStream does the same but reports the answer as it arrives.
-func ChatThroughGroupStream(ctx context.Context, role *agent_model.ModelGroup, req llm.ChatRequest, onDelta llm.OnDelta) (*RouteResult, error) {
-	return chatThroughGroup(ctx, role, req, onDelta)
-}
-
 func chatThroughGroup(ctx context.Context, role *agent_model.ModelGroup, req llm.ChatRequest, onDelta llm.OnDelta) (*RouteResult, error) {
 	result := &RouteResult{Role: role.Name}
 	if err := routeRequest(ctx, role, req, result, 0, onDelta); err != nil {

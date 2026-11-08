@@ -4,6 +4,9 @@
 package agent
 
 import (
+	"context"
+	"fmt"
+
 	"gitea.dev/models/db"
 	"gitea.dev/modules/timeutil"
 )
@@ -81,6 +84,22 @@ type Message struct {
 
 func (Message) TableName() string {
 	return "agent_message"
+}
+
+// DeleteConversationData removes what a session owns besides itself: its transcript, the runs
+// that answered in it and the calls a reader answered. The files sent with it are on disk and
+// are removed by the caller once the deletion is committed.
+func DeleteConversationData(ctx context.Context, conversationIDs ...int64) error {
+	if len(conversationIDs) == 0 {
+		return nil
+	}
+	sess := db.GetEngine(ctx)
+	for _, table := range []any{&Message{}, &ToolApproval{}, &Run{}, &Attachment{}} {
+		if _, err := sess.In("conversation_id", conversationIDs).Delete(table); err != nil {
+			return fmt.Errorf("delete %T of conversations %v: %w", table, conversationIDs, err)
+		}
+	}
+	return nil
 }
 
 // Run statuses. A run is one server-side execution of the agent for a user message.

@@ -13,7 +13,9 @@ import (
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
 	issues_model "gitea.dev/models/issues"
+	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
+	unit_model "gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
@@ -36,8 +38,8 @@ func UserOf(ctx context.Context) *user_model.User {
 	return user
 }
 
-// answerMention starts a run for a comment that named the agent. The run reads what the
-// mentioning user may read, and the answer is meant for the thread it came from.
+// answerMention starts a run for a comment that named the agent. Every tool of that run works
+// as the agent's own account, and the answer is meant for the thread the mention came from.
 func answerMention(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, issue *issues_model.Issue, comment *issues_model.Comment, mentions []*user_model.User) {
 	if comment == nil {
 		return
@@ -122,6 +124,17 @@ func requestMention(ctx context.Context, doer *user_model.User, repo *repo_model
 	if !slices.ContainsFunc(mentions, func(mentioned *user_model.User) bool { return mentioned.ID == agent.ID }) {
 		return
 	}
+	// the agent works as its own account, so a mention only reaches it where that account may
+	// read the thread: elsewhere it stays silent rather than starting work it cannot do
+	if !canReadTheThread(ctx, repo, agent) {
+		log.Trace("Agent mention: the agent may not read %s, so the mention is ignored", repo.FullName())
+		return
+	}
+	// and a comment is a request only from a reader of the repository it was written in
+	if !canReadTheThread(ctx, repo, doer) {
+		log.Trace("Agent mention: %s may not read %s, so the mention is ignored", doer.Name, repo.FullName())
+		return
+	}
 	if err := issue.LoadRepo(ctx); err != nil {
 		log.Error("Agent mention: loading the repository of %s#%d failed: %v", repo.FullName(), issue.Index, err)
 		return
@@ -181,6 +194,33 @@ func requestMention(ctx context.Context, doer *user_model.User, repo *repo_model
 		}()
 		reportMention(reportCtx, message.ID, run.ID, repo, issue)
 	}()
+}
+
+// ErrAgentNotConfigured is returned when the instance named no account for the agent to work
+// as: without one there is nobody whose rights its tools could use.
+type ErrAgentNotConfigured struct{}
+
+func (ErrAgentNotConfigured) Error() string {
+	return "no agent account is configured, an admin can name one in the settings"
+}
+
+func (ErrAgentNotConfigured) Is(target error) bool {
+	_, ok := target.(ErrAgentNotConfigured)
+	return ok
+}
+
+// canReadTheThread reports whether a user may read the thread a mention came from: a mention
+// arrives on an issue, a pull request or a line of one, so either unit is enough.
+func canReadTheThread(ctx context.Context, repo *repo_model.Repository, user *user_model.User) bool {
+	if user == nil || repo == nil {
+		return false
+	}
+	for _, unit := range []unit_model.Type{unit_model.TypeIssues, unit_model.TypePullRequests} {
+		if access_model.CheckRepoUnitUser(ctx, repo, user, unit) {
+			return true
+		}
+	}
+	return false
 }
 
 // statusText is one line in the language of the reader the agent is answering.
@@ -283,18 +323,18 @@ func waitingText(ctx context.Context, run *agent_model.Run) {
 	if run.StatusCommentID == 0 {
 		return
 	}
-	call := ""
+	// the call that waits now, which is the newest one of this run: a run can wait more than
+	// once, and the note has to name the call whose answer is still open
+	var waiting *agent_model.ToolApproval
 	pending, err := PendingApprovals(ctx, run.ConversationID)
 	if err == nil {
 		for _, approval := range pending {
 			if approval.RunID == run.ID {
-				call = approval.Tool
+				waiting = approval
 			}
 		}
 	}
-	// the note names the call that waits now, so a run that waits twice for two different calls
-	// says which one it is on
-	if call == "" || !markWaitingNote(run.ID, call) {
+	if waiting == nil || !markWaitingNote(run.ID, waiting.ID) {
 		return
 	}
 	agent := UserOf(ctx)
@@ -304,7 +344,7 @@ func waitingText(ctx context.Context, run *agent_model.Run) {
 	}
 	reader := readerOf(ctx, run)
 	note := fmt.Sprintf("%s: %s — [%s](%s/-/agent/approvals/%d)",
-		statusText(reader, "agent.status_waiting"), call, statusText(reader, "agent.status_waiting_link"), setting.AppSubURL, approvalID(ctx, run))
+		statusText(reader, "agent.status_waiting"), waiting.Tool, statusText(reader, "agent.status_waiting_link"), setting.AppSubURL, waiting.ID)
 	previous := comment.Content
 	comment.Content = note
 	if err := issues_service.UpdateComment(ctx, comment, comment.ContentVersion, agent, previous); err != nil {
@@ -356,20 +396,6 @@ func lastToolOf(ctx context.Context, conversationID, requestID int64) string {
 	return ""
 }
 
-// approvalID is the call a waiting run waits for, so the thread can link to its page.
-func approvalID(ctx context.Context, run *agent_model.Run) int64 {
-	pending, err := PendingApprovals(ctx, run.ConversationID)
-	if err != nil {
-		return 0
-	}
-	for _, approval := range pending {
-		if approval.RunID == run.ID {
-			return approval.ID
-		}
-	}
-	return 0
-}
-
 // markProgress reports whether a run just started reading with a different tool.
 func markProgress(runID int64, tool string) bool {
 	engine.mu.Lock()
@@ -382,14 +408,14 @@ func markProgress(runID int64, tool string) bool {
 }
 
 // markWaitingNote reports whether the waiting note of a run still has to be written: it is
-// written once per waiting call, however often the poll looks at the run.
-func markWaitingNote(runID int64, call string) bool {
+// written once per call that waits, and a call is named by its approval, however often the poll looks at the run.
+func markWaitingNote(runID, approvalID int64) bool {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
-	if engine.waited[runID] == call {
+	if engine.waited[runID] == approvalID {
 		return false
 	}
-	engine.waited[runID] = call
+	engine.waited[runID] = approvalID
 	return true
 }
 

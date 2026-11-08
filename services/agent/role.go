@@ -62,6 +62,28 @@ func SetModelRoleRef(ctx context.Context, role, ref string) error {
 	return err
 }
 
+// ForgetModelRefs clears the roles whose model reference matches a LIKE pattern. A deleted model
+// has to take its assignments with it: a role left naming one fails at the next run, and nothing
+// on the settings page shows that it will.
+func ForgetModelRefs(ctx context.Context, patterns ...string) error {
+	if len(patterns) == 0 {
+		return nil
+	}
+	sess := db.GetEngine(ctx)
+	for _, pattern := range patterns {
+		if _, err := sess.Where("model_ref LIKE ?", pattern).Cols("model_ref", "updated_unix").
+			Update(&agent_model.ModelRole{ModelRef: "", UpdatedUnix: timeutil.TimeStampNow()}); err != nil {
+			return fmt.Errorf("clear roles naming %q: %w", pattern, err)
+		}
+	}
+	return nil
+}
+
+// modelRefPatternForProvider matches every role naming a model of one provider.
+func modelRefPatternForProvider(providerID int64) string {
+	return fmt.Sprintf("%s:%d/%%", modelRefProvider, providerID)
+}
+
 // ModelRoleForKind returns the role a session of the given kind answers with.
 func ModelRoleForKind(kind string) string {
 	if agent_model.IsValidModelRole(kind) {

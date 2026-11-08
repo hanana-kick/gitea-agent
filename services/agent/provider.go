@@ -240,16 +240,25 @@ func UpdateProvider(ctx context.Context, id int64, opts ProviderOptions) (*agent
 	return p, nil
 }
 
-// DeleteProvider removes a provider by ID.
+// DeleteProvider removes a provider, the group memberships naming it and the roles assigned to
+// its models, so nothing is left pointing at a model that is gone.
 func DeleteProvider(ctx context.Context, id int64) error {
 	p, err := GetProviderByID(ctx, id)
 	if err != nil {
 		return err
 	}
-	if _, err := db.DeleteByID[agent_model.Provider](ctx, p.ID); err != nil {
-		return fmt.Errorf("delete provider: %w", err)
-	}
-	return nil
+	return db.WithTx(ctx, func(ctx context.Context) error {
+		if _, err := db.GetEngine(ctx).Where("provider_id = ?", p.ID).Delete(&agent_model.ModelGroupMember{}); err != nil {
+			return fmt.Errorf("delete group members of provider %d: %w", p.ID, err)
+		}
+		if err := ForgetModelRefs(ctx, modelRefPatternForProvider(p.ID)); err != nil {
+			return err
+		}
+		if _, err := db.DeleteByID[agent_model.Provider](ctx, p.ID); err != nil {
+			return fmt.Errorf("delete provider: %w", err)
+		}
+		return nil
+	})
 }
 
 // TestResult is the outcome of a provider connectivity test.
@@ -301,13 +310,4 @@ func TestProvider(ctx context.Context, id int64, model string) (*TestResult, err
 		res.Reply = resp.Choices[0].Message.Content
 	}
 	return res, nil
-}
-
-// GetDecryptedAPIKey returns the key a provider authenticates with, decrypted on demand.
-func GetDecryptedAPIKey(ctx context.Context, id int64) (string, error) {
-	p, err := GetProviderByID(ctx, id)
-	if err != nil {
-		return "", err
-	}
-	return ResolveProviderAPIKey(ctx, p), nil
 }

@@ -5,8 +5,38 @@ import {createElementFromHTML} from '../utils/dom.ts';
 
 export type AgentAttachment = {id: number, name: string, sizeText: string, url: string, isPicture: boolean};
 export type AgentMessage = {id: number, role: string, roleLabel: string, content: string, html: string, timeHTML: string, reasoning?: string, attachments?: AgentAttachment[], tool?: {name: string, args: string, result: string}};
-export type AgentRun = {id: number, conversationId: number, status: string, error: string, cancelable: boolean};
+export type AgentRun = {id: number, conversationId: number, status: string, error: string, cancelable: boolean,
+  queuePosition?: number, queueWaiting?: number, queueWaitedSeconds?: number, queueSince?: number};
 export type AgentDelta = {runId: number, content?: string, reasoning?: string, reset?: boolean};
+
+// the words a waiting run is described with, as the page's locale has them
+export type AgentQueueLabels = {queuedAt: string, queuedWaitedSeconds: string, queuedWaitedMinutes: string};
+
+// waitedText is how long a run has waited in words: seconds while that reads better, minutes past it.
+export function waitedText(labels: AgentQueueLabels, seconds: number): string {
+  if (seconds <= 0) return '';
+  const template = seconds < 90 ? labels.queuedWaitedSeconds : labels.queuedWaitedMinutes;
+  const value = seconds < 90 ? Math.round(seconds) : Math.round(seconds / 60);
+  return template.replace('%d', () => String(value));
+}
+
+// how long a run has waited, from when it was queued: no other event says the wait outgrew its
+// last report.
+export function waitedSoFar(run: AgentRun): number {
+  if (!run.queueSince) return run.queueWaitedSeconds ?? 0;
+  return Math.round(Date.now() / 1000) - run.queueSince;
+}
+
+// queuePlaceText is where a waiting run stands and how long it has been there, or '' when the
+// server has not told the page where it stands.
+export function queuePlaceText(labels: AgentQueueLabels, run: AgentRun): string {
+  if (!run.queuePosition) return '';
+  const place = labels.queuedAt
+    .replace('%d', () => String(run.queuePosition))
+    .replace('%d', () => String(run.queueWaiting ?? 0));
+  const waited = waitedText(labels, waitedSoFar(run));
+  return `${place}${waited ? `, ${waited}` : ''}`;
+}
 export type AgentConversation = {id: number, title: string, summary: string, icon: string};
 export type AgentApproval = {id: number, runID: number, tool: string, arguments: string};
 
