@@ -1,0 +1,17 @@
+<header class="agent-chat-head">
+	<a class="agent-chat-back" href="{{AppSubUrl}}/-/agent" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_sessions"}}">{{svg "octicon-chevron-left"}}</a>
+	<div class="agent-chat-head-icon">{{svg "octicon-plus" 20}}</div>
+	<div class="agent-chat-head-text">
+		<div class="agent-chat-head-title gt-ellipsis">{{ctx.Locale.Tr "agent.chat_new_conversation"}}</div>
+		{{if .Repo}}
+			<div class="agent-chat-meta"><a href="{{.Repo.Link}}">{{.Repo.FullName}}</a></div>
+		{{end}}
+	</div>
+</header>
+
+<div class="agent-chat-messages">
+	<div class="agent-chat-empty">{{ctx.Locale.Tr "agent.chat_draft_help"}}</div>
+</div>
+
+{{template "agent/chat_suggestions" .}}
+{{template "agent/chat_composer" .}}

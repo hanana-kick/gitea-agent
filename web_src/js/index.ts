@@ -13,6 +13,8 @@ import {initAdminUserListSearchForm} from './features/admin/users.ts';
 import {initAdminConfigs} from './features/admin/config.ts';
 import {initMarkupAnchors} from './markup/anchors.ts';
 import {initNotificationCount} from './features/notification.ts';
+import {initAgentChat} from './features/agent-chat.ts';
+import {initAgentRuns} from './features/agent-runs.ts';
 import {initRepoIssueContentHistory} from './features/repo-issue-content.ts';
 import {initStopwatch} from './features/stopwatch.ts';
 import {initRepoFileSearch} from './features/repo-findfile.ts';
@@ -115,6 +117,8 @@ const initPerformanceTracer = callInitFunctions([
   initDashboardRepoList,
 
   initNotificationCount,
+  initAgentChat,
+  initAgentRuns,
 
   initOrgTeam,
 

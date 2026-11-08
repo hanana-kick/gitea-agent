@@ -38,6 +38,9 @@
 				</a>
 			{{end}}
 		{{end}}
+		<a class="{{if .PageIsSettingsPages}}active {{end}}item" href="{{.RepoLink}}/settings/pages">
+			{{ctx.Locale.Tr "repo.settings.pages"}}
+		</a>
 		<details class="item" {{if or .PageIsSharedSettingsRunners .PageIsSharedSettingsSecrets .PageIsSharedSettingsVariables .PageIsActionsSettingsGeneral}}open{{end}}>
 			<summary>{{ctx.Locale.Tr "actions.actions"}}</summary>
 			<div class="menu">

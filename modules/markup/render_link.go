@@ -25,7 +25,11 @@ func resolveLinkRelative(ctx context.Context, base, cur, link string, absolute b
 	}
 
 	if strings.HasPrefix(link, "/") {
-		if strings.HasPrefix(link, base) && strings.Count(base, "/") >= 4 {
+		if strings.HasPrefix(link, setting.AppSubURL+"/-/") {
+			// "/-/" names the instance's own pages: a link to one is about the instance, not
+			// about the repository it was written in, so it is not resolved against it
+			finalLink = link
+		} else if strings.HasPrefix(link, base) && strings.Count(base, "/") >= 4 {
 			// a trick to tolerate that some users were using absolute paths (the old Gitea's behavior)
 			// if the link is likely "{base}/src/main" while "{base}" is something like "/owner/repo"
 			finalLink = link

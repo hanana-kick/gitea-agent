@@ -1,0 +1,8 @@
+{{/* the chat user interface of the agent screens: the panel with its border and the canvas
+	tint. The page hands the panel's classes in .PanelClasses, the body of the panel as
+	.BodyHTML (rendered by the page itself with RenderToHTML), and the attributes of a live
+	conversation in .PanelAttrs, so every screen shares this one piece. */}}
+<div class="agent-chat-main{{with .PanelClasses}} {{.}}{{end}}" aria-label="{{ctx.Locale.Tr "agent.chat_title"}}"
+	{{with .PanelAttrs}}data-conversation-id="{{.ConversationID}}" data-last-message-id="{{.LastMessageID}}" data-events-url="{{.EventsURL}}" data-messages-url="{{.MessagesURL}}" data-cancel-url="{{.CancelURL}}" data-approvals-url="{{.ApprovalsURL}}" data-run-id="{{.RunID}}" data-approval-title="{{.ApprovalTitle}}" data-approval-help="{{.ApprovalHelp}}" data-approval-allow="{{.ApprovalAllow}}" data-approval-refuse="{{.ApprovalRefuse}}" data-labels="{{.Labels}}"{{end}}>
+	{{.BodyHTML}}
+</div>

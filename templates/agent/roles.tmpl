@@ -1,0 +1,25 @@
+{{template "admin/layout_head" (dict "pageClass" "admin agent")}}
+	<div class="admin-setting-content">
+		<h4 class="ui top attached header">
+			{{ctx.Locale.Tr "agent.roles_title"}}
+		</h4>
+		<div class="ui attached segment">
+			<p class="help">{{ctx.Locale.Tr "agent.roles_help"}}</p>
+			<form class="ui form" method="post" action="{{AppSubUrl}}/-/admin/agent/roles">
+				{{range .Rows}}
+					{{$row := .}}
+					<div class="field">
+						<label for="agent-role-{{.Role}}">{{ctx.Locale.Tr (printf "agent.role_%s" .Role)}}</label>
+						<select id="agent-role-{{.Role}}" name="role_{{.Role}}" class="ui dropdown">
+							<option value="">{{ctx.Locale.Tr "agent.roles_none"}}</option>
+							{{range $.ModelOptions}}
+								<option value="{{.Ref}}"{{if eq .Ref $row.Ref}} selected{{end}}>{{.Label}}</option>
+							{{end}}
+						</select>
+					</div>
+				{{end}}
+				<button class="ui primary button" type="submit">{{ctx.Locale.Tr "save"}}</button>
+			</form>
+		</div>
+	</div>
+{{template "admin/layout_footer" .}}

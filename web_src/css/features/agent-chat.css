@@ -1,0 +1,1371 @@
+/* agent chat screen: session list on the left, transcript on the right */
+
+/* the chat owns the whole screen height, so the usual space above the footer is not needed */
+.agent-chat-page {
+  margin-bottom: calc(8px - var(--page-space-bottom));
+}
+
+.agent-chat {
+  /* the panels fill the viewport: the page itself never scrolls, only the session
+     list and the transcript do, so the composer stays in place. The client resizes
+     the panel to the space between the navbar and the footer; this is the fallback. */
+  align-items: stretch;
+  height: calc(100dvh - 150px);
+  padding: 0 var(--page-spacing);
+  min-height: 240px;
+  overflow: hidden;
+}
+
+/* flashes float over the panel so they do not change the fixed height */
+.agent-chat-page .flash-message {
+  position: fixed;
+  top: 62px;
+  right: 16px;
+  z-index: 20;
+  max-width: min(420px, calc(100vw - 32px));
+  margin: 0;
+}
+
+/* the session list follows the dashboard repo list: tabs, attached header, search, list */
+.agent-chat-main {
+  display: flex;
+  flex: 1; /* it takes the space the session list leaves, instead of sizing to its content */
+  flex-direction: column;
+  /* a comfortable reading width, centred in the space left by the session list */
+  max-width: 900px;
+  margin-inline: auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  /* the canvas carries the tint and the bubbles stay plain, so a long transcript reads as
+     paper with cards on it instead of one grey block after another */
+  background: color-mix(in srgb, var(--color-secondary) 11%, var(--color-body));
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-nav {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+.agent-chat-tabs {
+  flex-shrink: 0;
+}
+
+.agent-chat-header-action {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.agent-chat-header-action:hover {
+  color: var(--color-text);
+}
+
+.agent-chat-search {
+  padding: 8px !important;
+}
+
+/* the way back from the one repository an agent lists to every repository */
+.agent-chat-filter-all-row {
+  padding: 6px 8px !important;
+  text-align: right;
+}
+
+.agent-chat-filter-all {
+  font-size: 12px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-filter-all:hover {
+  color: var(--color-text);
+}
+
+.agent-chat-list {
+  flex: 1;
+  min-height: 0;
+  padding: 8px !important;
+  border-top: 0 !important;
+  overflow-y: auto;
+}
+
+.agent-chat-group-title {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  /* the side padding of a card, so the icon lines up with the card content */
+  padding: 0 10px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-light-2);
+}
+
+/* sessions are cards: icon, name and the menu inside, with no outline of their own */
+.agent-chat-card {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  color: var(--color-text);
+  text-decoration: none;
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-card:hover {
+  color: var(--color-text);
+  background: var(--color-hover);
+}
+
+.agent-chat-card.active {
+  background: var(--color-active);
+}
+
+/* only the name gets heavier when selected: a heavier description would wrap
+   differently and change the height of the card */
+.agent-chat-card.active .agent-chat-card-name {
+  font-weight: var(--font-weight-semibold);
+}
+
+.agent-chat-card-main {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* the card itself shows the hover state, so its link keeps the text colour */
+.agent-chat-card-main:hover {
+  color: inherit;
+}
+
+.agent-chat-card-resident {
+  gap: 10px;
+  padding: 10px;
+}
+
+.agent-chat-card-resident .agent-chat-card-name {
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap; /* the summary shares the row with the answering dots, so it shrinks */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* the new conversation icon is a row action, so it shares the right edge of the menus */
+.agent-chat-card-new .agent-chat-card-icon {
+  padding-right: 4px;
+}
+
+.agent-chat-card-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-card-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-chat-card-name {
+  min-width: 0;
+}
+
+/* a session that is answering right now */
+.agent-chat-card-busy {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  margin-left: auto;
+  padding: 0 4px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-card-busy i {
+  width: 4px;
+  height: 4px;
+  background: currentcolor;
+  border-radius: 50%;
+  animation: agent-chat-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-chat-card-busy i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.agent-chat-card-busy i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.agent-chat-card-desc {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-group-action {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 4px; /* matches the row menu, so the icons share a right edge */
+  margin-left: auto;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.agent-chat-group-action:hover {
+  color: var(--color-text);
+}
+
+.agent-chat-group-action-plus {
+  position: absolute;
+  right: 0;
+  bottom: -2px;
+  display: flex;
+  padding: 1px;
+  background: var(--color-body);
+  border-radius: var(--border-radius-full);
+}
+
+.agent-chat-divider {
+  margin: 8px 2px;
+  border-top: 1px solid var(--color-secondary);
+}
+
+.agent-chat-more {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 2px 4px;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-more:hover {
+  color: var(--color-text);
+  background: var(--color-secondary);
+}
+
+.agent-chat-more-item {
+  cursor: pointer;
+}
+
+/* the menu is a popover: it renders in the top layer, so the scrolling list cannot clip it */
+.agent-chat-more-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--color-menu);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+}
+
+.agent-chat-more-menu .item {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-more-menu .item:hover {
+  background: var(--color-hover);
+}
+
+.agent-chat-more-menu .divider {
+  margin: 4px 0;
+  border-top: 1px solid var(--color-secondary);
+}
+
+.agent-chat-icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agent-chat-icon-option {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-icon-option:hover {
+  border-color: var(--color-primary);
+}
+
+.agent-chat-icon-option input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+
+.agent-chat-icon-option:has(input:checked) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.agent-chat-icon-none {
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.agent-chat-icon-option:has(.agent-chat-icon-none) {
+  width: auto;
+}
+
+.agent-chat-list .agent-chat-card + .agent-chat-card {
+  margin-top: 2px;
+}
+
+/* a repository of the session list: closed it is one row, open it holds its sessions */
+.agent-repo-group-head {
+  cursor: pointer;
+}
+
+.agent-repo-group-head .agent-chat-card-icon {
+  flex-shrink: 0;
+  color: var(--color-text-light-2);
+}
+
+/* the name takes what is left, so the count and the chevron sit at the right edge with the
+   menus of the session rows below them */
+.agent-repo-group-head .agent-chat-card-name {
+  flex: 1;
+}
+
+.agent-repo-group-head .ui.grey.label {
+  margin-left: 6px;
+}
+
+.agent-repo-group-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  width: 16px;
+  color: var(--color-text-light-2);
+  transition: transform 0.1s ease;
+}
+
+.agent-repo-group.open .agent-repo-group-chevron {
+  transform: rotate(90deg);
+}
+
+.agent-repo-group .agent-chat-folder-items {
+  display: none;
+}
+
+.agent-repo-group.open .agent-chat-folder-items {
+  display: block;
+}
+
+/* a folder card is a button, and its conversations are indented below it */
+button.agent-chat-card {
+  width: 100%;
+  font-size: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+}
+
+.agent-chat-folder {
+  margin-top: 6px;
+}
+
+.agent-chat-card-folder {
+  cursor: default;
+}
+
+.agent-chat-folder-items {
+  padding-left: 12px;
+}
+
+.agent-chat-draft {
+  flex-wrap: wrap;
+}
+
+.agent-chat-draft .agent-chat-input {
+  width: 100%;
+}
+
+.agent-chat-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-secondary);
+}
+
+.agent-chat-hint-block {
+  margin: 0;
+  padding: 0 12px 10px;
+}
+
+.agent-chat-head-icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-chat-head-title {
+  font-weight: var(--font-weight-semibold);
+}
+
+.agent-chat-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-model-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-chat-back {
+  display: none;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-messages {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  /* the attachment rows measure themselves against this column, not against their message */
+  container-type: inline-size;
+}
+
+.agent-chat-message {
+  max-width: 80%;
+}
+
+/* the answer as it arrives: plain text, so it can grow piece by piece */
+.agent-chat-live-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-chat-live-text:not(:empty)::after {
+  content: "▌";
+  margin-left: 1px;
+  color: var(--color-text-light-2);
+  animation: agent-chat-caret 1.1s steps(2, start) infinite;
+}
+
+@keyframes agent-chat-caret {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* the block under the last message: what its answer is doing right now */
+.agent-chat-pending-status {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-pending[data-state="failed"] .agent-chat-pending-status {
+  color: var(--color-red);
+}
+
+.agent-chat-pending[data-state="failed"] .agent-chat-reasoning-dots,
+.agent-chat-pending[data-state="canceled"] .agent-chat-reasoning-dots {
+  display: none;
+}
+
+/* shown while the model reasons, before any answer text arrives */
+.agent-chat-reasoning {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-reasoning-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.agent-chat-reasoning-dots i {
+  width: 4px;
+  height: 4px;
+  background: currentcolor;
+  border-radius: 50%;
+  animation: agent-chat-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-chat-reasoning-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.agent-chat-reasoning-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes agent-chat-pulse {
+  0%, 100% {
+    opacity: 0.25;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.agent-chat-message.user {
+  align-self: flex-end;
+}
+
+.agent-chat-message.assistant,
+.agent-chat-message.system {
+  align-self: flex-start;
+}
+
+.agent-chat-message-meta {
+  margin-bottom: 2px;
+  font-size: 11px;
+  color: var(--color-text-light-2);
+}
+
+/* a message that carries files shares its line with the meta text */
+.agent-chat-message-time {
+  float: right;
+}
+
+.agent-chat-message.user .agent-chat-message-meta {
+  text-align: right;
+}
+
+.agent-chat-message-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.agent-chat-message:hover .agent-chat-message-actions,
+.agent-chat-message-actions:focus-within {
+  opacity: 1;
+}
+
+.agent-chat-copy-message,
+.agent-chat-edit-message,
+.agent-chat-load-older {
+  padding: 2px;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-copy-message:hover,
+.agent-chat-edit-message:hover {
+  color: var(--color-text);
+}
+
+.agent-chat-load-older {
+  align-self: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-load-older:hover {
+  color: var(--color-text);
+  background: var(--color-hover);
+}
+
+.agent-chat-bubble {
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+  text-align: left;
+  background: var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-message.assistant .agent-chat-bubble,
+.agent-chat-message.system .agent-chat-bubble {
+  /* the answer is a card of its own on the tinted canvas: the surface colour keeps it plain
+     the way the user's bubble keeps the primary pastel */
+  padding: 8px 10px;
+  background: var(--color-box-body);
+  border: 1px solid var(--color-secondary);
+}
+
+.agent-chat-bubble .markup > :first-child {
+  margin-top: 0;
+}
+
+.agent-chat-bubble .markup > :last-child {
+  margin-bottom: 0;
+}
+
+.agent-chat-message.user .agent-chat-bubble {
+  /* a pastel of the primary, mixed live so the theme's hue is kept and the reader's own
+     lightness preference decides how bright it is; dark text reads on both ramps */
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-body));
+}
+
+/* a tool call and its result: a log line of the transcript, so it takes the whole column */
+.agent-chat-message.tool {
+  align-self: stretch;
+  max-width: none;
+}
+
+/* a call and a thought fold into one faint line with what they hold behind it: a log entry
+   of the transcript carries no frame, so only the answer keeps a card */
+.agent-chat-fold {
+  min-width: 0;
+}
+
+.agent-chat-fold-summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--color-text-light-2);
+  list-style: none;
+  cursor: pointer;
+}
+
+.agent-chat-fold-summary::-webkit-details-marker {
+  display: none;
+}
+
+.agent-chat-fold-summary:hover {
+  color: var(--color-text);
+}
+
+.agent-chat-fold-chevron {
+  flex-shrink: 0;
+  transition: transform 0.12s;
+}
+
+.agent-chat-fold[open] > .agent-chat-fold-summary .agent-chat-fold-chevron {
+  transform: rotate(90deg);
+}
+
+.agent-chat-fold-body {
+  margin: 2px 0 6px 20px; /* under the line, past the chevron */
+  font-size: 12px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-fold-body > pre {
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-chat-thought {
+  margin-bottom: 4px; /* the answer card keeps its distance from the line above it */
+}
+
+.agent-chat-tool-name {
+  padding: 0; /* the name is part of the line, not a chip of its own */
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  background: none;
+}
+
+.agent-chat-tool-args {
+  color: var(--color-text-light-2);
+}
+
+/* the run waits for the reader to allow a tool call */
+.agent-chat-approval {
+  padding: 8px 10px;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-approval-title {
+  color: var(--color-warning-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.agent-chat-approval-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.agent-chat-approval-name,
+.agent-chat-approval-args {
+  font-family: var(--fonts-monospace);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.agent-chat-approval-args {
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-approval-help {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-approval-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.agent-chat-approval-actions form {
+  margin: 0; /* the buttons carry the spacing, not the form */
+}
+
+.agent-chat-attach {
+  position: relative; /* keeps the transparent file input inside the label */
+  order: -1; /* the attachment sits left of the input, the DOM keeps the input first */
+  display: flex;
+  align-items: center;
+  padding: 6px;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-attach:hover {
+  color: var(--color-text);
+  background: var(--color-hover);
+}
+
+.agent-chat-attach input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.agent-chat-attachments,
+.agent-chat-attach-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-chat-attachments {
+  margin-top: 4px;
+}
+
+/* pictures read as a row of thumbnails, files as a list of their own; a row shows five
+   before the rest waits behind one button */
+.agent-chat-attach-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.agent-chat-attach-more {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-attach-more:hover {
+  color: var(--color-text);
+  background: var(--color-hover);
+}
+
+/* the fifth tile of a longer picture row says how many it holds back */
+.agent-chat-attach-count {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: calc((100% - 16px) / 5);
+  aspect-ratio: 1;
+  padding: 0;
+  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.agent-chat-attachment {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: var(--color-text);
+  text-decoration: none;
+  background: var(--color-body);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-attachment:hover {
+  background: var(--color-secondary);
+}
+
+.agent-chat-attachment-size {
+  margin-left: auto;
+  color: var(--color-text-light-2);
+  white-space: nowrap;
+}
+
+/* a message that carries files keeps its block but gives the attachment rows a width of
+   their own, measured on the transcript column, so five tiles always fill one row; the
+   bubble itself still hugs its text */
+.agent-chat-message:has(.agent-chat-attachments) {
+  width: 100%;
+  max-width: 714px; /* the readable column: the 900px panel minus its padding */
+}
+
+.agent-chat-message.user:has(.agent-chat-attachments) {
+  margin-left: auto;
+}
+
+.agent-chat-message.assistant:has(.agent-chat-attachments) {
+  margin-right: auto;
+}
+
+.agent-chat-message:has(.agent-chat-attachments) .agent-chat-attachments {
+  width: 100%;
+}
+
+.agent-chat-message:has(.agent-chat-attachments) .agent-chat-bubble {
+  width: fit-content;
+}
+
+.agent-chat-message.user:has(.agent-chat-attachments) .agent-chat-bubble {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+.agent-chat-message.assistant:has(.agent-chat-attachments) .agent-chat-bubble {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/* the rows of a message follow the side its bubble sits on */
+.agent-chat-message.user .agent-chat-attach-pictures {
+  justify-content: flex-end;
+}
+
+.agent-chat-message.user .agent-chat-attach-files {
+  align-items: flex-end;
+}
+
+.agent-chat-message.assistant .agent-chat-attach-pictures {
+  justify-content: flex-start;
+}
+
+.agent-chat-message.assistant .agent-chat-attach-files {
+  align-items: flex-start;
+}
+
+/* a picture is shown as a square crop, the usual thumbnail; the row is five tiles wide and
+   fills the message, so five keep one row and a longer row wraps into more of them */
+.agent-chat-attachment-image {
+  display: block;
+  flex: 0 0 auto;
+  width: calc((100% - 16px) / 5); /* four 4px gaps */
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius);
+}
+
+/* files read as a list: one file to a line */
+.agent-chat-attachments .agent-chat-attach-files {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.agent-chat-attachment-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* the agent of one repository: the repository page keeps its own chrome, so this screen
+   only holds the ask block, centred under the repository header */
+.agent-repo .flash-message {
+  position: fixed;
+  top: 62px;
+  right: 16px;
+  z-index: 20;
+  max-width: min(420px, calc(100vw - 32px));
+  margin: 0;
+}
+
+/* the ask block floats in the space the repository header leaves, centred both ways: the
+   page stretches over the height the navbar and footer leave, and the body centres in it */
+.full.height:has(> .agent-repo) {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-repo.page-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1; /* .full.height is the flex parent, so the page claims the free height */
+  margin-bottom: 0; /* the natural page bottom margin would offset the centre */
+}
+
+.agent-repo-body {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+/* the ask block sits under the repository header: the page scrolls normally, so the panel
+   keeps its natural height, loses the frame the chat screen draws around its transcript, and
+   stacks its two cards with a clear gap between them */
+.agent-repo .agent-repo-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-inline: 0;
+  background: none;
+  border: 0;
+  overflow: visible;
+}
+
+/* the composer is a card of its own here, not the chat screen's bottom bar */
+.agent-repo .agent-chat-composer {
+  background: var(--color-body);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+}
+
+/* the sessions this repository ran, under the composer: the same rows the sidebar draws */
+.agent-repo-sessions {
+  padding: 10px 12px 12px;
+  background: var(--color-body);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-repo-sessions-title {
+  margin-bottom: 8px;
+  color: var(--color-text-light-2);
+  font-size: 12px;
+}
+
+/* the rows of that list read as one block, ruled like the sidebar's list */
+.agent-repo-sessions .agent-chat-card + .agent-chat-card {
+  margin-top: 2px;
+}
+
+.agent-repo-sessions .agent-chat-card {
+  padding: 8px 4px;
+}
+
+/* the menu of a row sits at the far edge of the card, not of a narrow sidebar */
+.agent-repo-sessions .agent-chat-more {
+  margin-left: auto;
+}
+
+/* what this agent can be asked to do: one card per task, side by side, above the composer
+   that takes the reader's own message */
+.agent-chat-presets {
+  padding: 10px 12px 12px;
+  background: var(--color-body);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-presets-title {
+  margin-bottom: 8px;
+  color: var(--color-text-light-2);
+  font-size: 12px;
+}
+
+.agent-chat-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.agent-chat-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  background: var(--color-secondary-alpha-40);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-preset:hover {
+  border-color: var(--color-secondary-dark-2);
+}
+
+.agent-chat-preset-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.agent-chat-preset-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-preset-label {
+  font-weight: var(--font-weight-medium);
+}
+
+.agent-chat-preset-desc {
+  flex: 1; /* the card's controls line up, whatever the length of its description */
+  margin: 0;
+  color: var(--color-text-light-2);
+  font-size: 12px;
+}
+
+.agent-chat-preset-empty {
+  margin: 0;
+  color: var(--color-text-light-2);
+  font-size: 12px;
+}
+
+.agent-chat-preset-target {
+  width: 100%;
+}
+
+.agent-chat-preset-run {
+  margin: 0 !important; /* the form component gives buttons their own margin */
+}
+
+.agent-chat-composer {
+  position: relative; /* the palette hangs off it without taking room of its own */
+  display: flex;
+  flex-wrap: wrap; /* the list of chosen files takes its own line above the row */
+  gap: 8px;
+  align-items: flex-end;
+  margin: 0; /* the form component adds its own margin */
+  padding: 10px 12px;
+  border-top: 1px solid var(--color-secondary);
+}
+
+/* The tasks the composer itself knows: "/pr", "/issue" open this list. It floats over the
+   transcript rather than taking a row, so that opening it never moves the chat behind it. */
+.agent-chat-commands {
+  position: absolute;
+  bottom: calc(100% - 10px); /* just above the field, inside the composer's own padding */
+  right: 12px;
+  left: 12px;
+  z-index: 20;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--color-body);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 12%);
+}
+
+.agent-chat-command {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 10px;
+  color: var(--color-text);
+  text-align: left;
+  background: none;
+  border: 0;
+}
+
+.agent-chat-command.active,
+.agent-chat-command:hover {
+  background: var(--color-hover);
+}
+
+.agent-chat-command-label {
+  font-family: var(--fonts-monospace);
+  font-size: 13px;
+}
+
+.agent-chat-command-hint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-light-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* what the message about to be sent will carry */
+.agent-chat-attach-list {
+  order: -2; /* above the paperclip, which keeps order -1 */
+  flex: 0 1 100%;
+}
+
+.agent-chat-attach-thumb {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  object-fit: cover; /* the composer thumbnail is a square crop of the picture */
+  border-radius: var(--border-radius);
+}
+
+.agent-chat-attach-remove {
+  display: flex;
+  align-items: center;
+  padding: 0 2px;
+  color: var(--color-text-light-2);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.agent-chat-attach-remove:hover {
+  color: var(--color-red);
+}
+
+/* what the last finished run has to say; running answers are reported by the send button */
+.agent-chat-composer-error {
+  margin: 0;
+  padding: 6px 12px 0;
+  font-size: 12px;
+  color: var(--color-red);
+}
+
+.agent-chat-composer-error.is-info {
+  color: var(--color-text-light-2);
+}
+
+/* the send button turns into the cancel button while an answer is running */
+.agent-chat-send.busy::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid currentcolor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: agent-chat-spin 0.8s linear infinite;
+}
+
+@keyframes agent-chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The composer's box is an editable element, not a textarea: a picked task word has to stand
+   in the text as a chip, and only an element can be one. It reads as a field, and the hidden
+   field under it carries the message that is sent. */
+.agent-chat-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 62px; /* about the three rows a textarea used to hold */
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px 10px;
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--border-radius-medium);
+  background: var(--color-input-background);
+  color: var(--color-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.agent-chat-input:focus {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
+/* nothing written yet: the placeholder stands where the words would */
+.agent-chat-input[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: var(--color-text-light-2);
+  pointer-events: none;
+}
+
+.agent-chat-input[contenteditable="false"] {
+  color: var(--color-text-light-2);
+}
+
+/* A chip stands where the word it replaced was written, with the padding and the margins of a
+   chip of its own: it never crowds the words it sits between. */
+.agent-chat-token {
+  display: inline-block;
+  padding: 1px 7px;
+  margin: 0 2px;
+  border-radius: var(--border-radius-medium);
+}
+
+.agent-chat-token-command {
+  /* strong enough to be read as a chip on the composer's canvas and inside a bubble, which
+     carries a tint of the same hue */
+  background: color-mix(in srgb, var(--color-primary) 34%, var(--color-body));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 62%, var(--color-body));
+}
+
+.agent-chat-token-subject {
+  background: color-mix(in srgb, var(--color-secondary) 85%, var(--color-body));
+  box-shadow: inset 0 0 0 1px var(--color-secondary-dark-1);
+}
+
+.agent-chat-empty {
+  margin: auto;
+  font-size: 13px;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-empty-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-light-2);
+}
+
+.agent-chat-empty-title {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+@media (max-width: 767.98px) {
+  .agent-chat {
+    padding: 0 8px;
+  }
+
+  /* the container is a column here, so the panel has to fill the block axis; the auto
+     margins that centre it in a row would leave it at its content width instead */
+  .agent-chat-nav {
+    width: auto;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .agent-chat-main {
+    margin-inline: 0;
+  }
+
+  /* one panel at a time: the list, or the chat with its draft. The repository agent has no
+     list beside it, so its ask block keeps showing (its selector is kept at parity so the
+     later rule can win) */
+  .agent-chat-page.has-panel .agent-chat-nav,
+  .agent-chat-page:not(.has-panel) .agent-chat-main {
+    display: none !important;
+  }
+
+  .agent-chat-page.agent-repo:not(.has-panel) .agent-repo-panel {
+    display: flex !important;
+  }
+
+  .agent-chat-back {
+    display: inline-flex;
+  }
+
+  .agent-chat-message {
+    max-width: 92%;
+  }
+
+  /* touch screens have no hover, so the message actions stay visible */
+  .agent-chat-message-actions {
+    opacity: 1;
+  }
+
+  .agent-chat-head,
+  .agent-chat-composer {
+    padding: 8px;
+  }
+
+  /* the composer wraps: input on its own row, the attachment and send below */
+  .agent-chat-composer {
+    flex-wrap: wrap;
+  }
+
+  .agent-chat-input {
+    flex: 1 1 100%;
+  }
+
+  /* the input owns a row here, the attachment belongs under it */
+  .agent-chat-attach {
+    order: 0;
+  }
+
+  .agent-chat-composer .ui.button {
+    margin-left: auto;
+  }
+
+}

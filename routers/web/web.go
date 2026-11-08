@@ -27,6 +27,7 @@ import (
 	"gitea.dev/modules/web/types"
 	"gitea.dev/routers/common"
 	"gitea.dev/routers/web/admin"
+	agent_web "gitea.dev/routers/web/agent"
 	"gitea.dev/routers/web/auth"
 	"gitea.dev/routers/web/devtest"
 	"gitea.dev/routers/web/explore"
@@ -564,6 +565,38 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	m.Get("/pulls", reqSignIn, user.Pulls)
 	m.Get("/milestones", reqSignIn, reqMilestonesDashboardPageEnabled, user.Milestones)
 
+	// ***** START: Agent *****
+	m.Group("/-/agent", func() {
+		m.Get("", agent_web.Chat)
+		m.Get("/list", agent_web.ChatList)
+		m.Get("/events", agent_web.ChatEventsAll)
+		m.Combo("/new").Get(agent_web.ChatDraft).Post(agent_web.ChatDraftCreate)
+		m.Get("/approvals/{aid}", agent_web.Approval)
+		m.Get("/{id}", agent_web.ChatSession)
+		m.Get("/{id}/events", agent_web.ChatEvents)
+		m.Get("/{id}/export", agent_web.ChatExport)
+		m.Get("/{id}/attachments/{aid}", agent_web.ChatAttachment)
+		m.Get("/{id}/messages", agent_web.ChatMessagesBefore)
+		m.Post("/{id}/messages", agent_web.ChatMessageNew)
+		m.Post("/{id}/messages/{mid}", agent_web.ChatMessageEdit)
+		m.Post("/{id}/title", agent_web.ChatTitlePost)
+		m.Post("/{id}/folder", agent_web.ChatSessionFolder)
+		m.Post("/{id}/cancel", agent_web.ChatRunCancel)
+		m.Post("/{id}/approvals/{aid}/allow", agent_web.ChatApprovalAllow)
+		m.Post("/{id}/approvals/{aid}/refuse", agent_web.ChatApprovalRefuse)
+		m.Post("/{id}/delete", agent_web.ChatSessionDelete)
+
+		m.Post("/folders/new", agent_web.ChatFolderCreate)
+		m.Post("/folders/{id}", agent_web.ChatFolderUpdate)
+		m.Post("/folders/{id}/delete", agent_web.ChatFolderDelete)
+	}, reqSignIn)
+
+	// the agent of one repository, under the repository's own path
+	m.Group("/{username}/{reponame}", func() {
+		m.Get("/agent", agent_web.RepoAgent)
+	}, reqSignIn, context.RepoAssignment)
+	// ***** END: Agent *****
+
 	// ***** START: User *****
 	// "user/login" doesn't need signOut, then logged-in users can still access this route for redirection purposes by "/user/login?redirec_to=..."
 	m.Get("/user/login", auth.SignIn)
@@ -894,6 +927,37 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			addSettingsScopedWorkflowsRoutes()
 			m.Get("/job_queue", shared_actions.JobQueue)
 		})
+		m.Group("/agent", func() {
+			m.Get("/providers", agent_web.Providers)
+			m.Combo("/providers/new").Get(agent_web.ProviderNew).Post(agent_web.ProviderNewPost)
+			m.Get("/providers/new/models", agent_web.ProviderNewModelsRedirect)
+			m.Post("/providers/new/models", agent_web.ProviderNewFetchModels)
+			m.Combo("/providers/{id}/edit").Get(agent_web.ProviderEdit).Post(agent_web.ProviderEditPost)
+			m.Get("/providers/{id}/edit/models", agent_web.ProviderEditModelsRedirect)
+			m.Post("/providers/{id}/edit/models", agent_web.ProviderEditFetchModels)
+			m.Post("/providers/{id}/delete", agent_web.ProviderDelete)
+			m.Post("/providers/{id}/test", agent_web.ProviderTest)
+
+			m.Get("/keys", agent_web.APIKeys)
+			m.Combo("/keys/new").Get(agent_web.APIKeyNew).Post(agent_web.APIKeyNewPost)
+			m.Combo("/keys/{id}").Get(agent_web.APIKey).Post(agent_web.APIKeyPost)
+			m.Post("/keys/{id}/delete", agent_web.APIKeyDelete)
+
+			m.Get("/groups", agent_web.ModelGroups)
+			m.Combo("/groups/new").Get(agent_web.ModelGroupNew).Post(agent_web.ModelGroupNewPost)
+			m.Combo("/groups/{id}/edit").Get(agent_web.ModelGroupEdit).Post(agent_web.ModelGroupEditPost)
+			m.Post("/groups/{id}/delete", agent_web.ModelGroupDelete)
+			m.Post("/groups/{id}/test", agent_web.ModelGroupTest)
+
+			m.Combo("/roles").Get(agent_web.ModelRoles).Post(agent_web.ModelRolesPost)
+			m.Combo("/tools").Get(agent_web.Tools).Post(agent_web.ToolsPost)
+			m.Get("/runs", agent_web.Runs)
+			m.Get("/runs/events", agent_web.RunsEvents)
+			m.Get("/runs/{id}/trace", agent_web.RunTrace)
+			m.Post("/runs/{id}/stop", agent_web.RunStop)
+			m.Combo("/skills").Get(agent_web.Skills).Post(agent_web.SkillsPost)
+			m.Post("/skills/delete", agent_web.SkillsDelete)
+		})
 	}, adminReq, ctxDataSet(reqctx.ContextData{"EnableOAuth2": setting.OAuth2.Enabled, "EnablePackages": setting.Packages.Enabled}))
 	// ***** END: Admin *****
 
@@ -1187,6 +1251,13 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		m.Post("/avatar/delete", repo_setting.SettingsDeleteAvatar)
 
 		m.Combo("/public_access").Get(repo_setting.PublicAccess).Post(repo_setting.PublicAccessPost)
+
+		m.Group("/pages", func() {
+			m.Get("", repo_setting.PagesSettings)
+			m.Post("", web.Bind[*forms.PagesForm](), repo_setting.PagesSettingsPost)
+			m.Post("/deploy", web.Bind[*forms.DeployPagesForm](), repo_setting.PagesDeploy)
+			m.Post("/unpublish", repo_setting.PagesUnpublish)
+		})
 
 		m.Group("/collaboration", func() {
 			m.Combo("").Get(repo_setting.Collaboration).Post(repo_setting.CollaborationPost)
@@ -1522,6 +1593,15 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		}, reqSignIn, context.RepoMustNotBeArchived(), reqRepoReleaseWriter)
 	}, optSignIn, context.RepoAssignment, repo.MustBeNotEmpty, reqRepoReleaseReader)
 	// end "/{username}/{reponame}": repo releases
+
+	// the pages a repository publishes: what a workflow deployed, or what is committed under the
+	// directory of the branch it publishes from
+	m.Group("/{username}/{reponame}", func() {
+		m.Group("/-/pages", func() {
+			m.Get("", repo.Pages)
+			m.Get("/*", repo.Pages)
+		})
+	}, optSignIn, context.RepoAssignment, repo.MustBeNotEmpty, reqUnitCodeReader)
 
 	m.Group("/{username}/{reponame}", func() { // to maintain compatibility with old attachments
 		m.Get("/attachments/{uuid}", webAuth.AllowBasic, webAuth.AllowOAuth2, repo.GetAttachment)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,20 @@ func newFuncMapWebPage() template.FuncMap {
 		"HTMLFormat":  htmlFormat,
 		"QueryEscape": queryEscape,
 		"QueryBuild":  QueryBuild,
+		"Len":         func(v any) int { return reflect.ValueOf(v).Len() },
+
+		// the transcript asks whether a message carries files, so its meta line can step aside
+		"hasAttachments": func(groups any) bool {
+			value := reflect.ValueOf(groups)
+			if value.Kind() != reflect.Ptr || value.IsNil() || value.Elem().Kind() != reflect.Struct {
+				return false
+			}
+			files := value.Elem().FieldByName("Files")
+			if !files.IsValid() || files.Kind() != reflect.Struct {
+				return false
+			}
+			return files.FieldByName("Files").Len() > 0
+		},
 
 		"PathEscape":         url.PathEscape,
 		"PathEscapeSegments": util.PathEscapeSegments,

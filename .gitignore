@@ -120,3 +120,7 @@ prime/
 
 # A Makefile for custom make targets
 Makefile.local
+
+# tool indexes kept beside the checkout
+.codegraph/
+graphify-out/

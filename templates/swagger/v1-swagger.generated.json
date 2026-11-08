@@ -15502,6 +15502,169 @@
         }
       }
     },
+    "/repos/{owner}/{repo}/pages": {
+      "get": {
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "repository"
+        ],
+        "summary": "Get a repository's pages",
+        "operationId": "repoGetPages",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "owner of the repo",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "name of the repo",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/Pages"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      },
+      "put": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "repository"
+        ],
+        "summary": "Update how a repository publishes its pages",
+        "operationId": "repoUpdatePages",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "owner of the repo",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "name of the repo",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/UpdatePagesOption"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/Pages"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          }
+        }
+      },
+      "delete": {
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "repository"
+        ],
+        "summary": "Unpublish a repository's pages",
+        "operationId": "repoDeletePages",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "owner of the repo",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "name of the repo",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/responses/empty"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/pages/deploy": {
+      "post": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "repository"
+        ],
+        "summary": "Deploy a repository's pages from an artifact of a workflow run",
+        "operationId": "repoDeployPages",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "owner of the repo",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "name of the repo",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/DeployPagesOption"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/responses/PagesDeployment"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      }
+    },
     "/repos/{owner}/{repo}/projects": {
       "get": {
         "produces": [
@@ -28373,6 +28536,19 @@
       },
       "x-go-package": "gitea.dev/modules/structs"
     },
+    "DeployPagesOption": {
+      "type": "object",
+      "title": "DeployPagesOption is the artifact a repository's pages are deployed from.",
+      "properties": {
+        "artifact_id": {
+          "description": "ArtifactID is the artifact a workflow run uploaded, named \"pages\".",
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ArtifactID"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
     "DismissPullReviewOptions": {
       "description": "DismissPullReviewOptions are options to dismiss a pull request review",
       "type": "object",
@@ -31500,6 +31676,98 @@
       },
       "x-go-package": "gitea.dev/modules/structs"
     },
+    "Pages": {
+      "type": "object",
+      "title": "Pages is how a repository publishes its pages.",
+      "properties": {
+        "branch": {
+          "description": "Branch and Dir say which directory of which branch a branch-sourced page is read from.",
+          "type": "string",
+          "x-go-name": "Branch"
+        },
+        "commit_sha": {
+          "description": "CommitSHA is the commit of the content that is served, when anything is.",
+          "type": "string",
+          "x-go-name": "CommitSHA"
+        },
+        "custom_domain": {
+          "description": "CustomDomain is the domain a proxy in front of the instance serves the pages under.",
+          "type": "string",
+          "x-go-name": "CustomDomain"
+        },
+        "deployment": {
+          "$ref": "#/definitions/PagesDeployment"
+        },
+        "dir": {
+          "type": "string",
+          "x-go-name": "Dir"
+        },
+        "source": {
+          "description": "Source is \"branch\" (read from a branch) or \"actions\" (deployed from a workflow run).",
+          "type": "string",
+          "x-go-name": "Source"
+        },
+        "url": {
+          "description": "URL is where the published pages are served from.",
+          "type": "string",
+          "x-go-name": "URL"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "PagesDeployment": {
+      "type": "object",
+      "title": "PagesDeployment is one deployment of a repository's pages.",
+      "properties": {
+        "commit_sha": {
+          "description": "CommitSHA is the commit the deployed content came from.",
+          "type": "string",
+          "x-go-name": "CommitSHA"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "CreatedAt"
+        },
+        "error": {
+          "type": "string",
+          "x-go-name": "Error"
+        },
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ID"
+        },
+        "run_id": {
+          "description": "RunID is the workflow run an actions deployment came from.",
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "RunID"
+        },
+        "run_index": {
+          "description": "RunIndex is the per-repository number of that run, when it is known.",
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "RunIndex"
+        },
+        "source": {
+          "description": "Source is \"branch\" or \"actions\".",
+          "type": "string",
+          "x-go-name": "Source"
+        },
+        "status": {
+          "description": "Status is \"built\" or \"failed\".",
+          "type": "string",
+          "x-go-name": "Status"
+        },
+        "url": {
+          "description": "URL is the page of the workflow run that deployed, when there is one.",
+          "type": "string",
+          "x-go-name": "URL"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
     "PayloadCommit": {
       "description": "PayloadCommit represents a commit",
       "type": "object",
@@ -33639,6 +33907,32 @@
       },
       "x-go-package": "gitea.dev/modules/structs"
     },
+    "UpdatePagesOption": {
+      "type": "object",
+      "title": "UpdatePagesOption is how a repository publishes its pages.",
+      "properties": {
+        "branch": {
+          "description": "Branch and Dir are where a branch-sourced page is read from.",
+          "type": "string",
+          "x-go-name": "Branch"
+        },
+        "custom_domain": {
+          "description": "CustomDomain is the domain a proxy in front of the instance serves the pages under.",
+          "type": "string",
+          "x-go-name": "CustomDomain"
+        },
+        "dir": {
+          "type": "string",
+          "x-go-name": "Dir"
+        },
+        "source": {
+          "description": "Source is \"branch\" or \"actions\".",
+          "type": "string",
+          "x-go-name": "Source"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
     "UpdateRepoAvatarOption": {
       "description": "UpdateRepoAvatarUserOption options when updating the repo avatar",
       "type": "object",
@@ -34745,6 +35039,18 @@
         "items": {
           "$ref": "#/definitions/Package"
         }
+      }
+    },
+    "Pages": {
+      "description": "Pages",
+      "schema": {
+        "$ref": "#/definitions/Pages"
+      }
+    },
+    "PagesDeployment": {
+      "description": "PagesDeployment",
+      "schema": {
+        "$ref": "#/definitions/PagesDeployment"
       }
     },
     "Project": {

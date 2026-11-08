@@ -126,6 +126,13 @@
 						</a>
 					{{end}}
 
+					{{if .IsSigned}}
+						{{/* the agent of this repository has a screen of its own under the repository path */}}
+						<a class="{{if .PageIsRepoAgent}}active {{end}}item" href="{{.RepoLink}}/agent">
+							{{svg "octicon-agent" 16}} {{ctx.Locale.Tr "agent.chat_title"}}
+						</a>
+					{{end}}
+
 					{{if and .EnableActions (.Permission.CanRead ctx.Consts.RepoUnitTypeActions) (not .IsEmptyRepo)}}
 						<a class="{{if .PageIsActions}}active {{end}}item" href="{{.RepoLink}}/actions">
 							{{svg "octicon-play"}} {{ctx.Locale.Tr "actions.actions"}}

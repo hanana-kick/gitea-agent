@@ -7,10 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	actions_model "gitea.dev/models/actions"
 	activities_model "gitea.dev/models/activities"
 	admin_model "gitea.dev/models/admin"
+	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
 	git_model "gitea.dev/models/git"
 	issues_model "gitea.dev/models/issues"
@@ -147,9 +149,21 @@ func DeleteRepositoryDirectly(ctx context.Context, repoID int64, ignoreOrgTeams 
 		return fmt.Errorf("cleanupEphemeralRunners: %w", err)
 	}
 
+	// The agent sessions of this repository can not be reached without it, so they go with it.
+	// Their transcripts and runs are rows; the files sent with them are on disk and are removed
+	// after the deletion is committed, like the other files of the repository.
+	agentSessionIDs := make([]int64, 0, 4)
+	if err := sess.Table(&agent_model.Conversation{}).Where("repo_id = ?", repoID).Cols("id").Find(&agentSessionIDs); err != nil {
+		return fmt.Errorf("find agent sessions of repo %v: %w", repoID, err)
+	}
+	if err := agent_model.DeleteConversationData(ctx, agentSessionIDs...); err != nil {
+		return err
+	}
+
 	if err := db.DeleteBeans(ctx,
 		&access_model.Access{RepoID: repo.ID},
 		&activities_model.Action{RepoID: repo.ID},
+		&agent_model.Conversation{RepoID: repoID},
 		&repo_model.Collaboration{RepoID: repoID},
 		&issues_model.Comment{RefRepoID: repoID},
 		&git_model.CommitStatus{RepoID: repoID},
@@ -171,6 +185,8 @@ func DeleteRepositoryDirectly(ctx context.Context, repoID int64, ignoreOrgTeams 
 		&repo_model.Redirect{RedirectRepoID: repoID},
 		&repo_model.RepoTransfer{RepoID: repoID}, // this column doesn't have index, maybe it's fine since the table shouldn't be too large.
 		&repo_model.RepoUnit{RepoID: repoID},
+		&repo_model.Pages{RepoID: repoID},
+		&repo_model.PagesDeployment{RepoID: repoID},
 		&repo_model.Star{RepoID: repoID},
 		&admin_model.Task{RepoID: repoID},
 		&repo_model.Watch{RepoID: repoID},
@@ -359,6 +375,18 @@ func DeleteRepositoryDirectly(ctx context.Context, repoID int64, ignoreOrgTeams 
 	// Remove attachment with no issue_id and release_id.
 	for _, newAttachment := range newAttachmentPaths {
 		system_model.RemoveStorageWithNotice(ctx, storage.Attachments, "Delete issue attachment", newAttachment)
+	}
+
+	// Remove the pages of the repository, which are files of its own on disk.
+	if err := os.RemoveAll(PagesBuildDir(repoID)); err != nil {
+		log.Error("remove pages of repository %d: %v", repoID, err)
+	}
+
+	// Remove the files sent with the agent sessions of this repository.
+	for _, agentSessionID := range agentSessionIDs {
+		if err := os.RemoveAll(agent_model.ConversationAttachmentDir(agentSessionID)); err != nil {
+			log.Error("remove attachments of agent session %d: %v", agentSessionID, err)
+		}
 	}
 
 	if len(repo.Avatar) > 0 {

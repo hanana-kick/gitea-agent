@@ -1,0 +1,115 @@
+{{template "admin/layout_head" (dict "pageClass" "admin agent")}}
+	<div class="admin-setting-content">
+		<h4 class="ui top attached header">
+			{{if .IsEdit}}{{ctx.Locale.Tr "agent.group_edit"}}{{else}}{{ctx.Locale.Tr "agent.group_new"}}{{end}}
+		</h4>
+		<div class="ui attached segment">
+			{{if .ErrorMsg}}
+				<div class="ui error message">{{.ErrorMsg}}</div>
+			{{end}}
+			{{if .GroupMembers}}
+				<form class="ui form" id="group-form" action="{{.FormAction}}" method="post">
+					<div class="required field">
+						<label for="name">{{ctx.Locale.Tr "agent.group_name"}}</label>
+						<input id="name" type="text" name="name" value="{{.Form.Name}}" placeholder="{{ctx.Locale.TrString "agent.group_name_placeholder"}}" autofocus required maxlength="100">
+						<p class="help">{{ctx.Locale.Tr "agent.group_name_help"}}</p>
+					</div>
+					<div class="field">
+						<label>{{ctx.Locale.Tr "agent.group_id"}}</label>
+						<div class="tw-flex tw-items-center tw-gap-2">
+							{{if .IsEdit}}<code>{{.Group.Slug}}</code>{{else}}<span class="tw-text-text-light">{{ctx.Locale.Tr "agent.group_id_auto"}}</span>{{end}}
+						</div>
+						<p class="help">{{ctx.Locale.Tr "agent.group_id_help"}}</p>
+					</div>
+					<div class="field">
+						<label for="description">{{ctx.Locale.Tr "agent.group_description"}}</label>
+						<input id="description" type="text" name="description" value="{{.Form.Description}}" maxlength="255">
+					</div>
+					<div class="required field">
+						<label for="mode">{{ctx.Locale.Tr "agent.group_mode"}}</label>
+						<select class="ui selection dropdown" id="mode" name="mode" required>
+							<option value="fallback" {{if ne .Form.Mode "round_robin"}}selected{{end}}>{{ctx.Locale.Tr "agent.group_mode_fallback"}}</option>
+							<option value="round_robin" {{if eq .Form.Mode "round_robin"}}selected{{end}}>{{ctx.Locale.Tr "agent.group_mode_round_robin"}}</option>
+						</select>
+						<p class="help">{{ctx.Locale.Tr "agent.group_mode_help"}}</p>
+					</div>
+					<div class="required field">
+						<label>{{ctx.Locale.Tr "agent.group_members"}}</label>
+						<div id="group-members">
+							{{range .Form.Members}}
+								<div class="group-member flex-text-block tw-mb-2">
+									<div class="tw-flex-1">
+										<select class="ui search selection dropdown custom tw-w-full" name="member" required>
+											{{$selected := .}}
+											{{range $.GroupMembers}}
+												<option value="{{.Value}}" {{if eq .Value $selected}}selected{{end}}>{{.Label}}</option>
+											{{end}}
+										</select>
+									</div>
+									<button type="button" class="ui button js-remove-member">{{ctx.Locale.Tr "agent.group_member_remove"}}</button>
+								</div>
+							{{end}}
+						</div>
+						<button type="button" id="add-member" class="ui button">{{ctx.Locale.Tr "agent.group_member_add"}}</button>
+						<p class="help">{{ctx.Locale.Tr "agent.group_members_help"}}</p>
+					</div>
+					<div class="field">
+						<button type="submit" class="ui primary button">
+							{{if .IsEdit}}{{ctx.Locale.Tr "save"}}{{else}}{{ctx.Locale.Tr "agent.group_add"}}{{end}}
+						</button>
+						<a class="ui button" href="{{.CancelLink}}">{{ctx.Locale.Tr "cancel"}}</a>
+					</div>
+				</form>
+			{{else}}
+				<div class="ui warning message">
+					{{ctx.Locale.Tr "agent.group_no_members"}}
+					<a href="{{AppSubUrl}}/-/admin/agent/providers">{{ctx.Locale.Tr "agent.providers_title"}}</a>
+				</div>
+			{{end}}
+		</div>
+	</div>
+
+	{{if .GroupMembers}}
+		<template id="group-member-template">
+			<div class="group-member flex-text-block tw-mb-2">
+				<div class="tw-flex-1">
+					<select class="ui search selection dropdown custom tw-w-full" name="member" required>
+						{{range .GroupMembers}}
+							<option value="{{.Value}}">{{.Label}}</option>
+						{{end}}
+					</select>
+				</div>
+				<button type="button" class="ui button js-remove-member">{{ctx.Locale.Tr "agent.group_member_remove"}}</button>
+			</div>
+		</template>
+		<script nonce="{{ctx.CspScriptNonce}}">
+			// the bundle that provides jQuery loads after this template, so wait for it
+			document.addEventListener("DOMContentLoaded", () => {
+				// member rows keep their own order: it is the fallback priority
+				const list = document.getElementById("group-members");
+				const template = document.getElementById("group-member-template");
+
+				// Gitea initialises dropdowns with exact word search, which never matches
+				// model ids; these get substring search instead.
+				const initMemberSelect = (select) => {
+					window.$(select).dropdown({fullTextSearch: true, hideDividers: "empty"});
+				};
+
+				const addRow = () => {
+					const row = template.content.cloneNode(true);
+					list.append(row);
+					initMemberSelect(list.lastElementChild.querySelector("select"));
+				};
+
+				list.querySelectorAll("select").forEach(initMemberSelect);
+				if (!list.children.length) addRow();
+				document.getElementById("add-member").addEventListener("click", addRow);
+				list.addEventListener("click", (e) => {
+					if (!e.target.closest(".js-remove-member")) return;
+					e.target.closest(".group-member").remove();
+					if (!list.children.length) addRow();
+				});
+			});
+		</script>
+	{{end}}
+{{template "admin/layout_footer" .}}

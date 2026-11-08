@@ -1,0 +1,76 @@
+<div class="ui two item menu agent-chat-tabs">
+	<a class="item{{if eq .Scope "agent"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=agent">{{ctx.Locale.Tr "agent.chat_tab_agent"}}</a>
+	<a class="item{{if eq .Scope "repository"}} active{{end}}" href="{{.ScopeBaseURL}}?scope=repository">{{ctx.Locale.Tr "agent.chat_tab_repository"}}</a>
+</div>
+
+{{if eq .Scope "agent"}}
+	<h4 class="ui top attached header tw-flex tw-items-center">
+		<div class="tw-flex-1 tw-flex tw-items-center">
+			{{ctx.Locale.Tr "agent.chat_resident"}}
+			<span class="ui grey label tw-ml-2">{{index .ScopeCounts "agent"}}</span>
+		</div>
+	</h4>
+	<form class="ui attached segment agent-chat-search" method="get" action="{{.ScopeBaseURL}}">
+		<input type="hidden" name="scope" value="agent">
+		<div class="ui small fluid left icon input">
+			<input type="search" name="q" value="{{.Keyword}}" spellcheck="false" maxlength="255" placeholder="{{ctx.Locale.Tr "agent.chat_search_placeholder"}}">
+			<i class="icon">{{svg "octicon-search"}}</i>
+		</div>
+	</form>
+	<div class="ui attached segment agent-chat-list">
+		{{template "agent/session_list" dict "Page" . "New" true "Help" true}}
+	</div>
+{{else}}
+	<h4 class="ui top attached header tw-flex tw-items-center">
+		<div class="tw-flex-1 tw-flex tw-items-center">
+			{{if .FilterRepo}}
+				{{/* the agent of a repository lists that repository's sessions */}}
+				<span class="gt-ellipsis">{{.FilterRepo.FullName}}</span>
+				<span class="ui grey label tw-ml-2">{{len .Sessions.Repositories}}</span>
+			{{else}}
+				{{ctx.Locale.Tr "agent.chat_repository"}}
+				<span class="ui grey label tw-ml-2">{{index .ScopeCounts "repository"}}</span>
+			{{end}}
+		</div>
+	</h4>
+	<form class="ui attached segment agent-chat-search" method="get" action="{{.ScopeBaseURL}}">
+		<input type="hidden" name="scope" value="repository">
+		{{if .FilterRepo}}<input type="hidden" name="repo_id" value="{{.FilterRepo.ID}}">{{end}}
+		{{if .AllRepositories}}<input type="hidden" name="all" value="1">{{end}}
+		<div class="ui small fluid left icon input">
+			<input type="search" name="q" value="{{.Keyword}}" spellcheck="false" maxlength="255" placeholder="{{ctx.Locale.Tr "agent.chat_search_placeholder"}}">
+			<i class="icon">{{svg "octicon-search"}}</i>
+		</div>
+	</form>
+	{{if .FilterRepo}}
+		{{/* the way out of the one repository this agent lists */}}
+		<div class="ui attached segment agent-chat-filter-all-row">
+			<a class="agent-chat-filter-all" href="{{.ScopeBaseURL}}?scope=repository&all=1">{{ctx.Locale.Tr "agent.chat_all_repositories"}}</a>
+		</div>
+	{{end}}
+	<div class="ui attached segment agent-chat-list">
+		{{template "agent/session_list" dict "Page" . "New" true "Help" true "Groups" (not .FilterRepo)}}
+	</div>
+
+	{{if .WritableRepos}}
+		<div class="ui modal" id="agent-chat-repository-modal">
+			<div class="header">{{ctx.Locale.Tr "agent.chat_new_conversation"}}</div>
+			<form class="ui form" method="get" action="{{AppSubUrl}}/-/agent/new">
+				<div class="content">
+					<div class="required field">
+						<label for="repo_id">{{ctx.Locale.Tr "agent.chat_repository"}}</label>
+						<select id="repo_id" name="repo_id" class="ui dropdown" required>
+							{{range .WritableRepos}}
+								<option value="{{.ID}}"{{if and $.FilterRepo (eq .ID $.FilterRepo.ID)}} selected{{end}}>{{.FullName}}</option>
+							{{end}}
+						</select>
+					</div>
+				</div>
+				<div class="actions">
+					<button class="ui cancel button" type="button">{{ctx.Locale.Tr "cancel"}}</button>
+					<button class="ui primary button" type="submit">{{ctx.Locale.Tr "agent.chat_new_conversation"}}</button>
+				</div>
+			</form>
+		</div>
+	{{end}}
+{{end}}

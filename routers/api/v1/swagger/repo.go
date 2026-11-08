@@ -28,6 +28,20 @@ type swaggerResponseBranch struct {
 	Body api.Branch `json:"body"`
 }
 
+// Pages
+// swagger:response Pages
+type swaggerResponsePages struct {
+	// in:body
+	Body api.Pages `json:"body"`
+}
+
+// PagesDeployment
+// swagger:response PagesDeployment
+type swaggerResponsePagesDeployment struct {
+	// in:body
+	Body api.PagesDeployment `json:"body"`
+}
+
 // BranchList
 // swagger:response BranchList
 type swaggerResponseBranchList struct {

@@ -800,6 +800,39 @@ func repoAssignmentPrepareRepoTransfer(ctx *Context, data *repoAssignmentPrepare
 	}
 }
 
+// repoPagesLive reports whether the pages of the repository are there to be read: a branch that
+// carries the index of the published directory, or a deployment that was built.
+func repoPagesLive(ctx *Context) bool {
+	pages, has, err := repo_model.GetPages(ctx, ctx.Repo.Repository.ID)
+	if err != nil || !has {
+		return false
+	}
+	switch pages.Source {
+	case repo_model.PagesSourceBranch:
+		if ctx.Repo.GitRepo == nil {
+			return false
+		}
+		commit, err := ctx.Repo.GitRepo.GetBranchCommit(ctx, pages.Branch)
+		if err != nil {
+			return false
+		}
+		entry, err := commit.GetTreeEntryByPath(ctx, ctx.Repo.GitRepo, path.Join(strings.Trim(pages.Dir, "/"), repo_model.PagesIndex))
+		return err == nil && entry != nil && !entry.IsDir()
+	case repo_model.PagesSourceActions:
+		_, has, err := repo_model.GetLatestPagesDeployment(ctx, ctx.Repo.Repository.ID)
+		return err == nil && has
+	}
+	return false
+}
+
+// repoAssignmentPreparePages tells a repository page where its published pages are, so the link
+// to them is in front of a reader wherever they are in the repository.
+func repoAssignmentPreparePages(ctx *Context, _ *repoAssignmentPrepareDataStruct) {
+	if repoPagesLive(ctx) {
+		ctx.Data["RepoPagesURL"] = ctx.Repo.Repository.PagesURL()
+	}
+}
+
 // RepoAssignment returns a middleware to handle repository assignment
 func RepoAssignment(ctx *Context) {
 	repoAssignmentPreCheck(ctx)
@@ -813,6 +846,7 @@ func RepoAssignment(ctx *Context) {
 		repoAssignmentPrepareTemplateData,
 		repoAssignmentAutoRedirectNotReady,
 		repoAssignmentPrepareGitRepo,
+		repoAssignmentPreparePages,
 		repoAssignmentPrepareRepoTransfer,
 		repoAssignmentPrepareBranches,
 		repoAssignmentPreparePullRequests,

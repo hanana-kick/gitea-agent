@@ -1,0 +1,41 @@
+{{/* the message composer of the agent chat: the text, the files and the send button.
+	A draft (a conversation that does not exist yet) posts to data-draft-url and follows
+	the created conversation; an open conversation posts to its messages URL. */}}
+{{if .IsDraft}}
+	<form class="ui form agent-chat-composer agent-chat-draft" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/new" data-draft-url="{{AppSubUrl}}/-/agent/new"{{if .PresetsJSON}} data-presets="{{.PresetsJSON}}"{{end}}>
+		<div class="agent-chat-commands tw-hidden" role="listbox" aria-label="{{ctx.Locale.Tr "agent.commands"}}"></div>
+		<div class="agent-chat-attach-list tw-hidden"></div>
+		<input type="hidden" name="kind" value="{{.DraftKind}}">
+		{{if .Repo}}<input type="hidden" name="repo_id" value="{{.Repo.ID}}">{{end}}
+		{{/* the box is editable rather than a textarea, so the word a task is written with can
+			become a chip where the reader wrote it; the field under it is the message sent */}}
+		<div class="agent-chat-input" role="textbox" aria-multiline="true" contenteditable="{{if .CanAnswer}}true{{else}}false{{end}}"
+			data-placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}" aria-label="{{ctx.Locale.Tr "agent.chat_placeholder"}}"></div>
+		<input type="hidden" name="content">
+		<label class="agent-chat-attach" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_attach"}}">
+			{{svg "octicon-paperclip" 16}}
+			<input type="file" name="files" multiple>
+		</label>
+		<button type="submit" class="ui primary button"{{if not .CanAnswer}} disabled{{end}}>{{ctx.Locale.Tr "agent.chat_send"}}</button>
+	</form>
+{{else}}
+	<form class="ui form agent-chat-composer" method="post" enctype="multipart/form-data" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/messages"{{if .PresetsJSON}} data-presets="{{.PresetsJSON}}"{{end}}>
+		<div class="agent-chat-commands tw-hidden" role="listbox" aria-label="{{ctx.Locale.Tr "agent.commands"}}"></div>
+		<div class="agent-chat-attach-list tw-hidden"></div>
+		{{/* the box is editable rather than a textarea, so the word a task is written with can
+			become a chip where the reader wrote it; the field under it is the message sent */}}
+		<div class="agent-chat-input" role="textbox" aria-multiline="true" contenteditable="{{if .CanAnswer}}true{{else}}false{{end}}"
+			data-placeholder="{{ctx.Locale.Tr "agent.chat_placeholder"}}" aria-label="{{ctx.Locale.Tr "agent.chat_placeholder"}}"></div>
+		<input type="hidden" name="content">
+		<label class="agent-chat-attach" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_attach"}}">
+			{{svg "octicon-paperclip" 16}}
+			<input type="file" name="files" multiple>
+		</label>
+		<button type="submit" class="ui primary button agent-chat-send"{{if not .CanAnswer}} disabled{{end}}
+			data-idle-label="{{ctx.Locale.Tr "agent.chat_send"}}" data-busy-label="{{ctx.Locale.Tr "agent.chat_cancel"}}"
+			{{if .RunActive}}data-busy{{end}}>{{if .RunActive}}{{ctx.Locale.Tr "agent.chat_cancel"}}{{else}}{{ctx.Locale.Tr "agent.chat_send"}}{{end}}</button>
+	</form>
+{{end}}
+{{if not .CanAnswer}}
+	<p class="agent-chat-hint agent-chat-hint-block">{{ctx.Locale.Tr "agent.chat_model_required"}}</p>
+{{end}}

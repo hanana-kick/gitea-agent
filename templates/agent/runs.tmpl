@@ -1,0 +1,67 @@
+{{template "admin/layout_head" (dict "pageClass" "admin agent")}}
+{{/* the runs of the agent: what it is doing, what it did, and why it stopped */}}
+<div class="ui container admin-page agent-runs" data-events-url="{{.RunsEventsURL}}" data-labels="{{.LabelsJSON}}">
+	<h4 class="ui top attached header">{{ctx.Locale.Tr "agent.runs_title"}}</h4>
+	<div class="ui attached segment">
+		<div class="tw-flex tw-items-center tw-gap-2 tw-flex-wrap">
+			<a class="ui tiny button{{if not .Status}} primary{{end}}" href="{{AppSubUrl}}/-/admin/agent/runs">{{ctx.Locale.Tr "agent.runs_all"}}</a>
+			<a class="ui tiny button{{if eq .Status "running"}} primary{{end}}" href="{{AppSubUrl}}/-/admin/agent/runs?status=running">{{ctx.Locale.Tr "agent.runs_status_running"}}</a>
+			<a class="ui tiny button{{if eq .Status "waiting"}} primary{{end}}" href="{{AppSubUrl}}/-/admin/agent/runs?status=waiting">{{ctx.Locale.Tr "agent.runs_status_waiting"}}</a>
+			<a class="ui tiny button{{if eq .Status "succeeded"}} primary{{end}}" href="{{AppSubUrl}}/-/admin/agent/runs?status=succeeded">{{ctx.Locale.Tr "agent.runs_status_succeeded"}}</a>
+			<a class="ui tiny button{{if eq .Status "failed"}} primary{{end}}" href="{{AppSubUrl}}/-/admin/agent/runs?status=failed">{{ctx.Locale.Tr "agent.runs_status_failed"}}</a>
+			<span class="tw-ml-auto tw-text-light">{{ctx.Locale.Tr "agent.runs_total" .Total}}</span>
+		</div>
+	</div>
+	<table class="ui attached table segment">
+		<thead>
+			<tr>
+				<th>{{ctx.Locale.Tr "agent.runs_id"}}</th>
+				<th>{{ctx.Locale.Tr "agent.runs_status"}}</th>
+				<th>{{ctx.Locale.Tr "agent.runs_where"}}</th>
+				<th>{{ctx.Locale.Tr "agent.runs_user"}}</th>
+				<th>{{ctx.Locale.Tr "agent.runs_model"}}</th>
+				<th>{{ctx.Locale.Tr "agent.runs_duration"}}</th>
+				<th>{{ctx.Locale.Tr "agent.runs_reason"}}</th>
+				<th></th>
+			</tr>
+		</thead>
+		<tbody>
+			{{range .Runs}}
+				<tr data-run-id="{{.ID}}">
+					<td>
+						<a href="{{AppSubUrl}}/-/agent/{{.SessionID}}">#{{.ID}}</a>
+						<a class="tw-text-light" href="{{AppSubUrl}}/-/admin/agent/runs/{{.ID}}/trace">{{ctx.Locale.Tr "agent.runs_trace"}}</a>
+					</td>
+					<td class="agent-runs-state">
+						{{/* every state a run can rest in is named, so a reader never reads a raw word */}}
+						{{if eq .Status "queued"}}<span class="agent-runs-status ui tiny label">{{ctx.Locale.Tr "agent.runs_status_queued"}}</span>
+						{{else if eq .Status "waiting"}}<span class="agent-runs-status ui tiny orange label">{{ctx.Locale.Tr "agent.runs_status_waiting"}}</span>{{if .WaitingTool}}<span class="agent-runs-tool">: {{.WaitingTool}}</span>{{end}}
+						{{else if eq .Status "running"}}<span class="agent-runs-status ui tiny blue label">{{ctx.Locale.Tr "agent.runs_status_running"}}</span>
+						{{else if eq .Status "succeeded"}}<span class="agent-runs-status ui tiny green label">{{ctx.Locale.Tr "agent.runs_status_succeeded"}}</span>
+						{{else if eq .Status "failed"}}<span class="agent-runs-status ui tiny red label">{{ctx.Locale.Tr "agent.runs_status_failed"}}</span>
+						{{else if eq .Status "canceled"}}<span class="agent-runs-status ui tiny grey label">{{ctx.Locale.Tr "agent.runs_status_canceled"}}</span>
+						{{else}}<span class="agent-runs-status ui tiny label">{{.Status}}</span>{{end}}
+						{{if .QueuePlace}}<span class="agent-runs-queue tw-text-light">{{.QueuePlace}}{{if .QueueWait}} · {{.QueueWait}}{{end}}</span>{{end}}
+					</td>
+					<td>
+						{{if .Repository}}<span class="tw-font-medium">{{.Repository}}</span>{{else}}{{ctx.Locale.Tr "agent.runs_instance"}}{{end}}
+					</td>
+					<td>{{.User}}</td>
+					<td>{{.Model}}</td>
+					<td>{{.DurationText}}</td>
+					<td class="tw-break-anywhere agent-runs-reason">{{.Error}}</td>
+					<td class="tw-whitespace-nowrap">
+						{{if .Active}}
+							<form method="post" action="{{AppSubUrl}}/-/admin/agent/runs/{{.ID}}/stop">
+								<button type="submit" class="ui tiny basic button agent-runs-stop">{{ctx.Locale.Tr "agent.runs_stop"}}</button>
+							</form>
+						{{end}}
+					</td>
+				</tr>
+			{{else}}
+				<tr><td colspan="8">{{ctx.Locale.Tr "agent.runs_empty"}}</td></tr>
+			{{end}}
+		</tbody>
+	</table>
+</div>
+{{template "admin/layout_footer" .}}

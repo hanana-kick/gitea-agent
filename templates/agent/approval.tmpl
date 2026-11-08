@@ -1,0 +1,33 @@
+{{/* one call that waits for its reader, reachable from the thread it was made in */}}
+<div class="ui container admin-page agent-approval-page">
+	<h4 class="ui top attached header">{{ctx.Locale.Tr "agent.approval_title" .Approval.Tool}}</h4>
+	<div class="ui attached segment">
+		{{if .Pending}}
+			<p>{{ctx.Locale.Tr "agent.approval_help"}}</p>
+			<table class="ui very basic table">
+				<tbody>
+					<tr>
+						<td class="tw-w-24">{{ctx.Locale.Tr "agent.approval_tool"}}</td>
+						<td><span class="agent-chat-approval-name">{{.Approval.Tool}}</span></td>
+					</tr>
+					<tr>
+						<td>{{ctx.Locale.Tr "agent.approval_arguments"}}</td>
+						<td class="tw-break-anywhere"><code>{{.Approval.Arguments}}</code></td>
+					</tr>
+				</tbody>
+			</table>
+			<div class="tw-flex tw-gap-2">
+				<form method="post" action="{{.AllowURL}}">
+					<button type="submit" class="ui primary button">{{ctx.Locale.Tr "agent.approval_allow"}}</button>
+				</form>
+				<form method="post" action="{{.RefuseURL}}">
+					<button type="submit" class="ui button">{{ctx.Locale.Tr "agent.approval_refuse"}}</button>
+				</form>
+				<a class="ui button" href="{{.SessionURL}}">{{ctx.Locale.Tr "agent.approval_session"}}</a>
+			</div>
+		{{else}}
+			<p>{{ctx.Locale.Tr "agent.approval_answered"}}</p>
+			<a class="ui button" href="{{.SessionURL}}">{{ctx.Locale.Tr "agent.approval_session"}}</a>
+		{{end}}
+	</div>
+</div>

@@ -1,0 +1,364 @@
+// Copyright 2026 The Gitea Authors. All rights reserved.
+// SPDX-License-Identifier: MIT
+
+package agent
+
+import (
+	"context"
+	"testing"
+
+	agent_model "gitea.dev/models/agent"
+	"gitea.dev/models/db"
+	issues_model "gitea.dev/models/issues"
+	repo_model "gitea.dev/models/repo"
+	"gitea.dev/models/unittest"
+	user_model "gitea.dev/models/user"
+	"gitea.dev/modules/setting"
+	issues_service "gitea.dev/services/issue"
+	notify_service "gitea.dev/services/notify"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// A comment that names the agent starts a run in the session of that repository, and the run
+// answers for the user who wrote it while its tools work as the agent's own account. A comment
+// the agent wrote, or one that names nobody, starts nothing.
+func TestMentionStartsARunForTheMentioningUser(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+	InitMentions()
+	defer func() { notify_service.CommentListener = nil }()
+
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{ID: 1})
+	mentioner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	comment := &issues_model.Comment{ID: 1, IssueID: issue.ID, Content: "@" + agentUser.Name + " 이 이슈 봐줘"}
+
+	notify_service.CreateIssueComment(ctx, mentioner, repo, issue, comment, []*user_model.User{agentUser})
+
+	sessions, err := findConversations(ctx, agent_model.ConversationKindRepository, agentUser.ID)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	assert.Equal(t, repo.ID, sessions[0].RepoID)
+
+	messages, err := ListMessages(ctx, sessions[0].ID, 20)
+	require.NoError(t, err)
+	require.NotEmpty(t, messages)
+	assert.Contains(t, messages[len(messages)-1].Content, "[mention]")
+	assert.Contains(t, messages[len(messages)-1].Content, comment.Content)
+
+	run, err := LatestRun(ctx, sessions[0].ID)
+	require.NoError(t, err)
+	require.NotNil(t, run)
+	assert.Equal(t, mentioner.ID, run.UserID, "the run answers for the user who asked")
+	// the thread is told the work started, before there is an answer to give
+	require.NotZero(t, run.StatusCommentID)
+	note, err := issues_model.GetCommentByID(ctx, run.StatusCommentID)
+	require.NoError(t, err)
+	assert.Equal(t, agentUser.ID, note.PosterID, "the working note is the agent's own")
+	assert.Equal(t, issue.ID, note.IssueID)
+
+	// the agent answering itself would name it again, forever
+	before := len(messages)
+	notify_service.CreateIssueComment(ctx, agentUser, repo, issue, comment, []*user_model.User{agentUser})
+	after, err := ListMessages(ctx, sessions[0].ID, 20)
+	require.NoError(t, err)
+	assert.Len(t, after, before)
+
+	// a comment naming nobody starts nothing
+	notify_service.CreateIssueComment(ctx, mentioner, repo, issue, comment, nil)
+	again, err := ListMessages(ctx, sessions[0].ID, 20)
+	require.NoError(t, err)
+	assert.Len(t, again, before)
+}
+
+// A session the agent owns writes as the agent, so the thread shows who answered while the
+// reads stay with the user who asked.
+func TestAgentSessionWritesAsTheAgent(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+
+	conversation, err := CreateConversation(ctx, agent_model.ConversationKindRepository, agentUser.ID, 1, "agent session")
+	require.NoError(t, err)
+	session := engine.sessionFor(ctx, conversation)
+	assert.Equal(t, agentUser.ID, session.ActorID)
+
+	// a session a user opened writes as that user
+	userSession, err := CreateConversation(ctx, agent_model.ConversationKindRepository, 1, 1, "user session")
+	require.NoError(t, err)
+	assert.Zero(t, engine.sessionFor(ctx, userSession).ActorID)
+}
+
+// A run whose answer never reached the thread is reported there, and one that did is not said
+// again: the surface hears how the work ended, once.
+func TestMentionReportsWhatTheThreadDidNotHear(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{ID: 1})
+
+	conversation, err := CreateConversation(ctx, agent_model.ConversationKindRepository, 2, repo.ID, "agent session")
+	require.NoError(t, err)
+
+	// a run that already succeeded, and a request whose answer the model never posted
+	run := &agent_model.Run{ConversationID: conversation.ID, UserID: 1, Status: agent_model.RunStatusSucceeded}
+	require.NoError(t, db.Insert(ctx, run))
+	request, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleUser, "[mention] …", "")
+	require.NoError(t, err)
+
+	agent := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agent.Name
+
+	// the answer is in the thread already: nothing more is said
+	before, err := issues_model.CountComments(ctx, &issues_model.FindCommentsOptions{IssueID: issue.ID})
+	require.NoError(t, err)
+	reportMention(ctx, request.ID, run.ID, repo, issue)
+	after, err := issues_model.CountComments(ctx, &issues_model.FindCommentsOptions{IssueID: issue.ID})
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "a run that answered in the thread says nothing more")
+
+	// a failed run is said out loud
+	failed := &agent_model.Run{ConversationID: conversation.ID, UserID: 1, Status: agent_model.RunStatusFailed, Error: "the model did not answer in time"}
+	require.NoError(t, db.Insert(ctx, failed))
+	reportMention(ctx, request.ID, failed.ID, repo, issue)
+	comments, err := issues_model.FindComments(ctx, &issues_model.FindCommentsOptions{IssueID: issue.ID})
+	require.NoError(t, err)
+	require.Greater(t, int64(len(comments)), before)
+	assert.Contains(t, comments[len(comments)-1].Content, "the model did not answer in time")
+	assert.Equal(t, agent.ID, comments[len(comments)-1].PosterID)
+}
+
+// The comment that said the agent was working is the one that says how it ended: a thread keeps
+// one line per run, not a comment for every step.
+func TestStatusCommentIsSettledInPlace(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{ID: 1})
+
+	note, err := issues_service.CreateIssueComment(ctx, agentUser, repo, issue, statusText(nil, "agent.status_working"), nil)
+	require.NoError(t, err)
+
+	run := &agent_model.Run{
+		ConversationID: 1, UserID: 1, Status: agent_model.RunStatusFailed,
+		Error: "the model did not answer in time", StatusCommentID: note.ID, ReplyRepoID: repo.ID, ReplyIssueID: issue.ID,
+	}
+	require.NoError(t, db.Insert(ctx, run))
+	request, err := AppendMessage(ctx, 1, agent_model.MessageRoleUser, "[mention] …", "")
+	require.NoError(t, err)
+
+	reportMention(ctx, request.ID, run.ID, repo, issue)
+
+	settled, err := issues_model.GetCommentByID(ctx, note.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, statusText(nil, "agent.status_working"), settled.Content)
+	assert.Contains(t, settled.Content, "the model did not answer in time")
+
+	// a run the server lost mid-flight settles the same way
+	dead := &agent_model.Run{
+		ConversationID: 1, UserID: 1, Status: agent_model.RunStatusFailed,
+		Error: "interrupted by a server restart", StatusCommentID: note.ID,
+	}
+	settleInterruptedRun(ctx, dead)
+	settled, err = issues_model.GetCommentByID(ctx, note.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, statusText(nil, "agent.status_working"), settled.Content)
+}
+
+// A run whose answer the model wrote itself leaves no working note behind: one line per run, and
+// the answer is the line.
+func TestStatusCommentIsTakenBackWhenTheModelAnswered(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{ID: 1})
+	note, err := issues_service.CreateIssueComment(ctx, agentUser, repo, issue, statusText(nil, "agent.status_working"), nil)
+	require.NoError(t, err)
+
+	conversation, err := CreateConversation(ctx, agent_model.ConversationKindRepository, agentUser.ID, repo.ID, "agent session")
+	require.NoError(t, err)
+	run := &agent_model.Run{ConversationID: conversation.ID, UserID: 1, Status: agent_model.RunStatusSucceeded, StatusCommentID: note.ID}
+	require.NoError(t, db.Insert(ctx, run))
+	request, err := AppendMessage(ctx, conversation.ID, agent_model.MessageRoleUser, "[mention] …", "")
+	require.NoError(t, err)
+	_, err = AppendMessage(ctx, conversation.ID, agent_model.MessageRoleTool, "gitea_comment_issue {\"index\":1} | Commented on #1.", "")
+	require.NoError(t, err)
+
+	reportMention(ctx, request.ID, run.ID, repo, issue)
+
+	_, err = issues_model.GetCommentByID(ctx, note.ID)
+	require.Error(t, err, "the working note is taken back once the answer is in the thread")
+}
+
+// A run that waited for an approval when the server restarted cannot be resumed: it ends, and
+// the thread that was told it waits is told that instead of waiting forever.
+func TestWaitingRunDoesNotOutliveARestart(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{ID: 1})
+	note, err := issues_service.CreateIssueComment(ctx, agentUser, repo, issue, statusText(nil, "agent.status_working"), nil)
+	require.NoError(t, err)
+
+	run := &agent_model.Run{ConversationID: 1, UserID: 1, Status: agent_model.RunStatusWaiting, StatusCommentID: note.ID}
+	require.NoError(t, db.Insert(ctx, run))
+	approval := &agent_model.ToolApproval{ConversationID: 1, RunID: run.ID, Tool: "gitea_commit_files", Arguments: "{}", Status: agent_model.ToolApprovalPending}
+	require.NoError(t, db.Insert(ctx, approval))
+
+	require.NoError(t, recoverRuns(ctx))
+
+	recovered := &agent_model.Run{}
+	has, err := db.GetEngine(ctx).ID(run.ID).Get(recovered)
+	require.NoError(t, err)
+	require.True(t, has)
+	assert.Equal(t, agent_model.RunStatusFailed, recovered.Status)
+	assert.Contains(t, recovered.Error, "approval the restart closed")
+
+	closed := &agent_model.ToolApproval{}
+	has, err = db.GetEngine(ctx).ID(approval.ID).Get(closed)
+	require.NoError(t, err)
+	require.True(t, has)
+	assert.NotEqual(t, agent_model.ToolApprovalPending, closed.Status)
+
+	settled, err := issues_model.GetCommentByID(ctx, note.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, statusText(nil, "agent.status_working"), settled.Content)
+}
+
+// A busy thread cannot turn a burst of comments into a burst of model calls.
+func TestMentionStopsAtTheRateLimit(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+	InitMentions()
+	defer func() { notify_service.CommentListener = nil }()
+
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	issue := unittest.AssertExistsAndLoadBean(t, &issues_model.Issue{ID: 1})
+	mentioner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	session, err := repositorySessionOf(ctx, agentUser, repo)
+	require.NoError(t, err)
+	for range setting.Agent.MentionsPerMinute {
+		require.NoError(t, db.Insert(ctx, &agent_model.Run{ConversationID: session.ID, UserID: mentioner.ID, Status: agent_model.RunStatusSucceeded}))
+	}
+
+	comment := &issues_model.Comment{ID: 1, IssueID: issue.ID, Content: "@" + agentUser.Name + " 또 하나"}
+	notify_service.CreateIssueComment(ctx, mentioner, repo, issue, comment, []*user_model.User{agentUser})
+
+	messages, err := ListMessages(ctx, session.ID, 10)
+	require.NoError(t, err)
+	assert.Empty(t, messages, "the thread is too busy to reach the agent again this minute")
+}
+
+// A review body that names the agent is a request like a comment, and is answered the same way.
+func TestReviewBodyMentionStartsARun(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+	InitMentions()
+	defer func() {
+		notify_service.CommentListener = nil
+		notify_service.ReviewListener = nil
+	}()
+
+	pr := unittest.AssertExistsAndLoadBean(t, &issues_model.PullRequest{ID: 1})
+	require.NoError(t, pr.LoadIssue(ctx))
+	require.NoError(t, pr.Issue.LoadRepo(ctx))
+	reviewer := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	review := &issues_model.Review{
+		ID: 1, IssueID: pr.IssueID, ReviewerID: reviewer.ID, Reviewer: reviewer,
+		Type: issues_model.ReviewTypeComment, Content: "@" + agentUser.Name + " 이 변경 봐줘",
+	}
+
+	// the listener the notifier calls, as the notifier itself is registered by the app
+	require.NotNil(t, notify_service.ReviewListener)
+	notify_service.ReviewListener(ctx, pr, review, nil, []*user_model.User{agentUser})
+
+	sessions, err := findConversations(ctx, agent_model.ConversationKindRepository, agentUser.ID)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	messages, err := ListMessages(ctx, sessions[0].ID, 10)
+	require.NoError(t, err)
+	require.NotEmpty(t, messages)
+	assert.Contains(t, messages[len(messages)-1].Content, "이 변경 봐줘")
+}
+
+// A pull request whose description names the agent asks a question the moment it is opened, and
+// a review comment on a line asks one about that line.
+func TestBodyAndCodeCommentMentionsStartRuns(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	agentUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agentUser.Name
+	InitMentions()
+	defer func() {
+		notify_service.IssueListener = nil
+		notify_service.CodeCommentListener = nil
+	}()
+
+	pr := unittest.AssertExistsAndLoadBean(t, &issues_model.PullRequest{ID: 3})
+	require.NoError(t, pr.LoadIssue(ctx))
+	require.NoError(t, pr.Issue.LoadRepo(ctx))
+	mentioner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	pr.Issue.Poster = mentioner
+	pr.Issue.Content = "@" + agentUser.Name + " 이 변경 설명을 요약해줘"
+
+	require.NotNil(t, notify_service.IssueListener)
+	notify_service.IssueListener(ctx, mentioner, pr.Issue.Repo, pr.Issue, []*user_model.User{agentUser})
+
+	sessions, err := findConversations(ctx, agent_model.ConversationKindRepository, agentUser.ID)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	messages, err := ListMessages(ctx, sessions[0].ID, 10)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	assert.Contains(t, messages[0].Content, "이 변경 설명을 요약해줘")
+
+	// the change is read to the end before the line comment is answered, so clear what the body
+	// left behind
+	_, err = db.GetEngine(ctx).Where("conversation_id = ?", sessions[0].ID).Delete(new(agent_model.Run))
+	require.NoError(t, err)
+	_, err = db.GetEngine(ctx).Where("conversation_id = ?", sessions[0].ID).Delete(new(agent_model.Message))
+	require.NoError(t, err)
+
+	codeComment := &issues_model.Comment{
+		ID: 1, IssueID: pr.IssueID, PosterID: mentioner.ID, Poster: mentioner,
+		Type: issues_model.CommentTypeCode, Content: "@" + agentUser.Name + " 이 줄 왜 이래?",
+		TreePath: "README.md", Line: 3,
+	}
+	require.NotNil(t, notify_service.CodeCommentListener)
+	notify_service.CodeCommentListener(ctx, pr, codeComment, []*user_model.User{agentUser})
+
+	messages, err = ListMessages(ctx, sessions[0].ID, 10)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	assert.Contains(t, messages[0].Content, "review comment")
+	assert.Contains(t, messages[0].Content, "README.md line 3")
+	assert.Contains(t, messages[0].Content, "이 줄 왜 이래?")
+}

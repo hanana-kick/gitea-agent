@@ -1,0 +1,10 @@
+{{/* Input modalities beyond text: the model list is for chat, so text is implied. */}}
+{{range .}}
+	{{if ne . "text"}}
+		{{if eq . "image"}}<span class="tw-text-text-light tw-ml-2" data-tooltip-content="{{ctx.Locale.Tr "agent.input_image"}}">{{svg "octicon-image" 14}}</span>
+		{{else if eq . "video"}}<span class="tw-text-text-light tw-ml-2" data-tooltip-content="{{ctx.Locale.Tr "agent.input_video"}}">{{svg "octicon-device-camera-video" 14}}</span>
+		{{else if eq . "audio"}}<span class="tw-text-text-light tw-ml-2" data-tooltip-content="{{ctx.Locale.Tr "agent.input_audio"}}">{{svg "octicon-unmute" 14}}</span>
+		{{else if eq . "file"}}<span class="tw-text-text-light tw-ml-2" data-tooltip-content="{{ctx.Locale.Tr "agent.input_file"}}">{{svg "octicon-file-media" 14}}</span>
+		{{else}}<span class="ui basic small label tw-ml-2">{{.}}</span>{{end}}
+	{{end}}
+{{end}}

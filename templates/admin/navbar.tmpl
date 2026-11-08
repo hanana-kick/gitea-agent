@@ -90,6 +90,29 @@
 			</div>
 		</details>
 		{{end}}
+		<details class="item" {{if or .PageIsAgentProviders .PageIsAgentModelGroups .PageIsAgentModelRoles .PageIsAgentTools .PageIsAgentSkills}}open{{end}}>
+			<summary>{{ctx.Locale.Tr "admin.agent_providers"}}</summary>
+			<div class="menu">
+				<a class="{{if .PageIsAgentProviders}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/providers">
+					{{ctx.Locale.Tr "agent.providers_title"}}
+				</a>
+				<a class="{{if .PageIsAgentAPIKeys}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/keys">
+					{{ctx.Locale.Tr "agent.api_keys_title"}}
+				</a>
+				<a class="{{if .PageIsAgentModelGroups}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/groups">
+					{{ctx.Locale.Tr "agent.groups_title"}}
+				</a>
+				<a class="{{if .PageIsAgentModelRoles}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/roles">
+					{{ctx.Locale.Tr "agent.roles_title"}}
+				</a>
+				<a class="{{if .PageIsAgentTools}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/tools">
+					{{ctx.Locale.Tr "agent.tools_title"}}
+				</a>
+				<a class="{{if .PageIsAgentSkills}}active {{end}}item" href="{{AppSubUrl}}/-/admin/agent/skills">
+					{{ctx.Locale.Tr "agent.skills_title"}}
+				</a>
+			</div>
+		</details>
 		<details class="item" {{if or .PageIsAdminConfig}}open{{end}}>
 			<summary>{{ctx.Locale.Tr "admin.config"}}</summary>
 			<div class="menu">

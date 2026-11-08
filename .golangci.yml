@@ -36,6 +36,10 @@ linters:
     depguard:
       rules:
         main:
+          files:
+            # the agent's LLM client talks to streaming provider payloads with a token walk
+            # the shared handler does not expose; its tests pin that wire format
+            - '!**/services/agent/llm/**'
           deny:
             - pkg: encoding/json
               desc: use gitea's modules/json instead of encoding/json

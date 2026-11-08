@@ -434,6 +434,27 @@ func prepareMigrationTasks() []*migration {
 		// HERE: 2 migrations from 29 are added since they don't change database structure
 		newMigration(356, "Add index on action_run commit_sha", v29.AddActionRunCommitSHAIndex),
 		newMigration(357, "Normalize legacy team authorize values", v29.NormalizeLegacyTeamAuthorize),
+		newMigration(358, "Add agent_provider table for BYOK LLM provider keys", v28.AddAgentProviderTable),
+		newMigration(359, "Add agent_provider custom headers column", v28.AddAgentProviderHeadersColumn),
+		newMigration(360, "Add agent_model_group tables", v28.AddAgentModelGroupTables),
+		newMigration(361, "Add agent conversation and message tables", v28.AddAgentConversationTables),
+		newMigration(362, "Add agent run table and session model binding", v28.AddAgentRunTable),
+		newMigration(363, "Move provider credentials into agent_api_key", v28.AddAgentAPIKeyTable),
+		newMigration(364, "Add agent session icon and title state", v28.AddAgentConversationTitleAndIcon),
+		newMigration(365, "Add agent conversation folders", v28.AddAgentConversationFolders),
+		newMigration(366, "Add agent attachments", v28.AddAgentAttachments),
+		newMigration(367, "Add agent session summary", v28.AddAgentConversationSummary),
+		newMigration(368, "Add agent model roles", v28.AddAgentModelRole),
+		newMigration(369, "Add agent tool permissions", v28.AddAgentToolPermission),
+		newMigration(370, "Add agent conversation owner", v28.AddAgentConversationOwner),
+		newMigration(371, "Add agent message edited", v28.AddAgentMessageEdited),
+		newMigration(372, "Add agent run user", v28.AddAgentRunUser),
+		newMigration(373, "Add agent tool approval", v28.AddAgentToolApproval),
+		newMigration(374, "Add agent skills", v28.AddAgentSkill),
+		newMigration(375, "Add agent message reasoning", v28.AddAgentMessageReasoning),
+		newMigration(376, "Add agent run status comment", v28.AddAgentRunStatusComment),
+		newMigration(377, "Add agent tool approval result", v28.AddAgentToolApprovalResult),
+		newMigration(378, "Drop the run columns the agent tool approval table was given", v28.DropAgentToolApprovalRunColumns),
 	}
 	return preparedMigrations
 }
