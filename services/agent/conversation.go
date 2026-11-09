@@ -111,7 +111,7 @@ func ListConversations(ctx context.Context, doer *user_model.User) (*Conversatio
 	}
 	list.Servers = root
 
-	sessions, err := findConversations(ctx, agent_model.ConversationKindRepository, doer.ID)
+	sessions, err := findRepositoryConversations(ctx, doer)
 	if err != nil {
 		return nil, err
 	}
@@ -139,13 +139,28 @@ func ListConversations(ctx context.Context, doer *user_model.User) (*Conversatio
 }
 
 // findConversations lists the sessions of one owner; ownerID 0 is the instance-wide set.
-func findConversations(ctx context.Context, kind string, ownerID int64) ([]*agent_model.Conversation, error) {
+func findConversations(ctx context.Context, kind string, ownerIDs ...int64) ([]*agent_model.Conversation, error) {
 	sessions := make([]*agent_model.Conversation, 0, 8)
+	if len(ownerIDs) == 0 {
+		return sessions, nil
+	}
 	err := db.GetEngine(ctx).
-		Where("kind = ? AND owner_id = ?", kind, ownerID).
+		Where("kind = ?", kind).In("owner_id", ownerIDs).
 		OrderBy("updated_unix DESC").
 		Find(&sessions)
 	return sessions, err
+}
+
+// findRepositoryConversations returns the sessions of every repository the doer may write: their
+// own, and the one the agent keeps for a repository, which the mentions in its threads are
+// answered in. A session the agent owns is the repository's, not a reader's, so it is shown to
+// the readers who may work on it.
+func findRepositoryConversations(ctx context.Context, doer *user_model.User) ([]*agent_model.Conversation, error) {
+	owners := []int64{doer.ID}
+	if agent := UserOf(ctx); agent != nil && agent.ID != doer.ID {
+		owners = append(owners, agent.ID)
+	}
+	return findConversations(ctx, agent_model.ConversationKindRepository, owners...)
 }
 
 // EnsureResidentConversation returns the instance-wide session, creating it when absent.

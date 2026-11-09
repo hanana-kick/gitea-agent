@@ -15,6 +15,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unittest"
 	user_model "gitea.dev/models/user"
+	"gitea.dev/modules/setting"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -168,6 +169,53 @@ func TestDeletingASessionTakesTheRunsCallsAndFilesItHolds(t *testing.T) {
 	count, err = db.GetEngine(ctx).Where("conversation_id = ?", neighbour.ID).Count(&agent_model.Run{})
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, count)
+}
+
+// The session the agent keeps for a repository is the repository's: a mention in its threads is
+// answered in it, so every reader who may write the repository has to see it. A reader who may
+// not write it does not, and a session one person started stays their own.
+func TestConversationsOfARepositoryShowTheOneTheAgentOwns(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	writer := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	stranger := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 4})
+	agent := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 5})
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	defer func(previous string) { setting.Agent.Username = previous }(setting.Agent.Username)
+	setting.Agent.Username = agent.Name
+
+	// the agent's session for the repository, and one the writer started of their own
+	shared, err := CreateConversation(ctx, agent_model.ConversationKindRepository, agent.ID, repo.ID, repo.FullName())
+	require.NoError(t, err)
+	private, err := CreateConversation(ctx, agent_model.ConversationKindRepository, writer.ID, repo.ID, "mine")
+	require.NoError(t, err)
+	// and a server session of the agent, which is the operator's and not a repository's
+	server, err := CreateConversation(ctx, agent_model.ConversationKindServer, agent.ID, 0, "server")
+	require.NoError(t, err)
+
+	listed, err := ListConversations(ctx, writer)
+	require.NoError(t, err)
+	ids := make([]int64, 0, len(listed.Repositories))
+	for _, entry := range listed.Repositories {
+		ids = append(ids, entry.Session.ID)
+	}
+	assert.Contains(t, ids, shared.ID, "the repository's own session is not shown to a reader who may write it")
+	assert.Contains(t, ids, private.ID, "a reader's own session of the repository is not shown to them")
+
+	other, err := ListConversations(ctx, stranger)
+	require.NoError(t, err)
+	otherIDs := make([]int64, 0, len(other.Repositories))
+	for _, entry := range other.Repositories {
+		otherIDs = append(otherIDs, entry.Session.ID)
+	}
+	assert.NotContains(t, otherIDs, shared.ID, "a reader who may not write the repository was shown its session")
+	assert.NotContains(t, otherIDs, private.ID)
+	assert.NotContains(t, otherIDs, server.ID, "a server session is the operator's")
+
+	// the repository keeps one session that mentions are answered in, whoever names the agent
+	again, err := repositorySessionOf(ctx, agent, repo)
+	require.NoError(t, err)
+	assert.Equal(t, shared.ID, again.ID, "a second mention started another session for the repository")
 }
 
 // A title is required and capped at 100 runes, counted as runes so a multi-byte one is not cut
