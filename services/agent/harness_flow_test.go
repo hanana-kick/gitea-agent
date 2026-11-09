@@ -20,6 +20,7 @@ import (
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitrepo"
 	"gitea.dev/modules/setting"
+	llm "gitea.dev/services/agent/llm"
 	agent_tools "gitea.dev/services/agent/tools"
 	notify_service "gitea.dev/services/notify"
 
@@ -84,6 +85,24 @@ func TestHarnessReadsACallTheModelWroteAsText(t *testing.T) {
 		assert.NotContains(t, message.Content, "<tool_call>", "a stored message carries the call format")
 		assert.NotContains(t, message.Content, "gitea_create_branch>")
 	}
+}
+
+// A member that opens a stream and sends nothing is a member that is not answering: the run has
+// to fail saying so, so the router falls over and the reader is not left with a session that
+// waits. Read as a cancellation, it looked like the reader had stopped it.
+func TestHarnessFailsARunWhoseMemberStaysSilent(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	restore := llm.SetStreamLimitsForTest(200*time.Millisecond, 400*time.Millisecond, 20*time.Millisecond)
+	defer restore()
+
+	model := newScriptedModel(t, "", "", "never reached")
+	model.silent = true
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindServer, 0)
+
+	run := runTurn(t, conversation, user, "hello there")
+	assert.Equal(t, agent_model.RunStatusFailed, run.Status, "a silent member ended the run as %q", run.Status)
+	assert.Contains(t, run.Error, "sent nothing", "the run does not say why it failed")
+	assert.Contains(t, run.Error, "scripted", "the run does not name the member it could not read")
 }
 
 // A comment that names the agent is answered where it was written: the run is told what it was

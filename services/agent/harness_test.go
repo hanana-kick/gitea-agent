@@ -37,6 +37,8 @@ type scriptedModel struct {
 	// textCall is a call the model writes into its answer instead of returning it as one, the
 	// way a gateway that does not carry calls leaves it
 	textCall string
+	// silent opens the stream and sends nothing, which is a member that is not answering
+	silent bool
 
 	// chunks are raw stream chunks, for the shapes a test has to write itself: a call split
 	// across chunks, two calls at once, a call with no id. alwaysCall keeps calling after it
@@ -91,6 +93,16 @@ func (m *scriptedModel) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	m.mu.Unlock()
+
+	if m.silent {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		time.Sleep(3 * time.Second) // the caller gives up on its own terms
+		return
+	}
 
 	// the naming call carries no tools and is none of this script's business
 	if len(body.Tools) == 0 {

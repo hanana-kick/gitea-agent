@@ -124,3 +124,5 @@ Makefile.local
 # tool indexes kept beside the checkout
 .codegraph/
 graphify-out/
+# python bytecode the scripts leave behind
+__pycache__/

@@ -330,15 +330,56 @@ func cleanModels(models []ModelInfo) []ModelInfo {
 	return out
 }
 
-const (
-	// streamIdleTimeout is how long a stream may stay silent before it counts as dead.
+var (
+	// streamStartTimeout is how long a stream may take to send its first piece. A provider that
+	// answers at all starts the stream at once, even when the model then thinks for a while, so a
+	// stream that never starts is a dead member: falling over to the next one sooner is the
+	// difference between a session that waits and a session that answers.
+	streamStartTimeout = 60 * time.Second
+	// streamIdleTimeout is how long a stream that started may stay silent before it counts as dead.
 	streamIdleTimeout = 2 * time.Minute
 	streamIdleCheck   = 5 * time.Second
 )
 
+// SetStreamLimitsForTest shortens how long a stream may stay silent, so a spec does not have to
+// wait a minute for a member that never answers. It returns the call that puts them back.
+func SetStreamLimitsForTest(start, idle, check time.Duration) (restore func()) {
+	startBefore, idleBefore, checkBefore := streamStartTimeout, streamIdleTimeout, streamIdleCheck
+	streamStartTimeout, streamIdleTimeout, streamIdleCheck = start, idle, check
+	return func() {
+		streamStartTimeout, streamIdleTimeout, streamIdleCheck = startBefore, idleBefore, checkBefore
+	}
+}
+
+// ErrStreamSilent is returned when a stream sent nothing for longer than it may: the member it
+// came from is not answering, which is a failure to fall over from, not a cancellation.
+type ErrStreamSilent struct {
+	Model string
+	Limit time.Duration
+	First bool // nothing arrived at all, rather than a gap between pieces
+}
+
+func (err ErrStreamSilent) Error() string {
+	limit := err.Limit.Round(100 * time.Millisecond).String()
+	who := "the model"
+	if err.Model != "" {
+		who = err.Model
+	}
+	if err.First {
+		return who + " sent nothing in " + limit + ", so it is not answering"
+	}
+	return who + " sent nothing for " + limit + ", so it is not answering"
+}
+
+// Is reports whether target is an ErrStreamSilent.
+func (err ErrStreamSilent) Is(target error) bool {
+	_, ok := target.(ErrStreamSilent)
+	return ok
+}
+
 // DoChatStream sends a streaming chat request and calls onDelta for every piece it reads.
 // The returned response carries the assembled answer.
-func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header http.Header, req ChatRequest, onDelta OnDelta) (ChatResponse, error) {
+func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header http.Header, req ChatRequest, onDelta OnDelta) (result ChatResponse, err error) {
 	req.Stream = true
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -357,6 +398,8 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 	defer cancelStream()
 	var idleMu sync.Mutex
 	lastPiece := time.Now()
+	started := false
+	var silentCause error
 	watchdogDone := make(chan struct{})
 	defer close(watchdogDone)
 	go func() {
@@ -369,8 +412,18 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 			case <-ticker.C:
 				idleMu.Lock()
 				idle := time.Since(lastPiece)
+				opened := started
 				idleMu.Unlock()
-				if idle > streamIdleTimeout {
+				limit := streamIdleTimeout
+				if !opened {
+					limit = streamStartTimeout
+				}
+				if idle > limit {
+					idleMu.Lock()
+					// the reason is kept so the caller learns why the stream was closed, instead
+					// of reading a member that never answered as a run the user stopped
+					silentCause = ErrStreamSilent{Model: req.Model, Limit: limit, First: !opened}
+					idleMu.Unlock()
 					cancelStream()
 					return
 				}
@@ -384,6 +437,18 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 		return ChatResponse{}, err
 	}
 	defer resp.Body.Close()
+
+	// the watchdog closes a silent stream, which the reads below then fail on: the reason is
+	// reported instead, so a member that never answered is a failure the router falls over from
+	// and not a run the reader is told they stopped
+	defer func() {
+		idleMu.Lock()
+		cause := silentCause
+		idleMu.Unlock()
+		if err != nil && cause != nil {
+			result, err = ChatResponse{}, cause
+		}
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
@@ -456,6 +521,7 @@ func DoChatStream(ctx context.Context, httpClient HTTPClient, url string, header
 		}
 		idleMu.Lock()
 		lastPiece = time.Now()
+		started = true
 		idleMu.Unlock()
 
 		// some providers do not send [DONE], the finish reason is the end of the answer
