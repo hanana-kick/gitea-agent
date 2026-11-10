@@ -17,10 +17,25 @@ const (
 	ModelRoleServer     = "server"
 	ModelRoleRepository = "repository"
 	ModelRoleSummary    = "summary" // titles and recent work summaries
+	ModelRoleReview     = "review"  // the autopilot review of a call a person would have decided
 )
 
 // ModelRoleOptions lists every role in display order.
-var ModelRoleOptions = []string{ModelRoleResident, ModelRoleServer, ModelRoleRepository, ModelRoleSummary}
+var ModelRoleOptions = []string{ModelRoleResident, ModelRoleServer, ModelRoleRepository, ModelRoleSummary, ModelRoleReview}
+
+// ModelRoleLightRoles are the roles that carry the small jobs: naming a session, reviewing a call
+// the agent makes on its own. They are answered in seconds from a short prompt, so they are where
+// the cheaper model of an instance belongs.
+var ModelRoleLightRoles = []string{ModelRoleSummary, ModelRoleReview}
+
+// ModelRoleWorkRoles are the roles that carry the work itself, where the strongest model an
+// instance pays for belongs.
+var ModelRoleWorkRoles = []string{ModelRoleResident, ModelRoleServer, ModelRoleRepository}
+
+// IsLightModelRole reports whether a role carries a small job rather than the work itself.
+func IsLightModelRole(role string) bool {
+	return slices.Contains(ModelRoleLightRoles, role)
+}
 
 // IsValidModelRole reports whether role is a known model role.
 func IsValidModelRole(role string) bool {

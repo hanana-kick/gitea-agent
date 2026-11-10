@@ -301,6 +301,14 @@ test.describe.serial('agent', () => {
     await page.goto('/-/admin/agent/skills');
     await expect(page.locator('button.show-modal[data-modal="#agent-skill-modal"]')).toBeVisible();
 
+    // the roles page offers the tiers an instance pays for, and the ways to split the roles
+    await page.goto('/-/admin/agent/roles');
+    // the selects are the native fields Fomantic replaces, so they are present rather than visible
+    await expect(page.locator('select[name="cheap"]')).toHaveCount(1);
+    await expect(page.locator('select[name="strong"]')).toHaveCount(1);
+    await expect(page.locator('button[name="preset"][value="balanced"]')).toBeVisible();
+    await expect(page.locator('select[name="role_review"]')).toHaveCount(1);
+
     await page.goto('/-/admin/agent/runs');
     const row = page.locator('.agent-runs tbody tr[data-run-id]').first();
     await expect(row).toBeVisible();

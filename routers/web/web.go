@@ -952,6 +952,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			m.Post("/groups/{id}/test", agent_web.ModelGroupTest)
 
 			m.Combo("/roles").Get(agent_web.ModelRoles).Post(agent_web.ModelRolesPost)
+			m.Post("/roles/preset", agent_web.ModelRolesPreset)
 			m.Combo("/tools").Get(agent_web.Tools).Post(agent_web.ToolsPost)
 			m.Get("/runs", agent_web.Runs)
 			m.Get("/runs/events", agent_web.RunsEvents)

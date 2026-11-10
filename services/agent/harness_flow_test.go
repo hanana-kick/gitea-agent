@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -141,6 +142,35 @@ func TestHarnessAsksAQuestionAndUsesTheAnswer(t *testing.T) {
 	assert.Contains(t, askedLine, "Which branch should this land in?")
 	assert.Contains(t, askedLine, "main; develop", "the answers offered are part of what was asked")
 	assert.NotEmpty(t, answerLine, "the session does not show what the reader answered")
+}
+
+// The autopilot review is a small job, so it answers from its own role when an instance has set
+// one: that is where a cheap model belongs, and the work itself keeps the strong one.
+func TestHarnessReviewsWithItsOwnRole(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"review-role-branch","from_branch":"main","repository":"user2/repo1"}`, "the branch is there")
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	// a second model, offered only to the review role
+	review := newScriptedModel(t, "", "", "")
+	review.review = `{"allow": true, "reason": "the request asks for a branch"}`
+	owner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	key, err := CreateAPIKey(ctx, owner.ID, "review-key", "sk-review")
+	require.NoError(t, err)
+	provider := &agent_model.Provider{UserID: owner.ID, Name: "review", Provider: "openai", BaseURL: review.url, Model: "review", APIKeyID: key.ID}
+	require.NoError(t, db.Insert(ctx, provider))
+	require.NoError(t, SetModelRoleRef(ctx, agent_model.ModelRoleReview, fmt.Sprintf("provider:%d/review", provider.ID)))
+
+	require.NoError(t, SetConversationAutopilot(ctx, conversation, true))
+	require.NoError(t, agent_tools.SetMode(ctx, "gitea_create_branch", agent_tools.PermissionManual, true))
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	require.NoError(t, os.RemoveAll(filepath.Join(gitrepo.RepoLocalPath(repo), "hooks")))
+
+	run := runTurn(t, conversation, user, "put this on a branch of its own")
+	assert.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	assert.NotEmpty(t, review.requestsMade(), "the review role was not asked to review the call")
+	assert.Contains(t, toolRecord(t, conversation.ID, "gitea_create_branch"), "the request asks for a branch")
 }
 
 // Autopilot decides for a run instead of asking a reader: the call is reviewed by the model, it

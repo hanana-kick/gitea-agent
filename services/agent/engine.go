@@ -1066,8 +1066,18 @@ func (e *Engine) autopilotCall(ctx context.Context, conversation *agent_model.Co
 // reviewCall asks the run's own model whether a call should go ahead, and why. A review that
 // cannot be read is a refusal: a call nothing vouched for does not run.
 func (e *Engine) reviewCall(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, call llm.ToolCall) (bool, string) {
-	ref, err := ModelRoleRef(ctx, ModelRoleForKind(conversation.Kind))
-	if err != nil || ref == "" {
+	// a review is a small job, so it has a role of its own; an instance that has not set one
+	// reviews with the model the session itself answers with
+	ref, err := ModelRoleRef(ctx, agent_model.ModelRoleReview)
+	if err != nil {
+		return false, "the review role could not be read"
+	}
+	if ref == "" {
+		if ref, err = ModelRoleRef(ctx, ModelRoleForKind(conversation.Kind)); err != nil {
+			return false, "the review role could not be read"
+		}
+	}
+	if ref == "" {
 		return false, "no model is configured to review the call"
 	}
 	history, err := ListMessages(ctx, conversation.ID, 6)

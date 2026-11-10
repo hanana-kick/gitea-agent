@@ -5,7 +5,9 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
@@ -82,6 +84,53 @@ func ForgetModelRefs(ctx context.Context, patterns ...string) error {
 // modelRefPatternForProvider matches every role naming a model of one provider.
 func modelRefPatternForProvider(providerID int64) string {
 	return fmt.Sprintf("%s:%d/%%", modelRefProvider, providerID)
+}
+
+// RoleTiers are the two models an instance pays for: the cheap one that carries the small jobs,
+// and the strong one that carries the work.
+type RoleTiers struct {
+	Cheap  string
+	Strong string
+}
+
+// Preset names of the ways the roles are split between the two tiers.
+const (
+	// RolePresetEconomy answers everything with the cheap model.
+	RolePresetEconomy = "economy"
+	// RolePresetBalanced does the work with the strong model and the small jobs with the cheap.
+	RolePresetBalanced = "balanced"
+	// RolePresetQuality answers everything with the strong model.
+	RolePresetQuality = "quality"
+)
+
+// RolePresets lists every preset with the tier each role is answered from, so the page can show
+// what a preset would do before it is applied.
+var RolePresets = []string{RolePresetEconomy, RolePresetBalanced, RolePresetQuality}
+
+// AssignRoleTiers assigns every role a model: a preset splits the roles between the cheap model,
+// which answers the small jobs, and the strong one, which does the work.
+func AssignRoleTiers(ctx context.Context, preset string, tiers RoleTiers) error {
+	if !slices.Contains(RolePresets, preset) {
+		return fmt.Errorf("unknown preset %q", preset)
+	}
+	if tiers.Cheap == "" || tiers.Strong == "" {
+		return errors.New("both the cheap and the strong model are needed")
+	}
+	for _, role := range agent_model.ModelRoleOptions {
+		ref := tiers.Strong
+		switch preset {
+		case RolePresetEconomy:
+			ref = tiers.Cheap
+		case RolePresetBalanced:
+			if agent_model.IsLightModelRole(role) {
+				ref = tiers.Cheap
+			}
+		}
+		if err := SetModelRoleRef(ctx, role, ref); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ModelRoleForKind returns the role a session of the given kind answers with.
