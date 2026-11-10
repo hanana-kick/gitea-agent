@@ -307,7 +307,9 @@ func modelsFrom(ctx *context.Context, form providerForm) []agent_model.ProviderM
 
 	models := make([]agent_model.ProviderModel, 0, len(form.Selected)+1)
 	for _, id := range form.Selected {
-		models = append(models, agent_model.ProviderModel{ID: id, Name: known[id].Name, Inputs: known[id].Inputs})
+		// what the listing said about the model is part of the model: a decision model is picked
+		// for a decision role
+		models = append(models, agent_model.ProviderModel{ID: id, Name: known[id].Name, Inputs: known[id].Inputs, Decisions: known[id].Decisions})
 	}
 	models = append(models, agent_service.ParseModelLines(form.ManualRaw)...)
 	return agent_model.NormalizeModels(models)

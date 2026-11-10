@@ -11,6 +11,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	neturl "net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -278,11 +279,32 @@ type Client interface {
 	ChatStream(ctx context.Context, req ChatRequest, onDelta OnDelta) (ChatResponse, error)
 	// ListModels returns the models the provider exposes.
 	ListModels(ctx context.Context) ([]ModelInfo, error)
+	// ListModelsServing returns the models that serve one API path, for a gateway that fronts
+	// several kinds of model and lists them apart; the plain list holds the chat models.
+	ListModelsServing(ctx context.Context, endpoint string) ([]ModelInfo, error)
 }
 
 // DoListModels fetches and parses a model listing endpoint. Both the OpenAI
 // envelope ({"data": [...]}) and a bare array are accepted.
 func DoListModels(ctx context.Context, httpClient HTTPClient, url string, header http.Header) ([]ModelInfo, error) {
+	return doListModels(ctx, httpClient, url, header)
+}
+
+// DoListModelsServing fetches the models that serve one API path. A gateway may front several
+// kinds of model — one that answers a chat, one that answers typed decisions — and list each kind
+// apart; the endpoint is the API path the model serves.
+func DoListModelsServing(ctx context.Context, httpClient HTTPClient, url string, header http.Header, endpoint string) ([]ModelInfo, error) {
+	parsed, err := neturl.Parse(url)
+	if err != nil {
+		return nil, err
+	}
+	query := parsed.Query()
+	query.Set("endpoints", endpoint)
+	parsed.RawQuery = query.Encode()
+	return doListModels(ctx, httpClient, parsed.String(), header)
+}
+
+func doListModels(ctx context.Context, httpClient HTTPClient, url string, header http.Header) ([]ModelInfo, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

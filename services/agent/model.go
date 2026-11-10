@@ -25,6 +25,9 @@ const (
 type ModelOption struct {
 	Ref   string
 	Label string
+	// Decisions marks a model that answers the decisions API rather than a chat, which is what a
+	// decision role is meant to answer with.
+	Decisions bool
 }
 
 // ModelRefForGroup names a group as a session model.
@@ -83,8 +86,9 @@ func ModelOptions(ctx context.Context, limit int) ([]ModelOption, error) {
 	for _, provider := range providers {
 		for _, model := range provider.Models() {
 			options = append(options, ModelOption{
-				Ref:   ModelRefForProvider(provider.ID, model.ID),
-				Label: provider.Name + " / " + model.DisplayName(),
+				Ref:       ModelRefForProvider(provider.ID, model.ID),
+				Label:     provider.Name + " / " + model.DisplayName(),
+				Decisions: model.Decisions,
 			})
 		}
 	}

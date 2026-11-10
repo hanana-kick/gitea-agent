@@ -51,6 +51,12 @@ func ModelRoles(ctx *context.Context) {
 		ctx.ServerError("ModelOptions", err)
 		return
 	}
+	// what a model serves is the page's business to say: an instance picks a decision model here
+	for i := range options {
+		if options[i].Decisions {
+			options[i].Label += " · " + string(ctx.Tr("agent.model_serves_decisions"))
+		}
+	}
 	ctx.Data["Rows"] = rows
 	ctx.Data["ModelOptions"] = options
 	ctx.Data["Presets"] = agent_service.RolePresets

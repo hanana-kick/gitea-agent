@@ -3602,6 +3602,7 @@
   "agent.roles_preset_decision_same": "Same as the strong model",
   "agent.roles_preset_title": "Models and presets",
   "agent.roles_preset_unknown_model": "That model is not one this instance offers",
+  "agent.model_serves_decisions": "decisions",
   "agent.roles_none": "Not assigned",
   "agent.roles_saved": "Model roles saved.",
   "agent.roles_invalid": "The model for %s is not available.",

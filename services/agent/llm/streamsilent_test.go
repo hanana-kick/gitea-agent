@@ -40,3 +40,21 @@ func TestASilentStreamIsAFailureWithAReason(t *testing.T) {
 	require.ErrorAs(t, err, &reason)
 	assert.True(t, reason.First, "nothing arrived at all")
 }
+
+// A gateway may front several kinds of model and list each kind apart: the endpoint a model serves
+// is what the listing is filtered by.
+func TestListModelsServingAsksForTheEndpoint(t *testing.T) {
+	asked := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"parallel/decisions-fast:free","name":"Parallel: Decisions Fast (free)"}]}`))
+	}))
+	defer server.Close()
+
+	models, err := DoListModelsServing(context.Background(), server.Client(), server.URL+"/models", nil, "/api/alpha/decisions")
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+	assert.Equal(t, "parallel/decisions-fast:free", models[0].ID)
+	assert.Equal(t, "endpoints=%2Fapi%2Falpha%2Fdecisions", asked)
+}

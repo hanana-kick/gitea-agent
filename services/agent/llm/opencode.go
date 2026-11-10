@@ -5,6 +5,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"net/http"
 )
@@ -55,6 +56,12 @@ func (c *OpenCodeClient) authHeader() http.Header {
 }
 
 // ListModels returns the models the OpenCode gateway exposes.
+// ListModelsServing reports that this gateway lists its models in one list: it does not front
+// several kinds of model that are listed apart.
+func (c *OpenCodeClient) ListModelsServing(context.Context, string) ([]ModelInfo, error) {
+	return nil, errors.New("this provider does not list models by the API path they serve")
+}
+
 func (c *OpenCodeClient) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	return DoListModels(ctx, c.HTTPClient, c.ModelsURL, c.authHeader())
 }

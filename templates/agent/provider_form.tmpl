@@ -73,6 +73,7 @@
 							{{range .Catalog}}
 								<div class="ui checkbox" data-model="{{.DisplayName}} {{.ID}}">
 									<input type="checkbox" name="models" value="{{.ID}}" {{if $.Form.HasSelected .ID}}checked{{end}}>
+									{{if .Decisions}}<span class="ui basic label tw-ml-1">{{ctx.Locale.Tr "agent.model_serves_decisions"}}</span>{{end}}
 									<label>
 										<strong>{{.DisplayName}}</strong>
 										{{if ne .Name .ID}}<span class="tw-text-text-light tw-ml-2">{{.ID}}</span>{{end}}

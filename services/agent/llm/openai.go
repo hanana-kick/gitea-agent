@@ -53,6 +53,10 @@ func (c *OpenAIClient) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	return DoListModels(ctx, c.HTTPClient, c.ModelsURL, c.authHeader())
 }
 
+func (c *OpenAIClient) ListModelsServing(ctx context.Context, endpoint string) ([]ModelInfo, error) {
+	return DoListModelsServing(ctx, c.HTTPClient, c.ModelsURL, c.authHeader(), endpoint)
+}
+
 // Chat sends a chat completion request to an OpenAI-compatible endpoint.
 func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (ChatResponse, error) {
 	if req.Model == "" {

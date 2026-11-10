@@ -20,6 +20,9 @@ type ProviderModel struct {
 	Name string `json:"name,omitempty"`
 	// Inputs lists the input modalities the provider reported, when it reports them.
 	Inputs []string `json:"inputs,omitempty"`
+	// Decisions marks a model that answers the decisions API rather than a chat: a gateway that
+	// fronts both lists them apart, and what decides is what the decision role wants.
+	Decisions bool `json:"decisions,omitempty"`
 }
 
 // DisplayName returns the name to show, falling back to the identifier.
@@ -134,18 +137,35 @@ func (p *Provider) HeaderNames() []string {
 }
 
 // NormalizeModels trims identifiers, drops blanks and removes duplicates while keeping order.
+// firstNonEmpty returns the first value that says anything.
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func NormalizeModels(models []ProviderModel) []ProviderModel {
-	seen := map[string]bool{}
+	seen := map[string]int{}
 	out := make([]ProviderModel, 0, len(models))
 	for _, m := range models {
 		id := strings.TrimSpace(m.ID)
 		// a model id is one word: an entry with a space in it is a form that arrived joined, and
 		// keeping it would put a model in the list that no provider answers to
-		if id == "" || seen[id] || strings.ContainsAny(id, " \t") {
+		if id == "" || strings.ContainsAny(id, " \t") {
 			continue
 		}
-		seen[id] = true
-		out = append(out, ProviderModel{ID: id, Name: strings.TrimSpace(m.Name), Inputs: normalizeModalities(m.Inputs)})
+		if at, ok := seen[id]; ok {
+			// the same model may be reported by two listings: what either said about it stands
+			out[at].Name = firstNonEmpty(out[at].Name, strings.TrimSpace(m.Name))
+			out[at].Inputs = normalizeModalities(append(out[at].Inputs, m.Inputs...))
+			out[at].Decisions = out[at].Decisions || m.Decisions
+			continue
+		}
+		seen[id] = len(out)
+		out = append(out, ProviderModel{ID: id, Name: strings.TrimSpace(m.Name), Inputs: normalizeModalities(m.Inputs), Decisions: m.Decisions})
 	}
 	return out
 }
