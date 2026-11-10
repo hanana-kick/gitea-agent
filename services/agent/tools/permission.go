@@ -104,8 +104,13 @@ func Check(ctx context.Context, session Session, name string) (Tool, Decision, e
 // disabled tool is still reported, so the admin page can show what it will go back to.
 func ModeOf(ctx context.Context, tool string) (string, bool, error) {
 	defaultMode, defaultEnabled := PermissionLLM, true
-	if registered, ok := Find(tool); ok && Writes(registered) {
-		defaultMode, defaultEnabled = PermissionManual, false
+	if registered, ok := Find(tool); ok {
+		if setter, ok := registered.(ToolDefaultMode); ok {
+			// a tool that knows how it should be offered says so, whatever it writes
+			defaultMode = setter.DefaultMode()
+		} else if Writes(registered) {
+			defaultMode, defaultEnabled = PermissionManual, false
+		}
 	}
 	row := &agent_model.ToolPermission{}
 	has, err := db.GetEngine(ctx).Where("tool = ?", tool).Get(row)

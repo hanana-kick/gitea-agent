@@ -258,6 +258,18 @@ func CanUseRepository(ctx context.Context, doer *user_model.User, repo *repo_mod
 	return perm.CanWrite(unit_model.TypeCode), nil
 }
 
+// SetConversationAutopilot turns a session's own autopilot on or off: a session that decides for
+// itself asks no reader, and turns it off again when the work needs one.
+func SetConversationAutopilot(ctx context.Context, conversation *agent_model.Conversation, on bool) error {
+	if conversation.Autopilot == on {
+		return nil
+	}
+	conversation.Autopilot = on
+	_, err := db.GetEngine(ctx).ID(conversation.ID).Cols("autopilot", "updated_unix").
+		Update(&agent_model.Conversation{Autopilot: on, UpdatedUnix: timeutil.TimeStampNow()})
+	return err
+}
+
 // DeleteConversation removes a session and everything it holds: its transcript, the runs that
 // answered in it, the calls a reader answered and the files sent with it. The resident session
 // stays.

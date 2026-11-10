@@ -24,7 +24,8 @@ func TestApprovalOfACallAlreadyAnsweredIsRefused(t *testing.T) {
 	require.NoError(t, unittest.PrepareTestDatabase())
 	ctx := context.Background()
 
-	run := &agent_model.Run{ConversationID: 9001, UserID: 2, Status: agent_model.RunStatusWaiting}
+	reader := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	run := &agent_model.Run{ConversationID: 9001, UserID: reader.ID, Status: agent_model.RunStatusWaiting}
 	require.NoError(t, db.Insert(ctx, run))
 	answered := &agent_model.ToolApproval{
 		ConversationID: 9001, RunID: run.ID, Tool: "gitea_read_file", Arguments: `{"path":"README.md"}`,
@@ -32,7 +33,7 @@ func TestApprovalOfACallAlreadyAnsweredIsRefused(t *testing.T) {
 	}
 	require.NoError(t, db.Insert(ctx, answered))
 
-	err := ResolveApproval(ctx, 9001, answered.ID, 2, true)
+	err := ResolveApproval(ctx, 9001, answered.ID, reader, true)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrApprovalNotPending{})
 
@@ -49,7 +50,8 @@ func TestApprovalOfACallOfAnotherSessionIsRefused(t *testing.T) {
 	require.NoError(t, unittest.PrepareTestDatabase())
 	ctx := context.Background()
 
-	run := &agent_model.Run{ConversationID: 9002, UserID: 2, Status: agent_model.RunStatusWaiting}
+	reader := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	run := &agent_model.Run{ConversationID: 9002, UserID: reader.ID, Status: agent_model.RunStatusWaiting}
 	require.NoError(t, db.Insert(ctx, run))
 	approval := &agent_model.ToolApproval{
 		ConversationID: 9002, RunID: run.ID, Tool: "gitea_read_file", Arguments: "{}",
@@ -57,7 +59,7 @@ func TestApprovalOfACallOfAnotherSessionIsRefused(t *testing.T) {
 	}
 	require.NoError(t, db.Insert(ctx, approval))
 
-	err := ResolveApproval(ctx, 9003, approval.ID, 2, true)
+	err := ResolveApproval(ctx, 9003, approval.ID, reader, true)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrApprovalNotPending{})
 
@@ -85,7 +87,7 @@ func TestApprovalBySomeoneOtherThanTheRunsOwnerIsRefused(t *testing.T) {
 	}
 	require.NoError(t, db.Insert(ctx, approval))
 
-	err := ResolveApproval(ctx, 9004, approval.ID, other.ID, true)
+	err := ResolveApproval(ctx, 9004, approval.ID, other, true)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrApprovalNotOwner{})
 
@@ -118,7 +120,7 @@ func TestApprovalOfARunWithNoOwnerAcceptsAnyDecider(t *testing.T) {
 	}
 	require.NoError(t, db.Insert(ctx, approval))
 
-	require.NoError(t, ResolveApproval(ctx, 9005, approval.ID, decider.ID, false))
+	require.NoError(t, ResolveApproval(ctx, 9005, approval.ID, decider, false))
 
 	stored := &agent_model.ToolApproval{}
 	has, err := db.GetEngine(ctx).ID(approval.ID).Get(stored)
@@ -157,7 +159,7 @@ func TestApprovalOfAToolSwitchedOffAfterTheCallDoesNotRunIt(t *testing.T) {
 	require.NotNil(t, approval, "the call was never put to its reader")
 
 	require.NoError(t, agent_tools.SetMode(ctx, "gitea_read_file", agent_tools.PermissionLLM, false))
-	require.NoError(t, ResolveApproval(ctx, conversation.ID, approval.ID, user.ID, true))
+	require.NoError(t, ResolveApproval(ctx, conversation.ID, approval.ID, user, true))
 
 	deadline = time.Now().Add(20 * time.Second)
 	var latest *agent_model.Run

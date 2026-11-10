@@ -39,6 +39,9 @@ type scriptedModel struct {
 	textCall string
 	// silent opens the stream and sends nothing, which is a member that is not answering
 	silent bool
+	// review is what the model answers the autopilot review with, whose prompt is recognized by
+	// the question it asks; empty means the review is answered like any other request
+	review string
 
 	// chunks are raw stream chunks, for the shapes a test has to write itself: a call split
 	// across chunks, two calls at once, a call with no id. alwaysCall keeps calling after it
@@ -102,6 +105,16 @@ func (m *scriptedModel) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		time.Sleep(3 * time.Second) // the caller gives up on its own terms
 		return
+	}
+
+	// the review an autopilot run asks itself is answered on its own terms
+	if m.review != "" {
+		for _, message := range body.Messages {
+			if message.Role == "system" && strings.Contains(message.Content, "nobody is available now") {
+				writeAnswer(w, body.Stream, m.review)
+				return
+			}
+		}
 	}
 
 	// the naming call carries no tools and is none of this script's business
@@ -273,6 +286,23 @@ func runTurn(t *testing.T, conversation *agent_model.Conversation, user *user_mo
 }
 
 // messagesOf lists a session's transcript.
+// waitForRunToEnd waits for one run to leave the active states, wherever it was started from.
+func waitForRunToEnd(t *testing.T, conversationID, runID int64) *agent_model.Run {
+	t.Helper()
+	ctx := context.Background()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		run, exist, err := db.GetByID[agent_model.Run](ctx, runID)
+		require.NoError(t, err)
+		if exist && !agent_model.IsRunActive(run.Status) {
+			return run
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("run %d of session %d never left the active states", runID, conversationID)
+	return nil
+}
+
 func messagesOf(t *testing.T, conversationID int64) []*agent_model.Message {
 	t.Helper()
 	list, err := ListMessages(context.Background(), conversationID, 50)

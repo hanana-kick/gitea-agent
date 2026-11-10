@@ -77,6 +77,14 @@ type MigrateRepoForm struct {
 }
 
 // RepoSettingForm form for changing repository settings
+// AnswerRequestForm is what a reader wrote back to a question the agent waits on.
+type AnswerRequestForm struct {
+	middleware.FormDefaultValidator
+	Answer string `binding:"Required"`
+	// Back is the page the reader answered from, so they stay where they were.
+	Back string
+}
+
 // PagesForm is how a repository publishes its pages.
 type PagesForm struct {
 	middleware.FormDefaultValidator

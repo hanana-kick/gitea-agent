@@ -455,6 +455,8 @@ func prepareMigrationTasks() []*migration {
 		newMigration(376, "Add agent run status comment", v28.AddAgentRunStatusComment),
 		newMigration(377, "Add agent tool approval result", v28.AddAgentToolApprovalResult),
 		newMigration(378, "Drop the run columns the agent tool approval table was given", v28.DropAgentToolApprovalRunColumns),
+		newMigration(379, "Add agent request kind and answer", v28.AddAgentRequestKindAndAnswer),
+		newMigration(380, "Add agent conversation autopilot", v28.AddAgentConversationAutopilot),
 	}
 	return preparedMigrations
 }

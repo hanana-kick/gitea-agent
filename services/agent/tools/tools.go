@@ -109,6 +109,12 @@ type Conditional interface {
 	Offered(ctx context.Context, session Session) (bool, error)
 }
 
+// ToolDefaultMode is a tool that names the permission mode it is offered with when an admin has
+// not decided one: asking a reader, for instance, is a decision only that reader can make.
+type ToolDefaultMode interface {
+	DefaultMode() string
+}
+
 // Permission modes of a tool.
 const (
 	// PermissionLLM lets the model decide when to call (default).

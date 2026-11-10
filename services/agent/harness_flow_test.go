@@ -87,6 +87,98 @@ func TestHarnessReadsACallTheModelWroteAsText(t *testing.T) {
 	}
 }
 
+// A run that can not go on without an answer asks for one: the question waits in the session, and
+// what the reader writes back is what the call returned.
+func TestHarnessAsksAQuestionAndUsesTheAnswer(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	model := newScriptedModel(t, agent_tools.AskUserToolName, `{"question":"Which branch should this land in?","options":"main|develop"}`, "landing it in develop")
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	_, run, err := SubmitUserMessage(ctx, conversation, user.ID, "land the change somewhere")
+	require.NoError(t, err)
+
+	// the question waits for its reader instead of being answered by nobody
+	var question *agent_model.ToolApproval
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) && question == nil {
+		pending, err := PendingApprovals(ctx, conversation.ID)
+		require.NoError(t, err)
+		if len(pending) > 0 {
+			question = pending[0]
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	require.NotNil(t, question, "the question was never put to its reader")
+	assert.Equal(t, agent_model.ToolApprovalKindQuestion, question.Kind, "a question is asked as one")
+	assert.Contains(t, question.Arguments, "Which branch")
+
+	require.NoError(t, AnswerQuestion(ctx, conversation.ID, question.ID, user, "develop"))
+	finished := waitForRunToEnd(t, conversation.ID, run.ID)
+	assert.Equal(t, agent_model.RunStatusSucceeded, finished.Status, finished.Error)
+
+	// the answer reached the model as what the call returned, and is what it answered from
+	asked := model.requestsMade()
+	require.GreaterOrEqual(t, len(asked), 2)
+	last := asked[len(asked)-1].Messages
+	replayed := last[len(last)-1]
+	assert.Equal(t, "tool", replayed.Role)
+	assert.Contains(t, replayed.Content, "develop")
+	final := messagesOf(t, conversation.ID)
+	assert.Equal(t, "landing it in develop", final[len(final)-1].Content)
+}
+
+// Autopilot decides for a run instead of asking a reader: the call is reviewed by the model, it
+// runs when the review says so, and what was decided stays in the transcript.
+func TestHarnessAutopilotAllowsAManualCallWithoutAReader(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"autopilot-branch","from_branch":"main","repository":"user2/repo1"}`, "the branch is there")
+	model.review = `{"allow": true, "reason": "the request asks for a branch of its own"}`
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+	require.NoError(t, SetConversationAutopilot(ctx, conversation, true))
+	require.NoError(t, agent_tools.SetMode(ctx, "gitea_create_branch", agent_tools.PermissionManual, true))
+	// the fixture hooks exec the built binary with a config a unit test never has
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	require.NoError(t, os.RemoveAll(filepath.Join(gitrepo.RepoLocalPath(repo), "hooks")))
+
+	run := runTurn(t, conversation, user, "put this on a branch of its own")
+	assert.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	pending, err := PendingApprovals(ctx, conversation.ID)
+	require.NoError(t, err)
+	assert.Empty(t, pending, "autopilot left a call waiting for a reader")
+
+	record := toolRecord(t, conversation.ID, "gitea_create_branch")
+	require.NotEmpty(t, record, "the call autopilot allowed did not run")
+	assert.Contains(t, record, "autopilot allowed this call", "the transcript does not say who decided")
+	assert.Contains(t, record, "the request asks for a branch of its own")
+}
+
+// A review that does not vouch for the call is a refusal: nothing runs on a decision nobody made.
+func TestHarnessAutopilotRefusesWhatItsReviewRefuses(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"autopilot-branch","from_branch":"main","repository":"user2/repo1"}`, "I did not make the branch")
+	model.review = `{"allow": false, "reason": "the request does not need a branch"}`
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+	require.NoError(t, SetConversationAutopilot(ctx, conversation, true))
+	require.NoError(t, agent_tools.SetMode(ctx, "gitea_create_branch", agent_tools.PermissionManual, true))
+	// the fixture hooks exec the built binary with a config a unit test never has
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	require.NoError(t, os.RemoveAll(filepath.Join(gitrepo.RepoLocalPath(repo), "hooks")))
+
+	run := runTurn(t, conversation, user, "put this on a branch of its own")
+	assert.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	refused := toolRecord(t, conversation.ID, "gitea_create_branch")
+	assert.Contains(t, refused, "Autopilot refused this call", "the refusal is not in the transcript")
+	assert.NotContains(t, refused, "created from", "a call autopilot refused ran anyway")
+	final := messagesOf(t, conversation.ID)
+	require.NotEmpty(t, final)
+	answered := model.requestsMade()
+	last := answered[len(answered)-1].Messages
+	assert.Contains(t, last[len(last)-1].Content, "Autopilot refused this call: the request does not need a branch")
+}
+
 // A member that opens a stream and sends nothing is a member that is not answering: the run has
 // to fail saying so, so the router falls over and the reader is not left with a session that
 // waits. Read as a cancellation, it looked like the reader had stopped it.
@@ -211,7 +303,7 @@ func TestHarnessApprovalLetsTheChangeLand(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, agent_model.RunStatusWaiting, latest.Status, "the run was put down, not held")
 
-	require.NoError(t, ResolveApproval(ctx, conversation.ID, approval.ID, user.ID, true))
+	require.NoError(t, ResolveApproval(ctx, conversation.ID, approval.ID, user, true))
 	deadline = time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		latest, err = LatestRun(ctx, conversation.ID)

@@ -584,6 +584,8 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		m.Post("/{id}/cancel", agent_web.ChatRunCancel)
 		m.Post("/{id}/approvals/{aid}/allow", agent_web.ChatApprovalAllow)
 		m.Post("/{id}/approvals/{aid}/refuse", agent_web.ChatApprovalRefuse)
+		m.Post("/{id}/approvals/{aid}/answer", web.Bind[*forms.AnswerRequestForm](), agent_web.ChatApprovalAnswer)
+		m.Post("/{id}/autopilot", agent_web.ChatAutopilot)
 		m.Post("/{id}/delete", agent_web.ChatSessionDelete)
 
 		m.Post("/folders/new", agent_web.ChatFolderCreate)

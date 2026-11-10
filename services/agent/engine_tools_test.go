@@ -150,7 +150,7 @@ func TestEngineWaitsForTheApprovalOfAManualTool(t *testing.T) {
 	require.Equal(t, agent_model.RunStatusWaiting, latest.Status, "the run was put down, not held")
 	assert.Empty(t, approval.Result, "nothing ran yet")
 
-	require.NoError(t, ResolveApproval(ctx, conversation.ID, approval.ID, user.ID, true))
+	require.NoError(t, ResolveApproval(ctx, conversation.ID, approval.ID, user, true))
 	for time.Now().Before(deadline) {
 		latest, err = LatestRun(ctx, conversation.ID)
 		require.NoError(t, err)

@@ -27,6 +27,10 @@ var Agent struct {
 	// PriorityKinds names the session kinds that go ahead of the queue, so the instance keeps
 	// looking after itself while readers wait. Empty uses the default.
 	PriorityKinds []string
+	// Autopilot lets a run decide for itself instead of asking a reader: a call it would put to
+	// someone is reviewed by the model and goes on, and a question is answered with what the run
+	// already knows. A session can turn it on for itself even where the instance leaves it off.
+	Autopilot bool
 }
 
 // DefaultMentionsPerMinute is how often a repository may reach the agent when the instance does
@@ -60,6 +64,10 @@ func loadAgentFrom(cfg ConfigProvider) {
 		if kind = strings.TrimSpace(kind); kind != "" {
 			Agent.PriorityKinds = append(Agent.PriorityKinds, kind)
 		}
+	}
+	Agent.Autopilot = section.Key("AUTOPILOT").MustBool(false)
+	if Agent.Autopilot {
+		log.Info("Agent: autopilot is on, so runs decide for themselves instead of asking")
 	}
 	Agent.PromptTrace = section.Key("PROMPT_TRACE").MustBool(false)
 	if Agent.PromptTrace {

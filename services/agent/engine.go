@@ -15,7 +15,9 @@ import (
 
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
+	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	"gitea.dev/modules/json"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/timeutil"
@@ -1012,6 +1014,10 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 		if answer, already := e.settledCall(ctx, run, call); already {
 			return answer, nil
 		}
+		if AutopilotOf(ctx, conversation) {
+			// nobody is asked: the run reviews the call itself and goes on
+			return e.autopilotCall(ctx, conversation, run, doer, session, call)
+		}
 		if err := e.awaitApproval(ctx, conversation, run, call); err != nil {
 			return "", err
 		}
@@ -1022,6 +1028,89 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 		return e.recordTool(ctx, conversation, call, "The tool could not run: "+err.Error()), nil
 	}
 	return e.recordTool(ctx, conversation, call, output), nil
+}
+
+// AutopilotOf reports whether a session decides for itself instead of asking a reader: the
+// instance may turn it on for everyone, and a session may turn it on for itself.
+func AutopilotOf(_ context.Context, conversation *agent_model.Conversation) bool {
+	return setting.Agent.Autopilot || (conversation != nil && conversation.Autopilot)
+}
+
+// autopilotCall is a call that would have been put to a reader, decided by the run itself. The
+// review answers with its reasoning, the call runs when it says so, and the decision is kept in
+// the transcript where a reader can read it back later: work done without a person in the middle
+// is work that has to be able to say who decided.
+func (e *Engine) autopilotCall(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, doer *user_model.User, session agent_tools.Session, call llm.ToolCall) (string, error) {
+	if call.Function.Name == agent_tools.AskUserToolName {
+		// a question with nobody to ask is not a question: the run goes on with what it has
+		return e.recordTool(ctx, conversation, call, "Autopilot is on, so no reader was asked: decide with what you have and say what you assumed."), nil
+	}
+	allow, reason := e.reviewCall(ctx, conversation, run, call)
+	if !allow {
+		return e.recordTool(ctx, conversation, call, "Autopilot refused this call: "+reason), nil
+	}
+	tool, decision, err := agent_tools.Check(ctx, session, call.Function.Name)
+	if err != nil || decision == agent_tools.DecisionDenied {
+		return e.recordTool(ctx, conversation, call, "That tool is switched off for this session."), nil
+	}
+	output, err := runToolSafely(ctx, tool, doer, session, call)
+	if err != nil {
+		log.Error("Agent engine: tool %s of run %d failed under autopilot: %v", call.Function.Name, run.ID, err)
+		return e.recordTool(ctx, conversation, call, "The tool could not run: "+err.Error()), nil
+	}
+	// the decision is part of what the tool returned, so the transcript keeps it whatever the
+	// call was and whoever reads it later
+	return e.recordTool(ctx, conversation, call, "(autopilot allowed this call: "+reason+")\n"+output), nil
+}
+
+// reviewCall asks the run's own model whether a call should go ahead, and why. A review that
+// cannot be read is a refusal: a call nothing vouched for does not run.
+func (e *Engine) reviewCall(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, call llm.ToolCall) (bool, string) {
+	ref, err := ModelRoleRef(ctx, ModelRoleForKind(conversation.Kind))
+	if err != nil || ref == "" {
+		return false, "no model is configured to review the call"
+	}
+	history, err := ListMessages(ctx, conversation.ID, 6)
+	if err != nil {
+		return false, "the session could not be read"
+	}
+	var asked strings.Builder
+	for _, message := range slices.Backward(history) {
+		if message.Role == agent_model.MessageRoleUser {
+			asked.WriteString(strings.TrimSpace(message.Content))
+			break
+		}
+	}
+	system := "You are the agent working in this session. A call you made is normally put to a " +
+		"person before it runs; nobody is available now, so decide for yourself. Allow it only if " +
+		"it is what the request needs and nothing in it goes further than that. Answer with one " +
+		"JSON object and nothing else: {\"allow\": true or false, \"reason\": \"one line\"}."
+	user := "The call: " + call.Function.Name + " with " + call.Function.Arguments +
+		"\nWhat was asked of you: " + asked.String() +
+		"\nThe session: " + conversation.Title + " (" + conversation.Kind + ")"
+	reviewCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), engineTitleTimeout)
+	defer cancel()
+	answer, _, err := Answer(reviewCtx, ref, llm.ChatRequest{Messages: []llm.Message{
+		{Role: "system", Content: system},
+		{Role: "user", Content: user},
+	}})
+	if err != nil {
+		log.Warn("Agent engine: autopilot review of run %d failed: %v", run.ID, err)
+		return false, "the review could not be read"
+	}
+	var verdict struct {
+		Allow  bool   `json:"allow"`
+		Reason string `json:"reason"`
+	}
+	start := strings.Index(answer, "{")
+	if start < 0 || json.Unmarshal([]byte(answer[start:strings.LastIndex(answer, "}")+1]), &verdict) != nil {
+		return false, "the review did not say whether to go on"
+	}
+	reason := strings.TrimSpace(verdict.Reason)
+	if reason == "" {
+		reason = "it is what the request needs"
+	}
+	return verdict.Allow, reason
 }
 
 // resumedCall is the call a paused run continues from, and it is read once: the approval keeps
@@ -1117,11 +1206,17 @@ var errApprovalWaiting = errors.New("the run waits for its reader")
 // awaitApproval puts a manual call in front of the reader. It does not wait: a reader may come
 // back an hour later, so the run is put down and picked up again when the call is answered.
 func (e *Engine) awaitApproval(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, call llm.ToolCall) error {
+	kind := agent_model.ToolApprovalKindApproval
+	if call.Function.Name == agent_tools.AskUserToolName {
+		// a question is answered with words, so it is asked as one
+		kind = agent_model.ToolApprovalKindQuestion
+	}
 	approval := &agent_model.ToolApproval{
 		ConversationID: conversation.ID,
 		RunID:          run.ID,
 		Tool:           call.Function.Name,
 		Arguments:      call.Function.Arguments,
+		Kind:           kind,
 		Status:         agent_model.ToolApprovalPending,
 	}
 	if err := db.Insert(ctx, approval); err != nil {
@@ -1147,6 +1242,17 @@ func expireApprovalsOf(ctx context.Context, runID int64) error {
 	return err
 }
 
+// ErrApprovalAnswerEmpty is returned when an answer arrives with nothing in it.
+type ErrApprovalAnswerEmpty struct{}
+
+func (ErrApprovalAnswerEmpty) Error() string { return "an answer is needed to go on" }
+
+// Is reports whether target is an ErrApprovalAnswerEmpty.
+func (err ErrApprovalAnswerEmpty) Is(target error) bool {
+	_, ok := target.(ErrApprovalAnswerEmpty)
+	return ok
+}
+
 // ErrApprovalNotPending is returned when a call has already been answered.
 type ErrApprovalNotPending struct{}
 
@@ -1169,9 +1275,30 @@ func PendingApprovals(ctx context.Context, conversationID int64) ([]*agent_model
 	return approvals, err
 }
 
+// CanAnswerRun reports whether a reader may answer a run: the person whose question started it,
+// or a person who may write the repository its session works in. A run nobody owns waits for
+// whoever gets there first.
+func CanAnswerRun(ctx context.Context, doer *user_model.User, run *agent_model.Run) (bool, error) {
+	if doer == nil {
+		return false, nil
+	}
+	if run.UserID == 0 || run.UserID == doer.ID {
+		return true, nil
+	}
+	conversation, exist, err := db.GetByID[agent_model.Conversation](ctx, run.ConversationID)
+	if err != nil || !exist || conversation.RepoID == 0 {
+		return false, err
+	}
+	repo, err := repo_model.GetRepositoryByID(ctx, conversation.RepoID)
+	if err != nil {
+		return false, err
+	}
+	return CanUseRepository(ctx, doer, repo)
+}
+
 // ResolveApproval records what the reader decided about a pending call and wakes the run
 // waiting for it. A call left pending by a restart is still closed here.
-func ResolveApproval(ctx context.Context, conversationID, approvalID, decidedBy int64, allowed bool) error {
+func ResolveApproval(ctx context.Context, conversationID, approvalID int64, doer *user_model.User, allowed bool) error {
 	// the sweep of stranded runs decides under the same conversation, so a reader answering a
 	// call and the sweep closing it are never both right
 	lock := engine.conversationLock(conversationID)
@@ -1195,8 +1322,11 @@ func ResolveApproval(ctx context.Context, conversationID, approvalID, decidedBy 
 	if !exist {
 		return ErrApprovalNotPending{}
 	}
-	// only the person whose question started the run answers for it
-	if run.UserID != 0 && run.UserID != decidedBy {
+	may, err := CanAnswerRun(ctx, doer, run)
+	if err != nil {
+		return err
+	}
+	if !may {
 		return ErrApprovalNotOwner{}
 	}
 	status := agent_model.ToolApprovalRefused
@@ -1207,15 +1337,59 @@ func ResolveApproval(ctx context.Context, conversationID, approvalID, decidedBy 
 	if allowed {
 		result = engine.runApprovedCall(ctx, conversationID, run, approval)
 	}
-	if _, err := db.GetEngine(ctx).ID(approvalID).Cols("status", "decided_user_id", "decided_unix", "result").
+	return settleRequest(ctx, conversationID, run, approval, status, doer.ID, result, "")
+}
+
+// AnswerQuestion records what a reader wrote back to a question and wakes the run waiting for it.
+func AnswerQuestion(ctx context.Context, conversationID, approvalID int64, doer *user_model.User, answer string) error {
+	answer = strings.TrimSpace(answer)
+	if answer == "" {
+		return ErrApprovalAnswerEmpty{}
+	}
+	lock := engine.conversationLock(conversationID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	request := &agent_model.ToolApproval{}
+	exist, err := db.GetEngine(ctx).ID(approvalID).
+		And("conversation_id = ?", conversationID).
+		Get(request)
+	if err != nil {
+		return err
+	}
+	if !exist || request.Status != agent_model.ToolApprovalPending || !request.IsQuestion() {
+		return ErrApprovalNotPending{}
+	}
+	run, exist, err := db.GetByID[agent_model.Run](ctx, request.RunID)
+	if err != nil {
+		return err
+	}
+	if !exist {
+		return ErrApprovalNotPending{}
+	}
+	may, err := CanAnswerRun(ctx, doer, run)
+	if err != nil {
+		return err
+	}
+	if !may {
+		return ErrApprovalNotOwner{}
+	}
+	// the answer is what the call returned, and the reader's words are kept as they were written
+	return settleRequest(ctx, conversationID, run, request, agent_model.ToolApprovalAllowed, doer.ID, "The reader answered: "+answer, answer)
+}
+
+// settleRequest closes one request and lets the run go on: a worker is not held while a reader
+// thinks, so the run takes its place in the queue again.
+func settleRequest(ctx context.Context, conversationID int64, run *agent_model.Run, request *agent_model.ToolApproval, status string, decidedBy int64, result, answer string) error {
+	if _, err := db.GetEngine(ctx).ID(request.ID).Cols("status", "decided_user_id", "decided_unix", "result", "answer").
 		Update(&agent_model.ToolApproval{
-			Status: status, DecidedUserID: decidedBy, Result: result,
+			Status: status, DecidedUserID: decidedBy, Result: result, Answer: answer,
 			DecidedUnix: timeutil.TimeStampNow(),
 		}); err != nil {
 		return err
 	}
-	engine.broker.publish(conversationID, 0, Event{Name: EventApproval, Data: approval})
-	// the run continues where it stopped: the worker it gave up is not held while a reader thinks
+	request.Status, request.DecidedUserID, request.Result, request.Answer = status, decidedBy, result, answer
+	engine.broker.publish(conversationID, 0, Event{Name: EventApproval, Data: request})
 	if _, err := db.GetEngine(ctx).ID(run.ID).Cols("status").
 		Where("status = ?", agent_model.RunStatusWaiting).
 		Update(&agent_model.Run{Status: agent_model.RunStatusQueued}); err != nil {
