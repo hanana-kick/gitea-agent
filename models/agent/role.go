@@ -17,16 +17,18 @@ const (
 	ModelRoleServer     = "server"
 	ModelRoleRepository = "repository"
 	ModelRoleSummary    = "summary" // titles and recent work summaries
-	ModelRoleReview     = "review"  // the autopilot review of a call a person would have decided
+	// ModelRoleDecision is the model that decides: whether a call may go ahead without a person,
+	// and what to do where the agent would otherwise have asked one.
+	ModelRoleDecision = "decision"
 )
 
 // ModelRoleOptions lists every role in display order.
-var ModelRoleOptions = []string{ModelRoleResident, ModelRoleServer, ModelRoleRepository, ModelRoleSummary, ModelRoleReview}
+var ModelRoleOptions = []string{ModelRoleResident, ModelRoleServer, ModelRoleRepository, ModelRoleSummary, ModelRoleDecision}
 
-// ModelRoleLightRoles are the roles that carry the small jobs: naming a session, reviewing a call
-// the agent makes on its own. They are answered in seconds from a short prompt, so they are where
-// the cheaper model of an instance belongs.
-var ModelRoleLightRoles = []string{ModelRoleSummary, ModelRoleReview}
+// ModelRoleLightRoles are the roles that carry the small jobs: naming a session, and the like.
+// They are answered in seconds from a short prompt, so they are where the cheaper model of an
+// instance belongs. Deciding is not a small job, so the decision role is not one of them.
+var ModelRoleLightRoles = []string{ModelRoleSummary}
 
 // ModelRoleWorkRoles are the roles that carry the work itself, where the strongest model an
 // instance pays for belongs.

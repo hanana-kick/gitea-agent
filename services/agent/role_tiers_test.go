@@ -46,9 +46,10 @@ func TestAssignRoleTiersSplitsTheRolesBetweenTwoModels(t *testing.T) {
 		assert.Equal(t, tiers.Strong, ref, "the quality preset answers %s with something else", role)
 	}
 
-	// the light roles are the small jobs: naming a session, and reviewing what autopilot does
+	// the light roles are the small jobs: naming a session, and the like. Deciding is not one of
+	// them: it takes a model worth asking
 	assert.True(t, agent_model.IsLightModelRole(agent_model.ModelRoleSummary))
-	assert.True(t, agent_model.IsLightModelRole(agent_model.ModelRoleReview))
+	assert.False(t, agent_model.IsLightModelRole(agent_model.ModelRoleDecision))
 	assert.False(t, agent_model.IsLightModelRole(agent_model.ModelRoleRepository))
 
 	require.Error(t, AssignRoleTiers(ctx, "cheapest", tiers))

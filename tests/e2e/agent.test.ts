@@ -307,7 +307,7 @@ test.describe.serial('agent', () => {
     await expect(page.locator('select[name="cheap"]')).toHaveCount(1);
     await expect(page.locator('select[name="strong"]')).toHaveCount(1);
     await expect(page.locator('button[name="preset"][value="balanced"]')).toBeVisible();
-    await expect(page.locator('select[name="role_review"]')).toHaveCount(1);
+    await expect(page.locator('select[name="role_decision"]')).toHaveCount(1);
 
     await page.goto('/-/admin/agent/runs');
     const row = page.locator('.agent-runs tbody tr[data-run-id]').first();

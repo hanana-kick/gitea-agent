@@ -144,9 +144,46 @@ func TestHarnessAsksAQuestionAndUsesTheAnswer(t *testing.T) {
 	assert.NotEmpty(t, answerLine, "the session does not show what the reader answered")
 }
 
-// The autopilot review is a small job, so it answers from its own role when an instance has set
-// one: that is where a cheap model belongs, and the work itself keeps the strong one.
-func TestHarnessReviewsWithItsOwnRole(t *testing.T) {
+// With nobody to ask, the decision model answers the question the run would have put to a person:
+// autopilot works on, and the session says what was decided in its place.
+func TestHarnessDecisionModelAnswersForAutopilot(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	model := newScriptedModel(t, agent_tools.AskUserToolName,
+		`{"question":"Which branch should this land in?","options":"main|develop"}`, "landing it in develop")
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	// the decision model, offered only to that role
+	decider := newScriptedModel(t, "", "", "develop, because the change is not ready for main")
+	owner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	key, err := CreateAPIKey(ctx, owner.ID, "decision-key", "sk-decision")
+	require.NoError(t, err)
+	provider := &agent_model.Provider{UserID: owner.ID, Name: "decider", Provider: "openai", BaseURL: decider.url, Model: "decider", APIKeyID: key.ID}
+	require.NoError(t, db.Insert(ctx, provider))
+	require.NoError(t, SetModelRoleRef(ctx, agent_model.ModelRoleDecision, fmt.Sprintf("provider:%d/decider", provider.ID)))
+	require.NoError(t, SetConversationAutopilot(ctx, conversation, true))
+
+	run := runTurn(t, conversation, user, "land the change somewhere")
+	assert.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	assert.NotEmpty(t, decider.requestsMade(), "the decision model was not asked to answer the question")
+
+	// no reader was asked, and the session says what was decided instead
+	pending, err := PendingApprovals(ctx, conversation.ID)
+	require.NoError(t, err)
+	assert.Empty(t, pending, "autopilot left a question for a reader")
+	record := toolRecord(t, conversation.ID, agent_tools.AskUserToolName)
+	assert.Contains(t, record, "Autopilot answered this instead of asking", "the session does not say the run decided")
+	assert.Contains(t, record, "develop, because the change is not ready for main")
+
+	// the answer is what the call returned, so the run goes on from it
+	final := messagesOf(t, conversation.ID)
+	require.NotEmpty(t, final)
+	assert.Contains(t, final[len(final)-1].Content, "landing it in develop")
+}
+
+// The review a call gets before it runs on its own is a decision, so it answers from the
+// decision role when an instance has set one: a decision takes a model worth asking.
+func TestHarnessDecidesWithItsOwnRole(t *testing.T) {
 	require.NoError(t, unittest.PrepareTestDatabase())
 	ctx := context.Background()
 	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"review-role-branch","from_branch":"main","repository":"user2/repo1"}`, "the branch is there")
@@ -160,7 +197,7 @@ func TestHarnessReviewsWithItsOwnRole(t *testing.T) {
 	require.NoError(t, err)
 	provider := &agent_model.Provider{UserID: owner.ID, Name: "review", Provider: "openai", BaseURL: review.url, Model: "review", APIKeyID: key.ID}
 	require.NoError(t, db.Insert(ctx, provider))
-	require.NoError(t, SetModelRoleRef(ctx, agent_model.ModelRoleReview, fmt.Sprintf("provider:%d/review", provider.ID)))
+	require.NoError(t, SetModelRoleRef(ctx, agent_model.ModelRoleDecision, fmt.Sprintf("provider:%d/review", provider.ID)))
 
 	require.NoError(t, SetConversationAutopilot(ctx, conversation, true))
 	require.NoError(t, agent_tools.SetMode(ctx, "gitea_create_branch", agent_tools.PermissionManual, true))

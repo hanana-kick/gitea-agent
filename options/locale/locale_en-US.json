@@ -3582,6 +3582,7 @@
   "agent.role_server": "Server agent",
   "agent.role_repository": "Repository agent",
   "agent.role_summary": "Titles and summaries",
+  "agent.role_decision": "Decisions: what to do where a person would be asked",
   "agent.roles_title": "Model roles",
   "agent.roles_help": "Every session answers with the model assigned to its role.",
   "agent.roles_light": "small jobs",

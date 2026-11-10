@@ -457,6 +457,7 @@ func prepareMigrationTasks() []*migration {
 		newMigration(378, "Drop the run columns the agent tool approval table was given", v28.DropAgentToolApprovalRunColumns),
 		newMigration(379, "Add agent request kind and answer", v28.AddAgentRequestKindAndAnswer),
 		newMigration(380, "Add agent conversation autopilot", v28.AddAgentConversationAutopilot),
+		newMigration(381, "Rename the agent review role to decision", v28.RenameAgentReviewRoleToDecision),
 	}
 	return preparedMigrations
 }

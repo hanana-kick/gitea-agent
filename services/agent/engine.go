@@ -1042,7 +1042,11 @@ func AutopilotOf(_ context.Context, conversation *agent_model.Conversation) bool
 // is work that has to be able to say who decided.
 func (e *Engine) autopilotCall(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, doer *user_model.User, session agent_tools.Session, call llm.ToolCall) (string, error) {
 	if call.Function.Name == agent_tools.AskUserToolName {
-		// a question with nobody to ask is not a question: the run goes on with what it has
+		// nobody will answer, so the run decides: the decision model answers from what the session
+		// has, and an instance without one answers with what it has itself
+		if answer, ok := e.decideQuestion(ctx, conversation, call); ok {
+			return e.recordTool(ctx, conversation, call, "Autopilot answered this instead of asking: "+answer), nil
+		}
 		return e.recordTool(ctx, conversation, call, "Autopilot is on, so no reader was asked: decide with what you have and say what you assumed."), nil
 	}
 	allow, reason := e.reviewCall(ctx, conversation, run, call)
@@ -1063,22 +1067,63 @@ func (e *Engine) autopilotCall(ctx context.Context, conversation *agent_model.Co
 	return e.recordTool(ctx, conversation, call, "(autopilot allowed this call: "+reason+")\n"+output), nil
 }
 
+// decisionRef is the model a run decides with: the decision role, and failing that the model the
+// session itself answers with, so an instance that has not set one still decides.
+func decisionRef(ctx context.Context, conversation *agent_model.Conversation) (string, error) {
+	ref, err := ModelRoleRef(ctx, agent_model.ModelRoleDecision)
+	if err != nil || ref != "" {
+		return ref, err
+	}
+	return ModelRoleRef(ctx, ModelRoleForKind(conversation.Kind))
+}
+
+// decideQuestion asks the decision model to answer a question the run would have put to a person,
+// in autopilot's place. It reports whether it could, so a run without one goes on as before.
+func (e *Engine) decideQuestion(ctx context.Context, conversation *agent_model.Conversation, call llm.ToolCall) (string, bool) {
+	ref, err := ModelRoleRef(ctx, agent_model.ModelRoleDecision)
+	if err != nil || ref == "" {
+		// autopilot's own model is not asked to invent an answer to a question
+		return "", false
+	}
+	question, options, why := QuestionOf(&agent_model.ToolApproval{
+		Tool: call.Function.Name, Arguments: call.Function.Arguments, Kind: agent_model.ToolApprovalKindQuestion,
+	})
+	system := "You are the agent, working on your own: nobody will answer the question below. Answer " +
+		"it yourself from what you know of the session, in the reader's language, with one or two " +
+		"sentences and nothing else."
+	user := "The question: " + question
+	if len(options) > 0 {
+		user += "\nAnswers to choose from: " + strings.Join(options, " | ")
+	}
+	if why != "" {
+		user += "\nWhat the answer changes: " + why
+	}
+	user += "\nThe session: " + conversation.Title + " (" + conversation.Kind + ")"
+	decideCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), engineTitleTimeout)
+	defer cancel()
+	answer, _, err := Answer(decideCtx, ref, llm.ChatRequest{Messages: []llm.Message{
+		{Role: "system", Content: system},
+		{Role: "user", Content: user},
+	}})
+	if err != nil {
+		log.Warn("Agent engine: the decision model could not answer a question of session %d: %v", conversation.ID, err)
+		return "", false
+	}
+	if answer = strings.TrimSpace(answer); answer == "" {
+		return "", false
+	}
+	return answer, true
+}
+
 // reviewCall asks the run's own model whether a call should go ahead, and why. A review that
 // cannot be read is a refusal: a call nothing vouched for does not run.
 func (e *Engine) reviewCall(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, call llm.ToolCall) (bool, string) {
-	// a review is a small job, so it has a role of its own; an instance that has not set one
-	// reviews with the model the session itself answers with
-	ref, err := ModelRoleRef(ctx, agent_model.ModelRoleReview)
+	ref, err := decisionRef(ctx, conversation)
 	if err != nil {
-		return false, "the review role could not be read"
+		return false, "the decision role could not be read"
 	}
 	if ref == "" {
-		if ref, err = ModelRoleRef(ctx, ModelRoleForKind(conversation.Kind)); err != nil {
-			return false, "the review role could not be read"
-		}
-	}
-	if ref == "" {
-		return false, "no model is configured to review the call"
+		return false, "no model is configured to decide this"
 	}
 	history, err := ListMessages(ctx, conversation.ID, 6)
 	if err != nil {
