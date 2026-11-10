@@ -126,6 +126,21 @@ func TestHarnessAsksAQuestionAndUsesTheAnswer(t *testing.T) {
 	assert.Contains(t, replayed.Content, "develop")
 	final := messagesOf(t, conversation.ID)
 	assert.Equal(t, "landing it in develop", final[len(final)-1].Content)
+
+	// the session itself reads as a conversation: what was asked, and what was answered
+	askedLine := ""
+	answerLine := ""
+	for _, message := range final {
+		if strings.Contains(message.Content, "Asked the reader") {
+			askedLine = message.Content
+		}
+		if strings.Contains(message.Content, "The reader answered: develop") {
+			answerLine = message.Content
+		}
+	}
+	assert.Contains(t, askedLine, "Which branch should this land in?")
+	assert.Contains(t, askedLine, "main; develop", "the answers offered are part of what was asked")
+	assert.NotEmpty(t, answerLine, "the session does not show what the reader answered")
 }
 
 // Autopilot decides for a run instead of asking a reader: the call is reviewed by the model, it

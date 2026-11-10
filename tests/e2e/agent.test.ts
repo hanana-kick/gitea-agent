@@ -588,6 +588,12 @@ test.describe.serial('agent surfaces and guards', () => {
         await page.locator('.agent-chat-send').click();
         await expect(page.locator('.agent-chat-message.assistant').filter({hasText: 'the stub answered'})).toBeVisible();
 
+        // a session can decide for itself, and the toggle says which way it is set
+        const autopilot = page.locator('form.agent-chat-autopilot button[name="autopilot"]');
+        await expect(autopilot).toHaveAttribute('value', 'on');
+        await autopilot.click();
+        await expect(page.locator('form.agent-chat-autopilot button[name="autopilot"]')).toHaveAttribute('value', 'off');
+
         const exported = await page.request.get(`/-/agent/${session}/export`);
         expect(exported.status()).toBe(200);
         expect(exported.headers()['content-disposition']).toContain('attachment');

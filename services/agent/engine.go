@@ -1224,6 +1224,15 @@ func (e *Engine) awaitApproval(ctx context.Context, conversation *agent_model.Co
 		return fmt.Errorf("the call could not be put to the user: %w", err)
 	}
 	e.broker.publish(conversation.ID, 0, Event{Name: EventApproval, Data: approval})
+	if kind == agent_model.ToolApprovalKindQuestion {
+		// the session says what was asked of its reader, so the transcript reads on its own
+		question, options, _ := QuestionOf(approval)
+		asked := "Asked the reader: " + question
+		if len(options) > 0 {
+			asked += " (" + strings.Join(options, "; ") + ")"
+		}
+		e.recordTool(ctx, conversation, call, asked)
+	}
 
 	if _, err := db.GetEngine(ctx).ID(run.ID).Cols("status").
 		Update(&agent_model.Run{Status: agent_model.RunStatusWaiting}); err != nil {
@@ -1374,7 +1383,14 @@ func AnswerQuestion(ctx context.Context, conversationID, approvalID int64, doer 
 	if !may {
 		return ErrApprovalNotOwner{}
 	}
-	// the answer is what the call returned, and the reader's words are kept as they were written
+	// the answer is what the call returned, and it is part of the session, not only of the thread
+	conversation, exist, err := db.GetByID[agent_model.Conversation](ctx, conversationID)
+	if err == nil && exist {
+		engine.recordTool(ctx, conversation, llm.ToolCall{
+			ID: fmt.Sprintf("call_%d", request.ID), Type: "function",
+			Function: llm.FunctionCall{Name: request.Tool, Arguments: request.Arguments},
+		}, "The reader answered: "+answer)
+	}
 	return settleRequest(ctx, conversationID, run, request, agent_model.ToolApprovalAllowed, doer.ID, "The reader answered: "+answer, answer)
 }
 
