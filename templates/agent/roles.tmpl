@@ -24,6 +24,14 @@
 						</select>
 					</div>
 				</div>
+				<div class="field">
+					<label for="agent-preset-decision">{{ctx.Locale.Tr "agent.roles_preset_decision"}}</label>
+					<select id="agent-preset-decision" name="decision" class="ui dropdown">
+						<option value="">{{ctx.Locale.Tr "agent.roles_preset_decision_same"}}</option>
+						{{range .ModelOptions}}<option value="{{.Ref}}">{{.Label}}</option>{{end}}
+					</select>
+					<p class="help">{{ctx.Locale.Tr "agent.roles_preset_decision_help"}}</p>
+				</div>
 				<div class="tw-flex tw-flex-wrap tw-gap-2">
 					<button class="ui button" type="submit" name="preset" value="economy">{{ctx.Locale.Tr "agent.roles_preset_economy"}}</button>
 					<button class="ui button" type="submit" name="preset" value="balanced">{{ctx.Locale.Tr "agent.roles_preset_balanced"}}</button>
@@ -34,20 +42,28 @@
 			<div class="ui divider"></div>
 
 			<form class="ui form" method="post" action="{{AppSubUrl}}/-/admin/agent/roles">
-				{{range .Rows}}
-					{{$row := .}}
-					<div class="field">
-						<label for="agent-role-{{.Role}}">
-							{{ctx.Locale.Tr (printf "agent.role_%s" .Role)}}
-							{{if .Light}}<span class="ui basic label tw-ml-1">{{ctx.Locale.Tr "agent.roles_light"}}</span>{{end}}
-						</label>
-						<select id="agent-role-{{.Role}}" name="role_{{.Role}}" class="ui dropdown">
-							<option value="">{{ctx.Locale.Tr "agent.roles_none"}}</option>
-							{{range $.ModelOptions}}
-								<option value="{{.Ref}}"{{if eq .Ref $row.Ref}} selected{{end}}>{{.Label}}</option>
-							{{end}}
-						</select>
-					</div>
+				{{/* the roles are listed by what they need of a model: one that decides, and one that
+					writes the answers and the work */}}
+				{{range $class := .RoleClasses}}
+					<h5 class="ui header">
+						{{ctx.Locale.Tr (printf "agent.roles_class_%s" $class)}}
+					</h5>
+					<p class="help">{{ctx.Locale.Tr (printf "agent.roles_class_%s_help" $class)}}</p>
+					{{range index $.RowsByClass $class}}
+						{{$row := .}}
+						<div class="field">
+							<label for="agent-role-{{.Role}}">
+								{{ctx.Locale.Tr (printf "agent.role_%s" .Role)}}
+								{{if .Light}}<span class="ui basic label tw-ml-1">{{ctx.Locale.Tr "agent.roles_light"}}</span>{{end}}
+							</label>
+							<select id="agent-role-{{.Role}}" name="role_{{.Role}}" class="ui dropdown">
+								<option value="">{{ctx.Locale.Tr "agent.roles_none"}}</option>
+								{{range $.ModelOptions}}
+									<option value="{{.Ref}}"{{if eq .Ref $row.Ref}} selected{{end}}>{{.Label}}</option>
+								{{end}}
+							</select>
+						</div>
+					{{end}}
 				{{end}}
 				<button class="ui primary button" type="submit">{{ctx.Locale.Tr "save"}}</button>
 			</form>

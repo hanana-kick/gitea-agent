@@ -306,6 +306,7 @@ test.describe.serial('agent', () => {
     // the selects are the native fields Fomantic replaces, so they are present rather than visible
     await expect(page.locator('select[name="cheap"]')).toHaveCount(1);
     await expect(page.locator('select[name="strong"]')).toHaveCount(1);
+    await expect(page.locator('select[name="decision"]')).toHaveCount(1);
     await expect(page.locator('button[name="preset"][value="balanced"]')).toBeVisible();
     await expect(page.locator('select[name="role_decision"]')).toHaveCount(1);
 
