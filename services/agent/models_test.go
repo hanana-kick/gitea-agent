@@ -33,6 +33,20 @@ func TestFormatModelLines(t *testing.T) {
 	assert.Equal(t, "a\nb = B", FormatModelLines([]agent_model.ProviderModel{{ID: "a"}, {ID: "b", Name: "B"}}))
 }
 
+// An entry a form delivered joined is not a model: a model id is one word, and keeping a line that
+// carries several of them would put a model in the list that no provider answers to.
+func TestNormalizeModelsDropsWhatIsNotAnID(t *testing.T) {
+	models := agent_model.NormalizeModels([]agent_model.ProviderModel{
+		{ID: "  liquid/lfm-3-1.7b:free  "},
+		{ID: "['a/one:free', 'b/two:free']"},
+		{ID: "an id with spaces"},
+		{ID: ""},
+		{ID: "liquid/lfm-3-1.7b:free"},
+	})
+	require.Len(t, models, 1)
+	assert.Equal(t, "liquid/lfm-3-1.7b:free", models[0].ID)
+}
+
 func TestProviderModelInputsRoundTrip(t *testing.T) {
 	models := agent_model.NormalizeModels([]agent_model.ProviderModel{
 		{ID: "qwen/qwen3-vl-8b-instruct", Name: "Qwen3 VL", Inputs: []string{"text", "image", "image"}},

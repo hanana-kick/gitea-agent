@@ -139,7 +139,9 @@ func NormalizeModels(models []ProviderModel) []ProviderModel {
 	out := make([]ProviderModel, 0, len(models))
 	for _, m := range models {
 		id := strings.TrimSpace(m.ID)
-		if id == "" || seen[id] {
+		// a model id is one word: an entry with a space in it is a form that arrived joined, and
+		// keeping it would put a model in the list that no provider answers to
+		if id == "" || seen[id] || strings.ContainsAny(id, " \t") {
 			continue
 		}
 		seen[id] = true
