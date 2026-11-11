@@ -31,6 +31,11 @@ type ModelOption struct {
 	Decisions bool
 }
 
+// IsGroupRef reports whether a model reference names a group rather than one provider's model.
+func IsGroupRef(ref string) bool {
+	return strings.HasPrefix(ref, modelRefGroup+":")
+}
+
 // ModelRefForGroup names a group as a session model.
 func ModelRefForGroup(slug string) string {
 	return modelRefGroup + ":" + slug
