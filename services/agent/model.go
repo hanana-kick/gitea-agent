@@ -25,8 +25,9 @@ const (
 type ModelOption struct {
 	Ref   string
 	Label string
-	// Decisions marks a model that answers the decisions API rather than a chat, which is what a
-	// decision role is meant to answer with.
+	// Chat and Decisions say which APIs the model serves, so a picker can offer a role the models
+	// that can answer it.
+	Chat      bool
 	Decisions bool
 }
 
@@ -88,6 +89,7 @@ func ModelOptions(ctx context.Context, limit int) ([]ModelOption, error) {
 			options = append(options, ModelOption{
 				Ref:       ModelRefForProvider(provider.ID, model.ID),
 				Label:     provider.Name + " / " + model.DisplayName(),
+				Chat:      model.Chat,
 				Decisions: model.Decisions,
 			})
 		}

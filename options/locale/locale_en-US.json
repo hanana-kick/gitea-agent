@@ -3603,6 +3603,7 @@
   "agent.roles_preset_title": "Models and presets",
   "agent.roles_preset_unknown_model": "That model is not one this instance offers",
   "agent.model_serves_decisions": "decisions",
+  "agent.roles_no_decision_models": "No provider has reported a model that answers decisions yet, so every model is offered here",
   "agent.roles_none": "Not assigned",
   "agent.roles_saved": "Model roles saved.",
   "agent.roles_invalid": "The model for %s is not available.",

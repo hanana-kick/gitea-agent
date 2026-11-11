@@ -32,7 +32,7 @@ func TestFetchModelsKeepsWhatServesDecisions(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Query().Get("endpoints") != "" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
-				{"id": "parallel/decisions-fast:free", "name": "Parallel: Decisions Fast (free)"},
+				{"id": "only/serves-decisions", "name": "Only: Decisions"},
 			}})
 			return
 		}
@@ -60,8 +60,16 @@ func TestFetchModelsKeepsWhatServesDecisions(t *testing.T) {
 	for _, m := range models {
 		byID[m.ID] = m
 	}
+	assert.True(t, byID["acme/chat-one"].Chat, "a chat model is not offered to the roles that write")
 	assert.False(t, byID["acme/chat-one"].Decisions, "a chat model answers decisions?")
-	assert.True(t, byID["parallel/decisions-fast:free"].Decisions, "the model the decisions listing reported is not marked")
+	assert.True(t, byID["only/serves-decisions"].Decisions, "the model the decisions listing reported is not marked")
+	assert.False(t, byID["only/serves-decisions"].Chat, "a decisions-only model is offered to the roles that write")
+
+	// a model nothing described is read as one that answers a chat, which is what models were
+	legacy := agent_model.NormalizeModels([]agent_model.ProviderModel{{ID: "acme/legacy"}})
+	require.Len(t, legacy, 1)
+	assert.True(t, legacy[0].Chat, "a model stored before the listings were apart lost its place")
+	assert.False(t, legacy[0].Decisions)
 
 	// once the form saves what it was shown, it reaches the pickers a decision role is chosen from
 	require.NoError(t, provider.SetModels(models))
@@ -70,12 +78,13 @@ func TestFetchModelsKeepsWhatServesDecisions(t *testing.T) {
 
 	options, err := ModelOptions(ctx, 200)
 	require.NoError(t, err)
-	ref := ModelRefForProvider(provider.ID, "parallel/decisions-fast:free")
+	ref := ModelRefForProvider(provider.ID, "only/serves-decisions")
 	found := false
 	for _, option := range options {
 		if option.Ref == ref {
 			found = true
 			assert.True(t, option.Decisions, "the picker does not say what the model serves")
+			assert.False(t, option.Chat, "the picker offers a decisions model to the roles that write")
 		}
 	}
 	assert.True(t, found, "the decisions model is not offered")

@@ -15,13 +15,13 @@ import (
 
 func TestParseModelLines(t *testing.T) {
 	assert.Equal(t, []agent_model.ProviderModel{
-		{ID: "gpt-4o"},
-		{ID: "claude-sonnet-4", Name: "Claude Sonnet 4"},
-		{ID: "meta-llama-3.1-70b", Name: "Llama 70B"},
+		{ID: "gpt-4o", Chat: true},
+		{ID: "claude-sonnet-4", Name: "Claude Sonnet 4", Chat: true},
+		{ID: "meta-llama-3.1-70b", Name: "Llama 70B", Chat: true},
 	}, ParseModelLines("gpt-4o\n\nclaude-sonnet-4 = Claude Sonnet 4\nmeta-llama-3.1-70b - Llama 70B\n"))
 
 	// a bare id keeps its dashes, duplicates collapse, blanks drop
-	assert.Equal(t, []agent_model.ProviderModel{{ID: "gpt-4o-mini"}},
+	assert.Equal(t, []agent_model.ProviderModel{{ID: "gpt-4o-mini", Chat: true}},
 		ParseModelLines(" gpt-4o-mini \ngpt-4o-mini\n   "))
 	assert.Empty(t, ParseModelLines(""))
 }

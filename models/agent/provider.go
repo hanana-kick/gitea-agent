@@ -20,8 +20,11 @@ type ProviderModel struct {
 	Name string `json:"name,omitempty"`
 	// Inputs lists the input modalities the provider reported, when it reports them.
 	Inputs []string `json:"inputs,omitempty"`
-	// Decisions marks a model that answers the decisions API rather than a chat: a gateway that
-	// fronts both lists them apart, and what decides is what the decision role wants.
+	// Chat and Decisions say which APIs the model serves: a gateway that fronts several kinds of
+	// model lists each kind apart, and a model is offered for the roles that ask for what it serves.
+	// A model neither listing described is read as one that answers a chat, which is what models
+	// were before the listings were apart.
+	Chat      bool `json:"chat,omitempty"`
 	Decisions bool `json:"decisions,omitempty"`
 }
 
@@ -64,13 +67,15 @@ func (p *Provider) Models() []ProviderModel {
 		if p.Model == "" {
 			return nil
 		}
-		return []ProviderModel{{ID: p.Model}}
+		return NormalizeModels([]ProviderModel{{ID: p.Model}})
 	}
 	models := []ProviderModel{}
 	if err := json.Unmarshal([]byte(p.ModelsJSON), &models); err != nil {
 		return nil
 	}
-	return models
+	// what a model serves is read the same way it is written, so a row stored before the listings
+	// were apart is still offered to the roles that answer a chat
+	return NormalizeModels(models)
 }
 
 // SetModels stores the selected models; the first one also becomes the plain Model column.
@@ -161,11 +166,13 @@ func NormalizeModels(models []ProviderModel) []ProviderModel {
 			// the same model may be reported by two listings: what either said about it stands
 			out[at].Name = firstNonEmpty(out[at].Name, strings.TrimSpace(m.Name))
 			out[at].Inputs = normalizeModalities(append(out[at].Inputs, m.Inputs...))
+			out[at].Chat = out[at].Chat || m.Chat
 			out[at].Decisions = out[at].Decisions || m.Decisions
 			continue
 		}
 		seen[id] = len(out)
-		out = append(out, ProviderModel{ID: id, Name: strings.TrimSpace(m.Name), Inputs: normalizeModalities(m.Inputs), Decisions: m.Decisions})
+		chat := m.Chat || !m.Decisions // a model nothing said about answers a chat
+		out = append(out, ProviderModel{ID: id, Name: strings.TrimSpace(m.Name), Inputs: normalizeModalities(m.Inputs), Chat: chat, Decisions: m.Decisions})
 	}
 	return out
 }

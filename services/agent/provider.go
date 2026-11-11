@@ -132,9 +132,8 @@ func FetchModels(ctx context.Context, opts ModelFetchOptions) ([]agent_model.Pro
 		if len(inputs) == 0 {
 			inputs = catalog.InputModalities(opts.Provider, m.ID)
 		}
-		decides := deciding[m.ID]
 		out = append(out, agent_model.ProviderModel{
-			ID: m.ID, Name: m.Name, Inputs: inputs, Decisions: decides.Decisions,
+			ID: m.ID, Name: m.Name, Inputs: inputs, Chat: true, Decisions: deciding[m.ID].Decisions,
 		})
 	}
 	for _, m := range deciding {
