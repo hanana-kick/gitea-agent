@@ -376,7 +376,7 @@ func encodeCatalog(models []agent_model.ProviderModel) string {
 // renderProviderForm renders the create form when p is nil, the edit form otherwise.
 // catalogByClass splits what a gateway reported by what the models serve, so the ones that answer
 // the decisions API are picked apart from the ones that answer a chat. A model that serves both is
-// listed where it answers a chat: it is offered to a decision role either way.
+// listed in both: the list it is in says what it can answer.
 func catalogByClass(catalog []agent_model.ProviderModel) []providerCatalogClass {
 	classes := make([]providerCatalogClass, 0, 2)
 	chat := make([]agent_model.ProviderModel, 0, len(catalog))
@@ -385,7 +385,7 @@ func catalogByClass(catalog []agent_model.ProviderModel) []providerCatalogClass 
 		if model.Chat {
 			chat = append(chat, model)
 		}
-		if model.Decisions && !model.Chat {
+		if model.Decisions {
 			decisions = append(decisions, model)
 		}
 	}
