@@ -34,11 +34,14 @@
 							<td><span class="ui basic label tw-py-0 tw-align-baseline">{{ctx.Locale.Tr (printf "agent.provider_%s" .Provider)}}</span></td>
 							<td class="tw-max-w-96">
 								<div class="tw-flex tw-flex-col tw-gap-1">
-									{{range .Models}}
-										<div class="gt-ellipsis" data-tooltip-content="{{.DisplayName}} — {{.ID}}">
-											{{.DisplayName}}
-											{{template "agent/model_inputs" .Inputs}}
-										</div>
+									{{range index $.ProviderClasses .ID}}
+										<div class="tw-font-semibold tw-text-12 tw-mt-2 tw-text-text-light">{{ctx.Locale.Tr (printf "agent.roles_class_%s" .Class)}}</div>
+										{{range .Models}}
+											<div class="gt-ellipsis" data-tooltip-content="{{.DisplayName}} — {{.ID}}">
+												{{.DisplayName}}
+												{{template "agent/model_inputs" .Inputs}}
+											</div>
+										{{end}}
 									{{end}}
 								</div>
 							</td>

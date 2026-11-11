@@ -71,7 +71,7 @@
 						{{/* no height utilities exist in the tw- set, so keep these two inline */}}
 						<div id="model-list" class="tw-flex tw-flex-col tw-gap-1 tw-overflow-auto tw-border tw-border-secondary tw-rounded tw-p-2 tw-mb-2" style="min-height: 6rem; max-height: 15rem">
 							{{range .CatalogByClass}}
-								<div class="tw-text-light tw-text-12 tw-mt-1">{{ctx.Locale.Tr (printf "agent.roles_class_%s" .Class)}}</div>
+								<div class="tw-font-semibold tw-text-12 tw-mt-2 tw-text-text-light">{{ctx.Locale.Tr (printf "agent.roles_class_%s" .Class)}}</div>
 								{{range .Models}}
 									<div class="ui checkbox" data-model="{{.DisplayName}} {{.ID}}">
 										<input type="checkbox" name="models" value="{{.ID}}" {{if $.Form.HasSelected .ID}}checked{{end}}>

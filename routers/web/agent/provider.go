@@ -83,6 +83,13 @@ func Providers(ctx *context.Context) {
 		return
 	}
 
+	// each provider's models are listed by what they serve, the way they are picked: what answers
+	// a chat, and what answers the decisions API
+	classes := make(map[int64][]providerCatalogClass, len(providers))
+	for _, provider := range providers {
+		classes[provider.ID] = catalogByClass(provider.Models())
+	}
+	ctx.Data["ProviderClasses"] = classes
 	ctx.Data["Providers"] = providers
 	ctx.Data["Total"] = total
 	ctx.Data["Page"] = context.NewPagerBuilder(ctx).TotalCount(total).PerPageLimit(pageSize).CurPage(page).Build()
