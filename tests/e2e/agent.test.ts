@@ -648,5 +648,35 @@ test.describe.serial('agent surfaces and guards', () => {
       const loaded = await page.goto(path);
       expect(loaded?.status(), path).toBe(200);
     }
+
+    // a group says what it fronts, and its members are of that kind: what answers the other kind
+    // is not offered at all
+    await page.goto('/-/admin/agent/groups/new');
+    await expect(page.locator('input[name=class]')).toHaveCount(2);
+    await expect(page.locator('input[name=class][value=model]')).toBeChecked();
+    expect(await page.locator('select[name=member] option[data-class=model]').count()).toBeGreaterThan(0);
+    await page.locator('input[name=class][value=decision]').check();
+    await expect(page.locator('select[name=member] option[data-class=model]')).toHaveCount(0);
+
+    const listed = await (await page.request.get(`/-/admin/agent/providers?q=${provider}`)).text();
+    const providerId = /\/-\/admin\/agent\/providers\/(\d+)\/edit/.exec(listed)?.[1];
+    expect(providerId, 'the new provider is not on the providers page').toBeTruthy();
+
+    const group = `e2e-group-${randomString(6)}`;
+    const saved = await page.request.post('/-/admin/agent/groups/new', {
+      form: {name: group, description: '', mode: 'fallback', class: 'model', member: `model:${providerId}/${modelId}`},
+      maxRedirects: 0,
+    });
+    expect(saved.status(), await saved.text()).toBe(303);
+
+    await page.goto(`/-/admin/agent/groups?q=${group}`);
+    const row = page.locator('tbody tr', {hasText: group});
+    await expect(row).toBeVisible();
+    await expect(row.getByText('LLM')).toBeVisible();
+
+    // the role that decides does not answer with a group that fronts what writes
+    await page.goto('/-/admin/agent/roles');
+    await expect(page.locator('select[name=role_decision] option', {hasText: group})).toHaveCount(0);
+    await expect(page.locator('select[name=role_repository] option', {hasText: group})).toHaveCount(1);
   });
 });

@@ -34,10 +34,13 @@ type ModelGroup struct {
 	Name string `xorm:"UNIQUE NOT NULL"` // free-form display name
 	// Slug is the generated identifier other features refer to. It is created once
 	// from the name and stays stable when the name changes.
-	Slug        string             `xorm:"UNIQUE NOT NULL"`
-	Description string             `xorm:"TEXT"`
-	Mode        string             `xorm:"NOT NULL"`           // fallback, round_robin
-	Cursor      int                `xorm:"NOT NULL DEFAULT 0"` // round robin position
+	Slug        string `xorm:"UNIQUE NOT NULL"`
+	Description string `xorm:"TEXT"`
+	Mode        string `xorm:"NOT NULL"`           // fallback, round_robin
+	Cursor      int    `xorm:"NOT NULL DEFAULT 0"` // round robin position
+	// Decisions says the group fronts models that answer the decisions API rather than a chat.
+	// A group answers one or the other, so it is offered to the roles that ask for it.
+	Decisions   bool               `xorm:"NOT NULL DEFAULT false"`
 	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
 	UpdatedUnix timeutil.TimeStamp `xorm:"updated NOT NULL"`
 }
@@ -102,6 +105,14 @@ func GroupSlugFromName(name string) string {
 		return ""
 	}
 	return slug
+}
+
+// Class returns what the group fronts: what decides, or what writes.
+func (r *ModelGroup) Class() string {
+	if r.Decisions {
+		return ModelRoleClassDecision
+	}
+	return ModelRoleClassModel
 }
 
 // ModeOrDefault returns the stored mode, falling back to the zero value's meaning.

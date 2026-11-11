@@ -42,6 +42,8 @@ type GroupMemberTarget struct {
 
 // ModelGroupOptions holds the editable fields of a model group.
 type ModelGroupOptions struct {
+	// Decisions says the group fronts models that answer the decisions API.
+	Decisions   bool
 	Name        string
 	Description string
 	Mode        string
@@ -67,6 +69,9 @@ func CreateModelGroup(ctx context.Context, opts ModelGroupOptions) (*agent_model
 func UpdateModelGroup(ctx context.Context, id int64, opts ModelGroupOptions) (*agent_model.ModelGroup, error) {
 	existing, err := GetModelGroupByID(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateClassChange(ctx, existing, opts.Decisions); err != nil {
 		return nil, err
 	}
 	group, err := buildModelGroup(ctx, id, opts)
@@ -199,7 +204,7 @@ func buildModelGroup(ctx context.Context, exceptID int64, opts ModelGroupOptions
 	if len(opts.Members) == 0 {
 		return nil, ErrModelGroupInvalid{Reason: "a group needs at least one member"}
 	}
-	if err := validateMembers(ctx, exceptID, opts.Members); err != nil {
+	if err := validateMembers(ctx, exceptID, opts.Decisions, opts.Members); err != nil {
 		return nil, err
 	}
 
@@ -208,6 +213,7 @@ func buildModelGroup(ctx context.Context, exceptID int64, opts ModelGroupOptions
 		Slug:        slug,
 		Description: opts.Description,
 		Mode:        opts.Mode,
+		Decisions:   opts.Decisions,
 	}, nil
 }
 
@@ -254,20 +260,73 @@ func uniqueSlug(base string, existing map[int64]knownGroup, exceptID int64) stri
 	}
 }
 
-// validateMembers checks every member points at a real model or group, and that the
-// group does not end up containing itself.
-func validateMembers(ctx context.Context, roleID int64, members []GroupMemberTarget) error {
+// modelServesClass reports whether a provider's model answers what a group fronts. A model neither
+// listing described is read as one that answers a chat, as it is when it is offered.
+func modelServesClass(provider *agent_model.Provider, model string, decisions bool) bool {
+	for _, offered := range provider.Models() {
+		if offered.ID != model {
+			continue
+		}
+		if decisions {
+			return offered.Decisions
+		}
+		return offered.Chat || !offered.Decisions
+	}
+	return false
+}
+
+// validateClassChange refuses a change of what a group fronts while something expecting the old
+// kind still names it: a group that holds it, or a role it is assigned to.
+func validateClassChange(ctx context.Context, group *agent_model.ModelGroup, decisions bool) error {
+	if group.Decisions == decisions {
+		return nil
+	}
+
+	parents := make([]*agent_model.ModelGroupMember, 0, 4)
+	if err := db.GetEngine(ctx).Where("member_group_id = ?", group.ID).Find(&parents); err != nil {
+		return fmt.Errorf("find groups holding group %d: %w", group.ID, err)
+	}
+	for _, parent := range parents {
+		holder, err := GetModelGroupByID(ctx, parent.GroupID)
+		if err != nil {
+			return err
+		}
+		if holder.Decisions != decisions {
+			return ErrModelGroupInvalid{Reason: fmt.Sprintf("group %q holds this group", holder.Name)}
+		}
+	}
+
+	ref := ModelRefForGroup(group.Slug)
+	roles := make([]*agent_model.ModelRole, 0, len(agent_model.ModelRoleOptions))
+	if err := db.GetEngine(ctx).Where("model_ref = ?", ref).Find(&roles); err != nil {
+		return fmt.Errorf("find roles using group %d: %w", group.ID, err)
+	}
+	for _, role := range roles {
+		if (agent_model.ModelRoleClassOf(role.Role) == agent_model.ModelRoleClassDecision) != decisions {
+			return ErrModelGroupInvalid{Reason: fmt.Sprintf("the %s role answers with this group", role.Role)}
+		}
+	}
+	return nil
+}
+
+// validateMembers checks every member points at a real model or group, that it answers what the
+// group fronts, and that the group does not end up containing itself.
+func validateMembers(ctx context.Context, roleID int64, decisions bool, members []GroupMemberTarget) error {
 	for _, member := range members {
 		switch {
 		case member.GroupID != 0:
 			if member.GroupID == roleID {
 				return ErrModelGroupInvalid{Reason: "a group can not contain itself"}
 			}
-			if _, err := GetModelGroupByID(ctx, member.GroupID); err != nil {
+			child, err := GetModelGroupByID(ctx, member.GroupID)
+			if err != nil {
 				if errors.Is(err, agent_model.ErrModelGroupNotFound{}) {
 					return ErrModelGroupInvalid{Reason: "a member group does not exist"}
 				}
 				return err
+			}
+			if child.Decisions != decisions {
+				return ErrModelGroupInvalid{Reason: fmt.Sprintf("group %q fronts something else", child.Name)}
 			}
 		default:
 			if member.Model == "" {
@@ -282,6 +341,9 @@ func validateMembers(ctx context.Context, roleID int64, members []GroupMemberTar
 			}
 			if !slices.Contains(provider.ModelIDs(), member.Model) {
 				return ErrModelGroupInvalid{Reason: fmt.Sprintf("provider %q does not offer model %q", provider.Name, member.Model)}
+			}
+			if !modelServesClass(provider, member.Model, decisions) {
+				return ErrModelGroupInvalid{Reason: fmt.Sprintf("model %q of provider %q does not answer what this group fronts", member.Model, provider.Name)}
 			}
 		}
 	}

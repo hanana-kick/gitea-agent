@@ -94,7 +94,15 @@ func ModelOptionsByClass(ctx context.Context, limit int) (map[string][]ModelOpti
 		}
 	}
 	if len(byClass[agent_model.ModelRoleClassDecision]) == 0 {
-		byClass[agent_model.ModelRoleClassDecision] = options
+		// an instance that reported no decisions model offers what it has, so the role can be
+		// answered at all; groups keep the kind they were given
+		fallback := make([]ModelOption, 0, len(options))
+		for _, option := range options {
+			if !IsGroupRef(option.Ref) {
+				fallback = append(fallback, option)
+			}
+		}
+		byClass[agent_model.ModelRoleClassDecision] = fallback
 	}
 	return byClass, nil
 }
@@ -108,10 +116,13 @@ func ModelOptions(ctx context.Context, limit int) ([]ModelOption, error) {
 	}
 	options := make([]ModelOption, 0, len(groups))
 	for _, group := range groups {
-		// a group is whatever its members are, and it may hold what answers a chat, what answers
-		// decisions, or both, so it is offered wherever a model of either kind may be chosen
+		// a group fronts one kind of model, and its members are of that kind, so it is offered
+		// where a model of that kind may be chosen
 		options = append(options, ModelOption{
-			Ref: ModelRefForGroup(group.Slug), Label: group.Name, Chat: true, Decisions: true,
+			Ref:       ModelRefForGroup(group.Slug),
+			Label:     group.Name,
+			Chat:      !group.Decisions,
+			Decisions: group.Decisions,
 		})
 	}
 

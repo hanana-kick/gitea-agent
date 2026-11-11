@@ -73,6 +73,7 @@ func ModelGroupNewPost(ctx *context.Context) {
 		Name:        form.Name,
 		Description: form.Description,
 		Mode:        form.Mode,
+		Decisions:   form.decides(),
 		Members:     members,
 	})
 	if err != nil {
@@ -103,6 +104,7 @@ func ModelGroupEdit(ctx *context.Context) {
 		Name:        role.Name,
 		Description: role.Description,
 		Mode:        role.ModeOrDefault(),
+		Class:       role.Class(),
 		Members:     groupMemberValues(members),
 	}, "")
 }
@@ -129,6 +131,7 @@ func ModelGroupEditPost(ctx *context.Context) {
 		Name:        form.Name,
 		Description: form.Description,
 		Mode:        form.Mode,
+		Decisions:   form.decides(),
 		Members:     members,
 	})
 	if err != nil {
@@ -188,7 +191,14 @@ type groupForm struct {
 	Name        string
 	Description string
 	Mode        string
-	Members     []string
+	// Class is what the group fronts: the kind of model its members are.
+	Class   string
+	Members []string
+}
+
+// decides reports whether the submitted values front what answers decisions.
+func (f groupForm) decides() bool {
+	return f.Class == agent_model.ModelRoleClassDecision
 }
 
 // memberTargets parses the member rows, reporting the first invalid one.
@@ -257,6 +267,7 @@ func groupFormFrom(ctx *context.Context) groupForm {
 		Name:        ctx.FormTrim("name"),
 		Description: ctx.FormTrim("description"),
 		Mode:        ctx.FormTrim("mode"),
+		Class:       ctx.FormTrim("class"),
 	}
 	form.Members = ctx.FormStrings("member")
 	return form
@@ -284,50 +295,54 @@ func renderGroupForm(ctx *context.Context, role *agent_model.ModelGroup, form gr
 	ctx.HTML(http.StatusOK, tplGroupForm)
 }
 
-// groupMemberCatalogue lists every target a group can hold: single models of every
-// provider, then the other roles.
+// groupMemberCatalogue lists every target a group can hold, by the kind of model it is: the models
+// of each kind, and the groups that front that kind. A group is offered to the roles that ask for
+// what it fronts, so it may only hold what answers the same.
 func groupMemberCatalogue(ctx *context.Context, editing *agent_model.ModelGroup) []groupMemberClass {
-	classes := make([]groupMemberClass, 0, 3)
+	classes := make([]groupMemberClass, 0, len(agent_model.ModelRoleClasses))
+	for _, class := range agent_model.ModelRoleClasses {
+		classes = append(classes, groupMemberClass{Class: class})
+	}
+	decides := func(class string) bool { return class == agent_model.ModelRoleClassDecision }
 
-	// a member is a model or another group. The models are listed by what they serve, because a
-	// group is picked for a role: what writes answers a chat, what decides answers the decisions
-	// API, and choosing between them is what the group is for.
-	byClass, err := agent_service.ModelOptionsByClass(ctx, 500)
+	options, err := agent_service.ModelOptions(ctx, 500)
 	if err == nil {
-		for _, class := range agent_model.ModelRoleClasses {
-			options := byClass[class]
-			if len(options) == 0 {
-				continue
+		for _, option := range options {
+			if agent_service.IsGroupRef(option.Ref) {
+				continue // a group is a member of its own kind, listed with the groups below
 			}
-			members := make([]groupMemberOption, 0, len(options))
-			for _, option := range options {
-				if agent_service.IsGroupRef(option.Ref) {
-					continue // a group is a member of its own kind, listed with them below
-				}
-				members = append(members, groupMemberOption{
-					// a member names the kind of target it is: a model of a provider, by its id
-					Value: agent_model.MemberKindModel + ":" + strings.TrimPrefix(option.Ref, "provider:"),
-					Label: option.Label,
-				})
+			class := agent_model.ModelRoleClassModel
+			if option.Decisions {
+				class = agent_model.ModelRoleClassDecision
 			}
-			classes = append(classes, groupMemberClass{Class: class, Options: members})
+			index := 0
+			if decides(class) {
+				index = 1
+			}
+			classes[index].Options = append(classes[index].Options, groupMemberOption{
+				// a member names the kind of target it is: a model of a provider, by its id
+				Value: agent_model.MemberKindModel + ":" + strings.TrimPrefix(option.Ref, "provider:"),
+				Label: option.Label,
+				Class: class,
+			})
 		}
 	}
 
-	roles, _, err := agent_service.FindModelGroups(ctx, agent_model.FindModelGroupsOptions{ListOptions: db.ListOptionsAll})
+	groups, _, err := agent_service.FindModelGroups(ctx, agent_model.FindModelGroupsOptions{ListOptions: db.ListOptionsAll})
 	if err == nil {
-		members := make([]groupMemberOption, 0, len(roles))
-		for _, r := range roles {
-			if editing != nil && r.ID == editing.ID {
+		for _, group := range groups {
+			if editing != nil && group.ID == editing.ID {
 				continue // a group can not contain itself
 			}
-			members = append(members, groupMemberOption{
-				Value: fmt.Sprintf("%s:%d", agent_model.MemberKindGroup, r.ID),
-				Label: "[" + ctx.Locale.TrString("agent.groups_title") + "] " + r.Name,
+			index := 0
+			if group.Decisions {
+				index = 1
+			}
+			classes[index].Options = append(classes[index].Options, groupMemberOption{
+				Value: fmt.Sprintf("%s:%d", agent_model.MemberKindGroup, group.ID),
+				Label: "[" + ctx.Locale.TrString("agent.groups_title") + "] " + group.Name,
+				Class: group.Class(),
 			})
-		}
-		if len(members) > 0 {
-			classes = append(classes, groupMemberClass{Class: "group", Options: members})
 		}
 	}
 	return classes
@@ -335,7 +350,7 @@ func groupMemberCatalogue(ctx *context.Context, editing *agent_model.ModelGroup)
 
 // groupMemberClass is one kind of member a group may hold, with the members of that kind.
 type groupMemberClass struct {
-	// Class is what the members answer: a chat, the decisions API, or a group that holds either.
+	// Class is what the members answer: a chat or the decisions API.
 	Class   string
 	Options []groupMemberOption
 }
@@ -344,6 +359,8 @@ type groupMemberClass struct {
 type groupMemberOption struct {
 	Value string
 	Label string
+	// Class is what this member answers, which decides whether it may be held.
+	Class string
 }
 
 // GroupMemberValue renders a stored member as a member row value.

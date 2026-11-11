@@ -458,6 +458,7 @@ func prepareMigrationTasks() []*migration {
 		newMigration(379, "Add agent request kind and answer", v28.AddAgentRequestKindAndAnswer),
 		newMigration(380, "Add agent conversation autopilot", v28.AddAgentConversationAutopilot),
 		newMigration(381, "Rename the agent review role to decision", v28.RenameAgentReviewRoleToDecision),
+		newMigration(382, "Add agent model group decisions", v28.AddAgentModelGroupDecisions),
 	}
 	return preparedMigrations
 }

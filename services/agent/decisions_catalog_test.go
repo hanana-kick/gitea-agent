@@ -72,16 +72,17 @@ func TestFetchModelsKeepsWhatServesDecisions(t *testing.T) {
 	assert.True(t, legacy[0].Chat, "a model stored before the listings were apart lost its place")
 	assert.False(t, legacy[0].Decisions)
 
-	// a group is whatever its members are, so it is offered wherever a model may be chosen
+	// a group fronts one kind of model, so it is offered where that kind is chosen
 	group, err := CreateModelGroup(ctx, ModelGroupOptions{Name: "mixed", Members: []GroupMemberTarget{{ProviderID: provider.ID, Model: "acme/chat-one"}}})
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = DeleteModelGroup(context.Background(), group.ID) })
 	split, err := ModelOptionsByClass(ctx, 200)
 	require.NoError(t, err)
 	groupRef := ModelRefForGroup(group.Slug)
-	for _, class := range agent_model.ModelRoleClasses {
-		assert.True(t, slices.ContainsFunc(split[class], func(o ModelOption) bool { return o.Ref == groupRef }),
-			"a group is not offered where the %s roles are chosen", class)
-	}
+	assert.True(t, slices.ContainsFunc(split[agent_model.ModelRoleClassModel], func(o ModelOption) bool { return o.Ref == groupRef }),
+		"a group that writes is not offered where the roles that write are chosen")
+	assert.False(t, slices.ContainsFunc(split[agent_model.ModelRoleClassDecision], func(o ModelOption) bool { return o.Ref == groupRef }),
+		"a group that writes is offered where the roles that decide are chosen")
 
 	// once the form saves what it was shown, it reaches the pickers a decision role is chosen from
 	require.NoError(t, provider.SetModels(models))

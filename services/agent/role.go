@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
@@ -50,6 +51,19 @@ func ModelRoleRef(ctx context.Context, role string) (string, error) {
 func SetModelRoleRef(ctx context.Context, role, ref string) error {
 	if !agent_model.IsValidModelRole(role) {
 		return fmt.Errorf("unknown model role %q", role)
+	}
+	if IsGroupRef(ref) {
+		group, err := GetModelGroupBySlug(ctx, strings.TrimPrefix(ref, modelRefGroup+":"))
+		if err != nil {
+			return err
+		}
+		if group == nil {
+			return fmt.Errorf("unknown group %q", ref)
+		}
+		decides := agent_model.ModelRoleClassOf(role) == agent_model.ModelRoleClassDecision
+		if group.Decisions != decides {
+			return fmt.Errorf("group %q fronts something else", group.Name)
+		}
 	}
 	row := &agent_model.ModelRole{}
 	has, err := db.GetEngine(ctx).Where("role = ?", role).Get(row)
