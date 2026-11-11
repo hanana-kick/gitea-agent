@@ -7,7 +7,7 @@
 			{{if .ErrorMsg}}
 				<div class="ui error message">{{.ErrorMsg}}</div>
 			{{end}}
-			{{if .GroupMembers}}
+			{{if .GroupMemberClasses}}
 				<form class="ui form" id="group-form" action="{{.FormAction}}" method="post">
 					<div class="required field">
 						<label for="name">{{ctx.Locale.Tr "agent.group_name"}}</label>
@@ -41,8 +41,12 @@
 									<div class="tw-flex-1">
 										<select class="ui search selection dropdown custom tw-w-full" name="member" required>
 											{{$selected := .}}
-											{{range $.GroupMembers}}
-												<option value="{{.Value}}" {{if eq .Value $selected}}selected{{end}}>{{.Label}}</option>
+											{{range $.GroupMemberClasses}}
+												<optgroup label="{{ctx.Locale.Tr (printf "agent.roles_class_%s" .Class)}}">
+													{{range .Options}}
+														<option value="{{.Value}}" {{if eq .Value $selected}}selected{{end}}>{{.Label}}</option>
+													{{end}}
+												</optgroup>
 											{{end}}
 										</select>
 									</div>
@@ -69,13 +73,17 @@
 		</div>
 	</div>
 
-	{{if .GroupMembers}}
+	{{if .GroupMemberClasses}}
 		<template id="group-member-template">
 			<div class="group-member flex-text-block tw-mb-2">
 				<div class="tw-flex-1">
 					<select class="ui search selection dropdown custom tw-w-full" name="member" required>
-						{{range .GroupMembers}}
-							<option value="{{.Value}}">{{.Label}}</option>
+						{{range .GroupMemberClasses}}
+							<optgroup label="{{ctx.Locale.Tr (printf "agent.roles_class_%s" .Class)}}">
+								{{range .Options}}
+									<option value="{{.Value}}">{{.Label}}</option>
+								{{end}}
+							</optgroup>
 						{{end}}
 					</select>
 				</div>

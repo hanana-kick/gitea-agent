@@ -3594,6 +3594,7 @@
   "agent.roles_preset_quality": "Quality: the strong model for everything",
   "agent.roles_preset_strong": "Strong model",
   "agent.roles_class_decision": "Decisions",
+  "agent.roles_class_group": "Groups",
   "agent.roles_class_decision_help": "Roles that judge: whether a call may go ahead without a person, and what to do where the agent would otherwise have asked one. They answer with the decision model, which may be a model worth asking rather than the cheapest one.",
   "agent.roles_class_model": "Answers and work",
   "agent.roles_class_model_help": "Roles that write: the work a session does, and the names it gives itself. They answer with a model of the instance's own; the small jobs are the ones a cheap model is enough for.",

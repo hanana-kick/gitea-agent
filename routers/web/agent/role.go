@@ -5,6 +5,7 @@ package agent
 
 import (
 	"net/http"
+	"slices"
 
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/modules/setting"
@@ -51,27 +52,14 @@ func ModelRoles(ctx *context.Context) {
 		ctx.ServerError("ModelOptions", err)
 		return
 	}
-	// each class of role is offered the models that serve it: what writes answers a chat, what
-	// decides answers the decisions API, and a model that serves both is offered to both. An
-	// instance that has no decision model yet is offered every model, so the roles stay settable.
-	optionsByClass := map[string][]agent_service.ModelOption{
-		agent_model.ModelRoleClassModel:    make([]agent_service.ModelOption, 0, len(options)),
-		agent_model.ModelRoleClassDecision: make([]agent_service.ModelOption, 0, len(options)),
+	// each class of role is offered the models that serve it, and an instance with no decision
+	// model is offered every model for that role
+	optionsByClass, err := agent_service.ModelOptionsByClass(ctx, 200)
+	if err != nil {
+		ctx.ServerError("ModelOptionsByClass", err)
+		return
 	}
-	for _, option := range options {
-		if option.Chat {
-			optionsByClass[agent_model.ModelRoleClassModel] = append(optionsByClass[agent_model.ModelRoleClassModel], option)
-		}
-		if option.Decisions {
-			optionsByClass[agent_model.ModelRoleClassDecision] = append(optionsByClass[agent_model.ModelRoleClassDecision], option)
-		}
-	}
-	if len(optionsByClass[agent_model.ModelRoleClassDecision]) == 0 {
-		optionsByClass[agent_model.ModelRoleClassDecision] = options
-		ctx.Data["NoDecisionModels"] = true
-	}
-	ctx.Data["Rows"] = rows
-	ctx.Data["ModelOptions"] = options
+	ctx.Data["NoDecisionModels"] = !slices.ContainsFunc(options, func(o agent_service.ModelOption) bool { return o.Decisions })
 	ctx.Data["OptionsByClass"] = optionsByClass
 	ctx.Data["Presets"] = agent_service.RolePresets
 	ctx.Data["RoleClasses"] = agent_model.ModelRoleClasses

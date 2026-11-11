@@ -367,6 +367,36 @@ func encodeCatalog(models []agent_model.ProviderModel) string {
 }
 
 // renderProviderForm renders the create form when p is nil, the edit form otherwise.
+// catalogByClass splits what a gateway reported by what the models serve, so the ones that answer
+// the decisions API are picked apart from the ones that answer a chat. A model that serves both is
+// listed where it answers a chat: it is offered to a decision role either way.
+func catalogByClass(catalog []agent_model.ProviderModel) []providerCatalogClass {
+	classes := make([]providerCatalogClass, 0, 2)
+	chat := make([]agent_model.ProviderModel, 0, len(catalog))
+	decisions := make([]agent_model.ProviderModel, 0, 4)
+	for _, model := range catalog {
+		if model.Chat {
+			chat = append(chat, model)
+		}
+		if model.Decisions && !model.Chat {
+			decisions = append(decisions, model)
+		}
+	}
+	if len(chat) > 0 {
+		classes = append(classes, providerCatalogClass{Class: agent_model.ModelRoleClassModel, Models: chat})
+	}
+	if len(decisions) > 0 {
+		classes = append(classes, providerCatalogClass{Class: agent_model.ModelRoleClassDecision, Models: decisions})
+	}
+	return classes
+}
+
+// providerCatalogClass is one kind of model a gateway reported, with the models of that kind.
+type providerCatalogClass struct {
+	Class  string
+	Models []agent_model.ProviderModel
+}
+
 func renderProviderForm(ctx *context.Context, p *agent_model.Provider, form providerForm, catalog []agent_model.ProviderModel, errMsg string) {
 	providerTypes := llm.Providers()
 	if form.Provider == "" && len(providerTypes) > 0 {
@@ -392,6 +422,7 @@ func renderProviderForm(ctx *context.Context, p *agent_model.Provider, form prov
 	ctx.Data["Form"] = form
 	ctx.Data["Catalog"] = catalog
 	ctx.Data["CatalogEncoded"] = encodeCatalog(catalog)
+	ctx.Data["CatalogByClass"] = catalogByClass(catalog)
 	ctx.Data["ErrorMsg"] = errMsg
 	ctx.Data["IsEdit"] = isEdit
 	ctx.Data["FormAction"] = setting.AppSubURL + formAction

@@ -275,7 +275,7 @@ func renderGroupForm(ctx *context.Context, role *agent_model.ModelGroup, form gr
 	ctx.Data["IsEdit"] = isEdit
 	ctx.Data["Form"] = form
 	ctx.Data["ErrorMsg"] = errMsg
-	ctx.Data["GroupMembers"] = groupMemberCatalogue(ctx, role)
+	ctx.Data["GroupMemberClasses"] = groupMemberCatalogue(ctx, role)
 	ctx.Data["FormAction"] = setting.AppSubURL + groupsURL + "/new"
 	if isEdit {
 		ctx.Data["FormAction"] = setting.AppSubURL + groupsURL + "/" + strconv.FormatInt(role.ID, 10) + "/edit"
@@ -286,34 +286,55 @@ func renderGroupForm(ctx *context.Context, role *agent_model.ModelGroup, form gr
 
 // groupMemberCatalogue lists every target a group can hold: single models of every
 // provider, then the other roles.
-func groupMemberCatalogue(ctx *context.Context, editing *agent_model.ModelGroup) []groupMemberOption {
-	options := make([]groupMemberOption, 0)
+func groupMemberCatalogue(ctx *context.Context, editing *agent_model.ModelGroup) []groupMemberClass {
+	classes := make([]groupMemberClass, 0, 3)
 
-	providers, err := agent_service.GetProviders(ctx, "")
+	// a member is a model or another group. The models are listed by what they serve, because a
+	// group is picked for a role: what writes answers a chat, what decides answers the decisions
+	// API, and choosing between them is what the group is for.
+	byClass, err := agent_service.ModelOptionsByClass(ctx, 500)
 	if err == nil {
-		for _, p := range providers {
-			for _, model := range p.ModelIDs() {
-				options = append(options, groupMemberOption{
-					Value: fmt.Sprintf("%s:%d/%s", agent_model.MemberKindModel, p.ID, model),
-					Label: p.Name + " / " + model,
+		for _, class := range agent_model.ModelRoleClasses {
+			options := byClass[class]
+			if len(options) == 0 {
+				continue
+			}
+			members := make([]groupMemberOption, 0, len(options))
+			for _, option := range options {
+				members = append(members, groupMemberOption{
+					// a member names the kind of target it is: a model of a provider, by its id
+					Value: agent_model.MemberKindModel + ":" + strings.TrimPrefix(option.Ref, "provider:"),
+					Label: option.Label,
 				})
 			}
+			classes = append(classes, groupMemberClass{Class: class, Options: members})
 		}
 	}
 
 	roles, _, err := agent_service.FindModelGroups(ctx, agent_model.FindModelGroupsOptions{ListOptions: db.ListOptionsAll})
 	if err == nil {
+		members := make([]groupMemberOption, 0, len(roles))
 		for _, r := range roles {
 			if editing != nil && r.ID == editing.ID {
 				continue // a group can not contain itself
 			}
-			options = append(options, groupMemberOption{
+			members = append(members, groupMemberOption{
 				Value: fmt.Sprintf("%s:%d", agent_model.MemberKindGroup, r.ID),
 				Label: "[" + ctx.Locale.TrString("agent.groups_title") + "] " + r.Name,
 			})
 		}
+		if len(members) > 0 {
+			classes = append(classes, groupMemberClass{Class: "group", Options: members})
+		}
 	}
-	return options
+	return classes
+}
+
+// groupMemberClass is one kind of member a group may hold, with the members of that kind.
+type groupMemberClass struct {
+	// Class is what the members answer: a chat, the decisions API, or a group that holds either.
+	Class   string
+	Options []groupMemberOption
 }
 
 // groupMemberOption is one selectable member of a group.

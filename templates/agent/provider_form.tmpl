@@ -70,16 +70,19 @@
 					{{if .Catalog}}
 						{{/* no height utilities exist in the tw- set, so keep these two inline */}}
 						<div id="model-list" class="tw-flex tw-flex-col tw-gap-1 tw-overflow-auto tw-border tw-border-secondary tw-rounded tw-p-2 tw-mb-2" style="min-height: 6rem; max-height: 15rem">
-							{{range .Catalog}}
-								<div class="ui checkbox" data-model="{{.DisplayName}} {{.ID}}">
-									<input type="checkbox" name="models" value="{{.ID}}" {{if $.Form.HasSelected .ID}}checked{{end}}>
-									{{if .Decisions}}<span class="ui basic label tw-ml-1">{{ctx.Locale.Tr "agent.model_serves_decisions"}}</span>{{end}}
-									<label>
-										<strong>{{.DisplayName}}</strong>
-										{{if ne .Name .ID}}<span class="tw-text-text-light tw-ml-2">{{.ID}}</span>{{end}}
-										{{template "agent/model_inputs" .Inputs}}
-									</label>
-								</div>
+							{{range .CatalogByClass}}
+								<div class="tw-text-light tw-text-12 tw-mt-1">{{ctx.Locale.Tr (printf "agent.roles_class_%s" .Class)}}</div>
+								{{range .Models}}
+									<div class="ui checkbox" data-model="{{.DisplayName}} {{.ID}}">
+										<input type="checkbox" name="models" value="{{.ID}}" {{if $.Form.HasSelected .ID}}checked{{end}}>
+										{{if .Decisions}}<span class="ui basic label tw-ml-1">{{ctx.Locale.Tr "agent.model_serves_decisions"}}</span>{{end}}
+										<label>
+											<strong>{{.DisplayName}}</strong>
+											{{if ne .Name .ID}}<span class="tw-text-text-light tw-ml-2">{{.ID}}</span>{{end}}
+											{{template "agent/model_inputs" .Inputs}}
+										</label>
+									</div>
+								{{end}}
 							{{end}}
 							<div class="tw-hidden tw-text-text-light" id="model-list-empty">{{ctx.Locale.Tr "agent.models_no_match"}}</div>
 						</div>

@@ -68,6 +68,32 @@ func (err ErrModelRoleNotSet) Is(target error) bool {
 }
 
 // ModelOptions lists what a role may answer with: groups first, then provider models.
+// ModelOptionsByClass returns the models of each class of role: the ones that answer a chat, and
+// the ones that answer the decisions API. An instance no provider has reported a decision model to
+// is given every model for the decision class, so a decision role stays settable.
+func ModelOptionsByClass(ctx context.Context, limit int) (map[string][]ModelOption, error) {
+	options, err := ModelOptions(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	byClass := map[string][]ModelOption{
+		agent_model.ModelRoleClassModel:    make([]ModelOption, 0, len(options)),
+		agent_model.ModelRoleClassDecision: make([]ModelOption, 0, len(options)),
+	}
+	for _, option := range options {
+		if option.Chat {
+			byClass[agent_model.ModelRoleClassModel] = append(byClass[agent_model.ModelRoleClassModel], option)
+		}
+		if option.Decisions {
+			byClass[agent_model.ModelRoleClassDecision] = append(byClass[agent_model.ModelRoleClassDecision], option)
+		}
+	}
+	if len(byClass[agent_model.ModelRoleClassDecision]) == 0 {
+		byClass[agent_model.ModelRoleClassDecision] = options
+	}
+	return byClass, nil
+}
+
 func ModelOptions(ctx context.Context, limit int) ([]ModelOption, error) {
 	groups, _, err := FindModelGroups(ctx, agent_model.FindModelGroupsOptions{
 		ListOptions: db.ListOptions{Page: 1, PageSize: limit},
