@@ -103,7 +103,11 @@ func ModelOptions(ctx context.Context, limit int) ([]ModelOption, error) {
 	}
 	options := make([]ModelOption, 0, len(groups))
 	for _, group := range groups {
-		options = append(options, ModelOption{Ref: ModelRefForGroup(group.Slug), Label: group.Name})
+		// a group is whatever its members are, and it may hold what answers a chat, what answers
+		// decisions, or both, so it is offered wherever a model of either kind may be chosen
+		options = append(options, ModelOption{
+			Ref: ModelRefForGroup(group.Slug), Label: group.Name, Chat: true, Decisions: true,
+		})
 	}
 
 	providers, err := GetProviders(ctx, "")

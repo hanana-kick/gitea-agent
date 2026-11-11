@@ -301,6 +301,9 @@ func groupMemberCatalogue(ctx *context.Context, editing *agent_model.ModelGroup)
 			}
 			members := make([]groupMemberOption, 0, len(options))
 			for _, option := range options {
+				if strings.HasPrefix(option.Ref, agent_service.ModelRefForGroup("")) {
+					continue // a group is a member of its own kind, listed with them below
+				}
 				members = append(members, groupMemberOption{
 					// a member names the kind of target it is: a model of a provider, by its id
 					Value: agent_model.MemberKindModel + ":" + strings.TrimPrefix(option.Ref, "provider:"),

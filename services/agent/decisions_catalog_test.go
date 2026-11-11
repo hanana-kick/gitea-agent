@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	agent_model "gitea.dev/models/agent"
@@ -70,6 +71,17 @@ func TestFetchModelsKeepsWhatServesDecisions(t *testing.T) {
 	require.Len(t, legacy, 1)
 	assert.True(t, legacy[0].Chat, "a model stored before the listings were apart lost its place")
 	assert.False(t, legacy[0].Decisions)
+
+	// a group is whatever its members are, so it is offered wherever a model may be chosen
+	group, err := CreateModelGroup(ctx, ModelGroupOptions{Name: "mixed", Members: []GroupMemberTarget{{ProviderID: provider.ID, Model: "acme/chat-one"}}})
+	require.NoError(t, err)
+	split, err := ModelOptionsByClass(ctx, 200)
+	require.NoError(t, err)
+	groupRef := ModelRefForGroup(group.Slug)
+	for _, class := range agent_model.ModelRoleClasses {
+		assert.True(t, slices.ContainsFunc(split[class], func(o ModelOption) bool { return o.Ref == groupRef }),
+			"a group is not offered where the %s roles are chosen", class)
+	}
 
 	// once the form saves what it was shown, it reaches the pickers a decision role is chosen from
 	require.NoError(t, provider.SetModels(models))
