@@ -6,7 +6,13 @@ Usage:
     python3 scripts/agent-harness.py restore <snapshot.json>
     python3 scripts/agent-harness.py reset --yes
     python3 scripts/agent-harness.py seed
+    python3 scripts/agent-harness.py decisions
     python3 scripts/agent-harness.py flow <chat|mention|page|release|approve-refuse|cancel|edit>
+
+`decisions` runs the use cases that say where the decision model is asked: a question the run
+would have put to a person, and a call that would have waited for one. Each case points the
+decision role at a gateway of its own, so what the decision model was asked is what that
+gateway saw, and the cases that say it is not asked say so with the same gateway standing by.
 
 Everything goes over HTTP to a running instance, and to its SQLite database for what the API
 does not answer: which run is active, what the transcript holds. The defaults are the local
@@ -208,6 +214,7 @@ class Instance:
     # ---- the chat surfaces -------------------------------------------------
 
     def open_session(self, repo_id, content):
+        # the message is what opens the session and starts its run, and an empty one is refused
         status, _, headers = self.request(
             "POST",
             "/-/agent/new",
@@ -1898,6 +1905,377 @@ def cmd_flow(args):
     return {"ok": 0, "failed": 1, "provider": 2}[report["result"]]
 
 
+# ---- where the decision model is used --------------------------------------
+#
+# A run that decides for itself asks the decision model in two places, and only there: it answers
+# a question the run would have put to a person, and it reviews a call that would have waited for
+# one. Everything else — a call that never waits, a run nobody lets decide — never reaches it.
+# These use cases turn each of those on its own, with the decision model on a gateway of its own,
+# so what it was asked is what that gateway saw.
+
+DECISION_PROMPTS = {
+    "question": "드리프트 창을 바꾸기 전에 나에게 물어봐. gitea_ask_user 로 선택지를 주고 물어보고, "
+                "내가 고른 답을 그대로 반영해줘.",
+    "review": "README.md 에 '드리프트 창은 1800초' 한 줄을 덧붙이는 커밋을 만들어줘.",
+    "read": "README.md 를 읽고 첫 줄만 그대로 알려줘.",
+    "warmup": "아직 아무것도 하지 말고, 준비됐다고만 답해줘.",
+}
+
+
+def messages_system(body):
+    """The system prompt of a request, which is how a review reads apart from a turn."""
+    return " ".join(
+        message.get("content") or "" for message in body.get("messages", []) if message.get("role") == "system"
+    )
+
+
+def gateway_decision(question="30분(1800초)을 그대로 두고, 바꿀 때는 코드와 문서를 함께 고치세요.", allow=True,
+                     reason="it is what the request asked for"):
+    """The decision model: it answers a question with the sentence it decides with, and a review
+    with the JSON object the instance reads."""
+
+    def build(body):
+        if '"allow"' in messages_system(body):
+            return reply({"role": "assistant", "content": json.dumps({"allow": allow, "reason": reason})})
+        return reply({"role": "assistant", "content": question})
+
+    return build
+
+
+def gateway_work(name, arguments, allow=True, reason="it is what the request asked for", answer="알겠습니다."):
+    """The session's own model: it makes one call, and it reviews that call itself when the
+    instance has no decision model to ask. Which of the two it is answering is the system prompt.
+
+    A session is worked up before it is worked on: the first turn of it is answered in words, so
+    what the session is set to by then is what the turn that calls something is."""
+
+    def build(body):
+        if '"allow"' in messages_system(body):
+            return reply({"role": "assistant", "content": json.dumps({"allow": allow, "reason": reason})})
+        if not any(message.get("role") == "assistant" for message in body.get("messages", [])):
+            return reply({"role": "assistant", "content": answer})
+        asked = any(message.get("role") == "tool" for message in body.get("messages", []))
+        return reply({"role": "assistant", "content": answer}) if asked else call_reply([called(name, arguments)])
+
+    return build
+
+
+class DecisionCases:
+    """The places a decision model is asked, one use case at a time.
+
+    The session answers with one gateway and the decision role points at another, so what the
+    decision model was asked is what its own gateway saw and nothing else. Each case turns on the
+    one thing that says whether it is asked at all: whether the run decides for itself, whether the
+    call waits for a reader, and whether a decision model is assigned.
+    """
+
+    def __init__(self, inst, db, args):
+        self.inst, self.db, self.args = inst, db, args
+        self.key = ensure_api_key(inst, db, f"harness-decisions-{os.getpid()}")
+        self.repo_name = args.repo or args.repos[0]
+        self.repo = repository(inst, args.user, self.repo_name)
+        if self.repo is None:
+            raise HarnessError(f"{args.user}/{self.repo_name} is not there: seed first")
+        self.roles = {row["role"]: row["model_ref"] for row in db.rows("SELECT role, model_ref FROM agent_model_role")}
+        self.permissions = [dict(row) for row in db.rows("SELECT tool, mode, enabled FROM agent_tool_permission")]
+        self.providers, self.gateways = [], []
+
+    # what the instance is pointed at
+
+    def work(self, mode, model="harness-work"):
+        gateway = StubGateway(mode)
+        provider_id, ref = create_provider(self.inst, self.db, f"harness-work-{gateway.port}", gateway.url, model, self.key)
+        self.providers.append(provider_id)
+        self.gateways.append(gateway)
+        return gateway, ref
+
+    def decider(self, mode, model="harness-decide"):
+        """A provider of its own for the decision model, which by its listing answers decisions."""
+        gateway = StubGateway(mode)
+        provider_id, ref = create_provider(self.inst, self.db, f"harness-decider-{gateway.port}", gateway.url, model, self.key)
+        self.db.execute(
+            "UPDATE agent_provider SET models_json = ? WHERE id = ?",
+            (json.dumps([{"id": model, "chat": False, "decisions": True}]), provider_id),
+        )
+        self.providers.append(provider_id)
+        self.gateways.append(gateway)
+        return gateway, ref
+
+    def work_mode(self, name, tool, arguments, **kwargs):
+        GATEWAY_MODES[name] = gateway_work(tool, arguments, **kwargs)
+        return name
+
+    def permission(self, tool, mode):
+        self.db.execute(
+            "INSERT INTO agent_tool_permission (tool, mode, enabled) VALUES (?, ?, 1)"
+            " ON CONFLICT(tool) DO UPDATE SET mode = excluded.mode, enabled = 1",
+            (tool, mode),
+        )
+
+    def drive(self, prompt, work_mode, decide_mode="decision-answers", assign_decider=True, autopilot=True):
+        """One session, answered by a gateway of its own, with the decision role pointed at another."""
+        work, work_ref = self.work(work_mode)
+        for role in ("repository", "resident", "server", "summary"):
+            set_role_ref(self.db, role, work_ref)
+        decider, decider_ref = self.decider(decide_mode)
+        set_role_ref(self.db, "decision", decider_ref if assign_decider else "")
+        # a session is worked up first: the first message is what starts a run, and a run reads
+        # what the session was when it started, so the setting goes in between the two
+        session = self.inst.open_session(self.repo["id"], DECISION_PROMPTS["warmup"])
+        follow(self.inst, self.db, session, timeout=self.args.timeout)
+        self.db.execute("UPDATE agent_conversation SET autopilot = ? WHERE id = ?", (int(autopilot), session))
+        self.inst.send_message(session, prompt)
+        trace = []
+        run = follow(self.inst, self.db, session, decision=(lambda *_: True), trace=trace, timeout=self.args.timeout)
+        return {"session": session, "run": run, "approvals": trace, "work": work, "decider": decider}
+
+    def cleanup(self):
+        for gateway in self.gateways:
+            gateway.close()
+        self.db.execute("DELETE FROM agent_model_role")
+        for role, ref in self.roles.items():
+            set_role_ref(self.db, role, ref or "")
+        self.db.execute("DELETE FROM agent_tool_permission")
+        for row in self.permissions:
+            self.db.execute(
+                "INSERT INTO agent_tool_permission (tool, mode, enabled) VALUES (?, ?, ?)",
+                (row["tool"], row["mode"], int(row["enabled"])),
+            )
+        for provider_id in self.providers:
+            self.db.execute("DELETE FROM agent_provider WHERE id = ?", (provider_id,))
+        self.db.execute("DELETE FROM agent_api_key WHERE name = ?", (f"harness-decisions-{os.getpid()}",))
+
+    def decisions_asked(self, held, want=None):
+        """What the decision model's gateway was asked, and how many of those were reviews."""
+        asked = held["decider"].asked()
+        reviews = [body for body in asked if '"allow"' in messages_system(body)]
+        if want == "reviews":
+            return reviews
+        return asked
+
+    def review_reason(self, held):
+        record = tool_record(self.db, held["session"], "gitea_commit_files") or ""
+        return record
+
+    # the use cases
+
+    def case_question(self):
+        """A question the run would have put to a person: the decision model answers it instead."""
+        checks = []
+        held = self.drive(
+            DECISION_PROMPTS["question"],
+            self.work_mode("uc-question-work", "gitea_ask_user", json.dumps(
+                {"question": "드리프트 창을 몇 분으로 둘까요?", "options": "30분 | 60분",
+                 "why": "코드와 문서가 함께 바뀝니다"}, ensure_ascii=False)),
+        )
+        asked = self.decisions_asked(held)
+        reviews = self.decisions_asked(held, want="reviews")
+        check(checks, "decision.asked_once", len(asked) == 1, f"{len(asked)} requests")
+        check(checks, "decision.asked_to_answer", bool(asked) and not reviews, f"{len(reviews)} of {len(asked)} were reviews")
+        check(checks, "decision.got_the_question",
+              any("드리프트 창을 몇 분으로 둘까요?" in json.dumps(body, ensure_ascii=False) for body in asked),
+              "the question is not in what the decision model was given")
+        record = tool_record(self.db, held["session"], "gitea_ask_user") or ""
+        check(checks, "transcript.says_who_answered",
+              "Autopilot answered this instead of asking:" in record and "1800" in record, record[:200])
+        check(checks, "reader.not_asked", not approvals_of(self.db, held["session"]), len(approvals_of(self.db, held["session"])))
+        check(checks, "run.succeeded", held["run"]["status"] == "succeeded", held["run"]["error"])
+        return {"checks": checks, "session": held["session"], "autopilot": True, "decision_model": True,
+                "decision_requests": len(asked), "approvals": len(approvals_of(self.db, held["session"]))}
+
+    def case_review_allows(self):
+        """A call that would have waited for a person: the decision model allows it, and it runs."""
+        checks = []
+        branch, path = f"uc-review-allows-{os.getpid()}", "decisions/allowed.md"
+        held = self.drive(
+            DECISION_PROMPTS["review"],
+            self.work_mode("uc-allows-work", "gitea_commit_files", json.dumps(
+                {"branch": branch, "message": "docs: note the drift window", "files": [
+                    {"path": path, "content": "The drift window is 1800 seconds.\n"}]})),
+            decide_mode="uc-allows-decision",
+        )
+        asked = self.decisions_asked(held)
+        reviews = self.decisions_asked(held, want="reviews")
+        check(checks, "decision.asked_once", len(asked) == 1, f"{len(asked)} requests")
+        check(checks, "decision.asked_to_review", len(reviews) == 1, f"{len(reviews)} reviews")
+        check(checks, "decision.got_the_call",
+              bool(reviews) and "gitea_commit_files" in json.dumps(reviews[0], ensure_ascii=False),
+              "the call is not in what the decision model was given")
+        record = self.review_reason(held)
+        check(checks, "transcript.says_who_allowed",
+              "(autopilot allowed this call:" in record and "the request asked for this one line" in record, record[:200])
+        check(checks, "reader.not_asked", not approvals_of(self.db, held["session"]), len(approvals_of(self.db, held["session"])))
+        landed = contents(self.inst, self.args.user, self.repo_name, path, branch)
+        check(checks, "call.ran", landed is not None, f"{branch}:{path}")
+        check(checks, "run.succeeded", held["run"]["status"] == "succeeded", held["run"]["error"])
+        return {"checks": checks, "session": held["session"], "autopilot": True, "decision_model": True,
+                "decision_requests": len(asked), "branch": branch}
+
+    def case_review_refuses(self):
+        """The same call, refused by the decision model: nothing is written, and the run is told."""
+        checks = []
+        branch, path = f"uc-review-refuses-{os.getpid()}", "decisions/refused.md"
+        held = self.drive(
+            DECISION_PROMPTS["review"],
+            self.work_mode("uc-refuses-work", "gitea_commit_files", json.dumps(
+                {"branch": branch, "message": "docs: note the drift window", "files": [
+                    {"path": path, "content": "The drift window is 1800 seconds.\n"}]})),
+            decide_mode="uc-refuses-decision",
+        )
+        asked = self.decisions_asked(held)
+        check(checks, "decision.asked_once", len(asked) == 1, f"{len(asked)} requests")
+        record = self.review_reason(held)
+        check(checks, "transcript.says_who_refused",
+              "Autopilot refused this call:" in record and "decide the wording first" in record, record[:200])
+        check(checks, "call.did_not_run", branch not in branches(self.inst, self.args.user, self.repo_name),
+              f"{branch} is on the repository")
+        # the branch that was refused is not there, and neither is the file a reader would read
+        landed = contents(self.inst, self.args.user, self.repo_name, path, self.repo["default_branch"])
+        check(checks, "nothing_was_written", landed is None, f"{self.repo['default_branch']}:{path}")
+        check(checks, "run.succeeded", held["run"]["status"] == "succeeded", held["run"]["error"])
+        return {"checks": checks, "session": held["session"], "autopilot": True, "decision_model": True,
+                "decision_requests": len(asked), "branch": branch}
+
+    def case_without_decision_model_question(self):
+        """No decision model assigned: nobody invents an answer to a question, the run is told to
+        decide with what it has. The decision model's gateway is up, and is not asked."""
+        checks = []
+        held = self.drive(
+            DECISION_PROMPTS["question"],
+            self.work_mode("uc-none-question-work", "gitea_ask_user", json.dumps(
+                {"question": "드리프트 창을 몇 분으로 둘까요?", "options": "30분 | 60분"}, ensure_ascii=False)),
+            assign_decider=False,
+        )
+        asked = self.decisions_asked(held)
+        check(checks, "decision.not_asked", not asked, f"{len(asked)} requests")
+        record = tool_record(self.db, held["session"], "gitea_ask_user") or ""
+        check(checks, "transcript.told_the_run",
+              "no reader was asked: decide with what you have" in record, record[:200])
+        check(checks, "run.succeeded", held["run"]["status"] == "succeeded", held["run"]["error"])
+        return {"checks": checks, "session": held["session"], "autopilot": True, "decision_model": False,
+                "decision_requests": len(asked)}
+
+    def case_without_decision_model_review(self):
+        """No decision model assigned: the session's own model reviews the call, which is the
+        fallback the engine keeps, and the transcript still says who allowed it."""
+        checks = []
+        branch, path = f"uc-fallback-{os.getpid()}", "decisions/fallback.md"
+        held = self.drive(
+            DECISION_PROMPTS["review"],
+            self.work_mode("uc-none-review-work", "gitea_commit_files", json.dumps(
+                {"branch": branch, "message": "docs: note the drift window", "files": [
+                    {"path": path, "content": "The drift window is 1800 seconds.\n"}]}),
+                reason="the session's own model reviewed this"),
+            assign_decider=False,
+        )
+        asked = self.decisions_asked(held)
+        check(checks, "decision.not_asked", not asked, f"{len(asked)} requests")
+        reviews = [body for body in held["work"].asked() if '"allow"' in messages_system(body)]
+        check(checks, "session_model.reviewed", len(reviews) == 1, f"{len(reviews)} reviews on the session's gateway")
+        record = self.review_reason(held)
+        check(checks, "transcript.says_who_allowed",
+              "(autopilot allowed this call:" in record and "the session's own model reviewed this" in record, record[:200])
+        landed = contents(self.inst, self.args.user, self.repo_name, path, branch)
+        check(checks, "call.ran", landed is not None, f"{branch}:{path}")
+        check(checks, "run.succeeded", held["run"]["status"] == "succeeded", held["run"]["error"])
+        return {"checks": checks, "session": held["session"], "autopilot": True, "decision_model": False,
+                "decision_requests": len(asked), "branch": branch}
+
+    def case_autopilot_off(self):
+        """A run that does not decide for itself: the call waits for a reader, and the decision
+        model is not asked at all, however it is configured."""
+        checks = []
+        branch, path = f"uc-reader-decides-{os.getpid()}", "decisions/reader-decided.md"
+        held = self.drive(
+            DECISION_PROMPTS["review"],
+            self.work_mode("uc-reader-work", "gitea_commit_files", json.dumps(
+                {"branch": branch, "message": "docs: note the drift window", "files": [
+                    {"path": path, "content": "The drift window is 1800 seconds.\n"}]})),
+            autopilot=False,
+        )
+        asked = self.decisions_asked(held)
+        check(checks, "decision.not_asked", not asked, f"{len(asked)} requests")
+        rows = approvals_of(self.db, held["session"])
+        check(checks, "reader.was_asked", len(rows) == 1 and rows[0]["tool"] == "gitea_commit_files",
+              [(row["tool"], row["status"]) for row in rows])
+        check(checks, "reader.decided", all(row["status"] == "allowed" for row in rows), [(row["tool"], row["status"]) for row in rows])
+        landed = contents(self.inst, self.args.user, self.repo_name, path, branch)
+        check(checks, "call.ran", landed is not None, f"{branch}:{path}")
+        check(checks, "run.succeeded", held["run"]["status"] == "succeeded", held["run"]["error"])
+        return {"checks": checks, "session": held["session"], "autopilot": False, "decision_model": True,
+                "decision_requests": len(asked), "branch": branch}
+
+    def case_never_waits(self):
+        """A call that never waits for anyone: reading is not put to a person, so there is nothing
+        for a decision model to decide, even in a run that decides for itself."""
+        checks = []
+        held = self.drive(
+            DECISION_PROMPTS["read"],
+            self.work_mode("uc-read-work", "gitea_read_file", json.dumps({"path": "README.md"})),
+        )
+        asked = self.decisions_asked(held)
+        check(checks, "decision.not_asked", not asked, f"{len(asked)} requests")
+        check(checks, "reader.not_asked", not approvals_of(self.db, held["session"]), len(approvals_of(self.db, held["session"])))
+        record = tool_record(self.db, held["session"], "gitea_read_file") or ""
+        check(checks, "call.ran", "README.md" in record, record[:120])
+        check(checks, "run.succeeded", held["run"]["status"] == "succeeded", held["run"]["error"])
+        return {"checks": checks, "session": held["session"], "autopilot": True, "decision_model": True,
+                "decision_requests": len(asked)}
+
+    def cases(self):
+        GATEWAY_MODES["decision-answers"] = gateway_decision()
+        GATEWAY_MODES["uc-allows-decision"] = gateway_decision(allow=True, reason="the request asked for this one line")
+        GATEWAY_MODES["uc-refuses-decision"] = gateway_decision(allow=False, reason="the session was asked to decide the wording first")
+        self.permission("gitea_commit_files", "manual")
+        self.permission("gitea_ask_user", "manual")
+        self.permission("gitea_read_file", "llm")
+        return [
+            ("question-answered", self.case_question),
+            ("review-allows", self.case_review_allows),
+            ("review-refuses", self.case_review_refuses),
+            ("no-decision-model-question", self.case_without_decision_model_question),
+            ("no-decision-model-review", self.case_without_decision_model_review),
+            ("autopilot-off", self.case_autopilot_off),
+            ("call-that-never-waits", self.case_never_waits),
+        ]
+
+
+def cmd_decisions(args):
+    inst = Instance(args.url, args.user, args.password)
+    inst.login()
+    cases = DecisionCases(inst, Db(args.db), args)
+    report = {
+        "url": args.url,
+        "repo": cases.repo_name,
+        "started": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "cases": [],
+    }
+    try:
+        wanted = set(args.only)
+        for name, run in cases.cases():
+            if wanted and name not in wanted:
+                continue
+            entry = {"case": name}
+            try:
+                entry.update(run())
+            except Exception as error:
+                entry["checks"] = [{"name": "case.ran", "ok": False, "detail": f"{type(error).__name__}: {error}"}]
+            entry["result"] = "ok" if all(result["ok"] for result in entry["checks"]) else "failed"
+            report["cases"].append(entry)
+            print(f"{name}: {entry['result']}")
+            for check_entry in entry["checks"]:
+                mark = "ok  " if check_entry["ok"] else "FAIL"
+                print(f"  {mark} {check_entry['name']} {str(check_entry['detail'])[:150]}")
+    finally:
+        cases.cleanup()
+    report["result"] = "ok" if all(entry["result"] == "ok" for entry in report["cases"]) else "failed"
+    write_report(args.decisions_report, report)
+    passed = sum(1 for entry in report["cases"] if entry["result"] == "ok")
+    print(f"decisions: {report['result']} ({passed}/{len(report['cases'])} use cases)")
+    print(f"  report: {args.decisions_report}")
+    return 0 if report["result"] == "ok" else 1
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0], formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--url", default="http://10.0.0.6:3003")
@@ -1952,6 +2330,13 @@ def main(argv):
     matrix.add_argument("--repo", default=argparse.SUPPRESS)
     matrix.add_argument("--timeout", type=float, default=argparse.SUPPRESS)
     matrix.set_defaults(func=cmd_matrix)
+
+    decisions = sub.add_parser("decisions", help="run the use cases that say where the decision model is asked")
+    decisions.add_argument("--decisions-report", default="harness-decisions.json")
+    decisions.add_argument("--repo", default=argparse.SUPPRESS)
+    decisions.add_argument("--case", action="append", dest="only", default=[], help="run one use case (repeatable)")
+    decisions.add_argument("--timeout", type=float, default=argparse.SUPPRESS)
+    decisions.set_defaults(func=cmd_decisions)
 
     flow = sub.add_parser("flow", help="drive one flow end to end and write a report")
     flow.add_argument("flow", choices=sorted(FLOWS))

@@ -126,3 +126,6 @@ Makefile.local
 graphify-out/
 # python bytecode the scripts leave behind
 __pycache__/
+
+# the harness writes what it observed next to itself
+harness-*.json
