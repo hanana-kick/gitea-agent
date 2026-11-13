@@ -650,6 +650,7 @@ test.describe.serial('agent surfaces and guards', () => {
     }
 
     // the runs page says what the runs add up to, and the window it is read over can change
+    await page.goto('/-/admin/agent/runs');
     await expect(page.locator('.agent-runs-stats')).toBeVisible();
     await expect(page.locator('.agent-runs-stats')).toContainText('Runs');
     await page.goto('/-/admin/agent/runs?days=30');
