@@ -99,6 +99,7 @@ type DeltaState struct {
 	Reset     bool   `json:"reset,omitempty"` // drop what was shown: another member starts over
 }
 
+// swagger:model RunState
 // RunState is the part of a run that clients need.
 type RunState struct {
 	ID             int64  `json:"id"`

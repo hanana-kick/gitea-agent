@@ -1949,6 +1949,22 @@ func Routes() *web.Router {
 		m.Group("/topics", func() {
 			m.Get("/search", repo.TopicSearch)
 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryRepository))
+		m.Group("/agent", func() {
+			m.Get("/sessions", agent.ListSessions)
+			m.Post("/sessions", bind(api.CreateAgentSessionOption{}), agent.CreateSession)
+			m.Group("/sessions/{id}", func() {
+				m.Get("", agent.GetSession)
+				m.Delete("", agent.DeleteSession)
+				m.Post("/autopilot", bind(api.AgentAutopilotOption{}), agent.SetSessionAutopilot)
+				m.Get("/messages", agent.ListSessionMessages)
+				m.Post("/messages", bind(api.PostAgentMessageOption{}), agent.PostSessionMessage)
+				m.Post("/stop", agent.StopSession)
+				m.Get("/approvals", agent.ListSessionApprovals)
+				m.Post("/approvals/{approval_id}", bind(api.AnswerAgentApprovalOption{}), agent.AnswerSessionApproval)
+				m.Get("/events", agent.SessionEvents)
+			})
+		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryUser), reqToken())
+
 		m.Group("/admin/agent", func() {
 			m.Get("/keys", agent.ListAPIKeys)
 

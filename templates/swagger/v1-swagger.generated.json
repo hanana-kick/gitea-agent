@@ -1361,6 +1361,386 @@
         }
       }
     },
+    "/agent/sessions": {
+      "get": {
+        "description": "Lists every session the user may open — the resident session, the instance sessions and the repository ones.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "agent"
+        ],
+        "summary": "List the agent sessions of the current user",
+        "operationId": "agentListSessions",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/AgentSessionList"
+          }
+        }
+      },
+      "post": {
+        "description": "Opens a session of the given kind. A repository session is opened on a repository the user may drive the agent on; a server session is for administrators. A message given with it starts the first run.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "agent"
+        ],
+        "summary": "Open an agent session",
+        "operationId": "agentCreateSession",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateAgentSessionOption"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/responses/AgentSession"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          }
+        }
+      }
+    },
+    "/agent/sessions/{id}": {
+      "get": {
+        "description": "Reads one session — what it works on, whether it decides for itself, its newest run and the calls waiting for a reader.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "agent"
+        ],
+        "summary": "Get an agent session",
+        "operationId": "agentGetSession",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "session id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/AgentSession"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      },
+      "delete": {
+        "description": "Deletes a session, its transcript, the runs that answered in it and the calls a reader answered.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "agent"
+        ],
+        "summary": "Delete an agent session",
+        "operationId": "agentDeleteSession",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "session id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "session deleted"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      }
+    },
+    "/agent/sessions/{id}/approvals": {
+      "get": {
+        "description": "Lists the calls that wait for a reader — a call that needs permission, or a question the run can not go on without.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "agent"
+        ],
+        "summary": "List the calls an agent session waits for",
+        "operationId": "agentListSessionApprovals",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "session id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/AgentApprovalList"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      }
+    },
+    "/agent/sessions/{id}/approvals/{approval_id}": {
+      "post": {
+        "description": "Allows or refuses a call that needs permission, or answers a question. The run goes on from the answer.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "agent"
+        ],
+        "summary": "Answer a call an agent session waits for",
+        "operationId": "agentAnswerSessionApproval",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "session id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "description": "call id",
+            "name": "approval_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AnswerAgentApprovalOption"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "the answer was taken"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      }
+    },
+    "/agent/sessions/{id}/autopilot": {
+      "post": {
+        "description": "Turns autopilot on or off for one session — with it on, a call that would wait for a reader is reviewed by the model instead.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "agent"
+        ],
+        "summary": "Set whether an agent session decides for itself",
+        "operationId": "agentSetSessionAutopilot",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "session id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AgentAutopilotOption"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/AgentSession"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      }
+    },
+    "/agent/sessions/{id}/events": {
+      "get": {
+        "description": "Streams server-sent events while the run of a session works — its state, and the calls waiting for a reader. Each event is a JSON object with a type of run or approval.",
+        "produces": [
+          "text/event-stream"
+        ],
+        "tags": [
+          "agent"
+        ],
+        "summary": "Stream what an agent session is doing",
+        "operationId": "agentSessionEvents",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "session id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "the stream",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      }
+    },
+    "/agent/sessions/{id}/messages": {
+      "get": {
+        "description": "Reads the transcript oldest first. Pass before with the id of the oldest message already held to read the page before it.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "agent"
+        ],
+        "summary": "List the messages of an agent session",
+        "operationId": "agentListSessionMessages",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "session id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "description": "read the page before this message id",
+            "name": "before",
+            "in": "query"
+          },
+          {
+            "type": "integer",
+            "description": "how many messages to read, at most 200",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/AgentMessageList"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      },
+      "post": {
+        "description": "Sends a message and starts a run that answers it. The answer is queued — read the run, the transcript or the events stream to follow it.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "agent"
+        ],
+        "summary": "Send a message to an agent session",
+        "operationId": "agentPostSessionMessage",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "session id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PostAgentMessageOption"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "$ref": "#/responses/AgentRun"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          }
+        }
+      }
+    },
+    "/agent/sessions/{id}/stop": {
+      "post": {
+        "description": "Cancels the run the session is answering. A run that already finished is left as it is.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "agent"
+        ],
+        "summary": "Stop the run of an agent session",
+        "operationId": "agentStopSession",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "session id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "the run was stopped"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      }
+    },
     "/gitignore/templates": {
       "get": {
         "produces": [
@@ -25873,6 +26253,204 @@
       },
       "x-go-package": "gitea.dev/modules/structs"
     },
+    "AgentApproval": {
+      "description": "AgentApproval is a call that waits for a reader: permission for a call, or a question the run\ncan not go on without.",
+      "type": "object",
+      "properties": {
+        "arguments": {
+          "description": "Arguments is what the call was made with, as the model wrote it.",
+          "type": "string",
+          "x-go-name": "Arguments"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "CreatedAt"
+        },
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ID"
+        },
+        "kind": {
+          "description": "Kind is approval or question.",
+          "type": "string",
+          "x-go-name": "Kind"
+        },
+        "tool": {
+          "type": "string",
+          "x-go-name": "Tool"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "AgentAutopilotOption": {
+      "type": "object",
+      "title": "AgentAutopilotOption is the body of a request that sets who decides.",
+      "properties": {
+        "autopilot": {
+          "type": "boolean",
+          "x-go-name": "Autopilot"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "AgentMessage": {
+      "type": "object",
+      "title": "AgentMessage is one message of a transcript.",
+      "properties": {
+        "content": {
+          "description": "Reasoning is what the model thought before it wrote the message; only an answer has it.",
+          "type": "string",
+          "x-go-name": "Content"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "CreatedAt"
+        },
+        "edited_at": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "EditedAt"
+        },
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ID"
+        },
+        "reasoning": {
+          "type": "string",
+          "x-go-name": "Reasoning"
+        },
+        "role": {
+          "type": "string",
+          "x-go-name": "Role"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "AgentRun": {
+      "type": "object",
+      "title": "AgentRun is one run of a session: the state the engine reports, and what the model answered.",
+      "properties": {
+        "cancelable": {
+          "type": "boolean",
+          "x-go-name": "Cancelable"
+        },
+        "error": {
+          "type": "string",
+          "x-go-name": "Error"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "FinishedAt"
+        },
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ID"
+        },
+        "model": {
+          "type": "string",
+          "x-go-name": "Model"
+        },
+        "queue_position": {
+          "description": "QueuePosition is where a run waiting for a worker stands, counting from one.",
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "QueuePosition"
+        },
+        "queue_waiting": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "QueueWaiting"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "StartedAt"
+        },
+        "status": {
+          "description": "Status is queued, running, waiting, succeeded, failed or canceled.",
+          "type": "string",
+          "x-go-name": "Status"
+        },
+        "waiting_tool": {
+          "description": "WaitingTool is the call a waiting run waits for.",
+          "type": "string",
+          "x-go-name": "WaitingTool"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "AgentSession": {
+      "description": "AgentSession is one session of the agent: what it works on, whether it decides for itself, and\nwhat its newest run is doing.",
+      "type": "object",
+      "properties": {
+        "autopilot": {
+          "type": "boolean",
+          "x-go-name": "Autopilot"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "CreatedAt"
+        },
+        "folder_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "FolderID"
+        },
+        "icon": {
+          "type": "string",
+          "x-go-name": "Icon"
+        },
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ID"
+        },
+        "kind": {
+          "type": "string",
+          "x-go-name": "Kind"
+        },
+        "pending_approvals": {
+          "description": "PendingApprovals is how many calls wait for a reader right now.",
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "PendingApprovals"
+        },
+        "repo_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "RepoID"
+        },
+        "repository": {
+          "type": "string",
+          "x-go-name": "Repository"
+        },
+        "run": {
+          "$ref": "#/definitions/AgentRun"
+        },
+        "summary": {
+          "type": "string",
+          "x-go-name": "Summary"
+        },
+        "title": {
+          "description": "Title is what the session is called, and Summary what its earlier work came to.",
+          "type": "string",
+          "x-go-name": "Title"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "UpdatedAt"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
     "AnnotatedTag": {
       "description": "AnnotatedTag represents an annotated tag",
       "type": "object",
@@ -25927,6 +26505,23 @@
           "description": "The URL to access the tagged object",
           "type": "string",
           "x-go-name": "URL"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "AnswerAgentApprovalOption": {
+      "description": "AnswerAgentApprovalOption is the body of a request that answers a call: allow or refuse it, or\nanswer the question it holds.",
+      "type": "object",
+      "properties": {
+        "answer": {
+          "description": "Answer is what a question is answered with, instead of a decision.",
+          "type": "string",
+          "x-go-name": "Answer"
+        },
+        "decision": {
+          "description": "Decision is allow or refuse.",
+          "type": "string",
+          "x-go-name": "Decision"
         }
       },
       "x-go-package": "gitea.dev/modules/structs"
@@ -26987,6 +27582,34 @@
           "type": "string",
           "x-go-name": "Ref",
           "example": "refs/heads/main"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "CreateAgentSessionOption": {
+      "type": "object",
+      "title": "CreateAgentSessionOption is the body of a request that opens a session.",
+      "properties": {
+        "autopilot": {
+          "description": "Autopilot lets this session decide for itself instead of asking a reader.",
+          "type": "boolean",
+          "x-go-name": "Autopilot"
+        },
+        "content": {
+          "description": "Content is the first message, which starts a run when it is given.",
+          "type": "string",
+          "x-go-name": "Content"
+        },
+        "kind": {
+          "description": "Kind is what the session works on: repository or server.",
+          "type": "string",
+          "x-go-name": "Kind"
+        },
+        "repo_id": {
+          "description": "RepoID names the repository of a repository session.",
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "RepoID"
         }
       },
       "x-go-package": "gitea.dev/modules/structs"
@@ -31900,6 +32523,17 @@
       },
       "x-go-package": "gitea.dev/modules/structs"
     },
+    "PostAgentMessageOption": {
+      "type": "object",
+      "title": "PostAgentMessageOption is the body of a request that sends a message.",
+      "properties": {
+        "content": {
+          "type": "string",
+          "x-go-name": "Content"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
     "Project": {
       "description": "Projects track issues and pull requests, standalone note cards are not supported.",
       "type": "object",
@@ -34454,6 +35088,66 @@
         }
       }
     },
+    "AgentApprovalList": {
+      "description": "AgentApprovalList",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentApproval"
+            },
+            "x-go-name": "List"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "x-go-name": "Total"
+          }
+        }
+      }
+    },
+    "AgentMessageList": {
+      "description": "AgentMessageList",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "has_more": {
+            "type": "boolean",
+            "x-go-name": "HasMore"
+          },
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentMessage"
+            },
+            "x-go-name": "List"
+          }
+        }
+      }
+    },
+    "AgentRun": {
+      "description": "AgentRun",
+      "schema": {
+        "$ref": "#/definitions/AgentRun"
+      }
+    },
+    "AgentSession": {
+      "description": "AgentSession",
+      "schema": {
+        "$ref": "#/definitions/AgentSession"
+      }
+    },
+    "AgentSessionList": {
+      "description": "AgentSessionList",
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentSession"
+        }
+      }
+    },
     "AnnotatedTag": {
       "description": "AnnotatedTag",
       "schema": {
@@ -35631,6 +36325,10 @@
     {
       "description": "Site administration",
       "name": "admin"
+    },
+    {
+      "description": "The AI agent: its sessions, and what it does",
+      "name": "agent"
     },
     {
       "description": "Issues, pull requests, comments, labels and milestones",

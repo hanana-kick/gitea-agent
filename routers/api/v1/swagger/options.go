@@ -18,6 +18,16 @@ type swaggerParameterBodies struct {
 	// in:body
 	AddCollaboratorOption api.AddCollaboratorOption
 
+	// the agent's requests: opening a session, asking it something, and answering what it waits for
+	// in:body
+	CreateAgentSessionOption api.CreateAgentSessionOption
+	// in:body
+	PostAgentMessageOption api.PostAgentMessageOption
+	// in:body
+	AgentAutopilotOption api.AgentAutopilotOption
+	// in:body
+	AnswerAgentApprovalOption api.AnswerAgentApprovalOption
+
 	// in:body
 	CreateEmailOption api.CreateEmailOption
 	// in:body
