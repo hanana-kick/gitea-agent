@@ -10,7 +10,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gitea.dev/modules/json"
 )
 
 const (
@@ -57,10 +58,10 @@ type Client struct {
 // Tool is one tool a server offers, as the server described it: the schema is passed on to the
 // model exactly as it came, because only the server knows what its tool takes.
 type Tool struct {
-	Name        string          `json:"name"`
-	Title       string          `json:"title,omitempty"`
-	Description string          `json:"description,omitempty"`
-	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
+	Name        string         `json:"name"`
+	Title       string         `json:"title,omitempty"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"inputSchema,omitempty"`
 }
 
 // NewClient prepares a client for one server, with the bearer token it wants when it wants one.
@@ -180,7 +181,7 @@ func (c *Client) call(ctx context.Context, method string, params, out any) error
 		c.mu.Lock()
 		c.sessionID, c.initialized = "", false
 		c.mu.Unlock()
-		return fmt.Errorf("the server no longer knows this session")
+		return errors.New("the server no longer knows this session")
 	}
 	if status < 200 || status > 299 {
 		return fmt.Errorf("the server answered HTTP %d: %s", status, firstLine(raw))
@@ -190,8 +191,8 @@ func (c *Client) call(ctx context.Context, method string, params, out any) error
 		return err
 	}
 	var envelope struct {
-		Result json.RawMessage `json:"result"`
-		Error  *ErrServer      `json:"error"`
+		Result any        `json:"result"`
+		Error  *ErrServer `json:"error"`
 	}
 	if err := json.Unmarshal(document, &envelope); err != nil {
 		return fmt.Errorf("the server answered something that is not a JSON-RPC document: %w", err)
@@ -199,13 +200,15 @@ func (c *Client) call(ctx context.Context, method string, params, out any) error
 	if envelope.Error != nil {
 		return *envelope.Error
 	}
-	if out == nil {
+	if out == nil || envelope.Result == nil {
 		return nil
 	}
-	if len(envelope.Result) == 0 {
-		return nil
+	// the caller wants the shape it asked for, and the transport does not know what that is
+	answer, err := json.Marshal(envelope.Result)
+	if err != nil {
+		return err
 	}
-	return json.Unmarshal(envelope.Result, out)
+	return json.Unmarshal(answer, out)
 }
 
 // notify posts a notification, which a server answers with no body at all.

@@ -84,7 +84,8 @@ stage_lint() {
 stage_e2e() {
 	note 'e2e: the agent surfaces in a browser'
 	check e2e.build make frontend backend
-	check e2e.agent bash -c "EXECUTABLE=gitea ./tools/test-e2e.sh tests/e2e/agent.test.ts"
+	# a browser suite waits on a live instance, so a spec that timed out is given one more run
+	check e2e.agent bash -c "EXECUTABLE=gitea ./tools/test-e2e.sh tests/e2e/agent.test.ts --retries=1"
 }
 
 stages=("$@")

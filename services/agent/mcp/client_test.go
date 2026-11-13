@@ -5,12 +5,13 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gitea.dev/modules/json"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -135,7 +136,8 @@ func TestClientSpeaksToAServer(t *testing.T) {
 		require.Len(t, tools, 2)
 		assert.Equal(t, "echo", tools[0].Name)
 		assert.Equal(t, "Echo", tools[0].Title)
-		assert.Contains(t, string(tools[0].InputSchema), `"text"`)
+		assert.Equal(t, "object", tools[0].InputSchema["type"])
+		assert.Contains(t, tools[0].InputSchema["properties"], "text", "what the server says a tool takes is not passed on")
 
 		answer, err := client.CallTool(context.Background(), "echo", `{"text":"hello"}`)
 		require.NoError(t, err)
