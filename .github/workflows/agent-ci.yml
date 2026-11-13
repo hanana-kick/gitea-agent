@@ -1,0 +1,63 @@
+name: agent-ci
+
+on:
+  push:
+    paths: &agent-paths
+      - "services/agent/**"
+      - "models/agent/**"
+      - "routers/web/agent/**"
+      - "templates/agent/**"
+      - "modelmigration/**"
+      - "tests/e2e/agent.test.ts"
+      - "options/locale/locale_en-US.json"
+      - "web_src/**"
+      - "scripts/ci-agent.sh"
+      - "tools/**"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "uv.lock"
+      - ".github/workflows/agent-ci.yml"
+  pull_request:
+    paths: *agent-paths
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/go-setup
+      - run: ./scripts/ci-agent.sh go
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/go-setup
+      - uses: ./.github/actions/node-setup
+      - uses: ./.github/actions/python-setup
+      # the linter the Makefile pins, so this job and a shell hold the branch to the same one
+      - run: go install $(sed -n 's/^GOLANGCI_LINT_PACKAGE ?= //p' Makefile | awk '{print $1}')
+      - run: ./scripts/ci-agent.sh lint
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/go-setup
+      - uses: ./.github/actions/node-setup
+      - run: make playwright
+      - run: ./scripts/ci-agent.sh e2e
+        env:
+          TAGS: bindata
+          FORCE_COLOR: 1
