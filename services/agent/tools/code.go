@@ -277,7 +277,11 @@ func searchIndexedCode(ctx context.Context, found *sessionRepo, keyword, languag
 	lines := make([]string, 0, total)
 	for _, result := range results {
 		for _, line := range result.Lines {
-			lines = append(lines, fmt.Sprintf("%s:%d: %s", result.Filename, line.Num, searchLineText(line.FormattedContent)))
+			// the index answers with the lines around a match as well, and a model reads more of a
+			// line it has to look at than of a blank one
+			if text := searchLineText(line.FormattedContent); text != "" {
+				lines = append(lines, fmt.Sprintf("%s:%d: %s", result.Filename, line.Num, text))
+			}
 		}
 	}
 	log.Trace("Agent tool gitea_search_code answered from the index with %d files of %s", len(results), found.repository.FullName())
