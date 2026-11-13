@@ -8,6 +8,7 @@ import (
 	std_ctx "context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
