@@ -7,28 +7,37 @@ import (
 	"context"
 
 	"gitea.dev/modelmigration/base"
+	"gitea.dev/modules/timeutil"
 
 	"xorm.io/xorm"
 )
 
-// agentToolPermissionV367 is the frozen shape of agent_tool_permission, the admin-chosen
-// mode of one agent tool.
-type agentToolPermissionV367 struct {
+// agentConversationV367 is the frozen shape of agent_conversation with the recent work
+// summary of a session.
+type agentConversationV367 struct {
 	ID      int64  `xorm:"pk autoincr"`
-	Tool    string `xorm:"UNIQUE NOT NULL"`
-	Mode    string `xorm:"NOT NULL DEFAULT 'llm'"`
-	Enabled bool   `xorm:"NOT NULL DEFAULT TRUE"`
+	Kind    string `xorm:"VARCHAR(16) NOT NULL"`
+	OwnerID int64  `xorm:"INDEX NOT NULL DEFAULT 0"`
+	RepoID  int64  `xorm:"INDEX NOT NULL DEFAULT 0"`
+	Title   string `xorm:"VARCHAR(100) NOT NULL"`
+
+	Summary  string `xorm:"VARCHAR(200) NOT NULL DEFAULT ''"`
+	Icon     string `xorm:"VARCHAR(60) NOT NULL DEFAULT ''"`
+	TitleSet bool   `xorm:"NOT NULL DEFAULT FALSE"`
+
+	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
+	UpdatedUnix timeutil.TimeStamp `xorm:"updated NOT NULL"`
 }
 
-func (agentToolPermissionV367) TableName() string {
-	return "agent_tool_permission"
+func (agentConversationV367) TableName() string {
+	return "agent_conversation"
 }
 
-// AddAgentToolPermission adds the per-tool permission modes of the agent.
-func AddAgentToolPermission(_ context.Context, x base.EngineMigration) error {
+// AddAgentConversationSummary adds the recent work summary of a session.
+func AddAgentConversationSummary(_ context.Context, x base.EngineMigration) error {
 	_, err := x.SyncWithOptions(xorm.SyncOptions{
 		IgnoreConstrains:  true,
 		IgnoreDropIndices: true,
-	}, new(agentToolPermissionV367))
+	}, new(agentConversationV367))
 	return err
 }

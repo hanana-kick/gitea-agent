@@ -20,6 +20,12 @@ type ProviderModel struct {
 	Name string `json:"name,omitempty"`
 	// Inputs lists the input modalities the provider reported, when it reports them.
 	Inputs []string `json:"inputs,omitempty"`
+	// Chat and Decisions say which APIs the model serves: a gateway that fronts several kinds of
+	// model lists each kind apart, and a model is offered for the roles that ask for what it serves.
+	// A model neither listing described is read as one that answers a chat, which is what models
+	// were before the listings were apart.
+	Chat      bool `json:"chat,omitempty"`
+	Decisions bool `json:"decisions,omitempty"`
 }
 
 // DisplayName returns the name to show, falling back to the identifier.
@@ -61,13 +67,15 @@ func (p *Provider) Models() []ProviderModel {
 		if p.Model == "" {
 			return nil
 		}
-		return []ProviderModel{{ID: p.Model}}
+		return NormalizeModels([]ProviderModel{{ID: p.Model}})
 	}
 	models := []ProviderModel{}
 	if err := json.Unmarshal([]byte(p.ModelsJSON), &models); err != nil {
 		return nil
 	}
-	return models
+	// what a model serves is read the same way it is written, so a row stored before the listings
+	// were apart is still offered to the roles that answer a chat
+	return NormalizeModels(models)
 }
 
 // SetModels stores the selected models; the first one also becomes the plain Model column.
@@ -134,16 +142,37 @@ func (p *Provider) HeaderNames() []string {
 }
 
 // NormalizeModels trims identifiers, drops blanks and removes duplicates while keeping order.
+// firstNonEmpty returns the first value that says anything.
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func NormalizeModels(models []ProviderModel) []ProviderModel {
-	seen := map[string]bool{}
+	seen := map[string]int{}
 	out := make([]ProviderModel, 0, len(models))
 	for _, m := range models {
 		id := strings.TrimSpace(m.ID)
-		if id == "" || seen[id] {
+		// a model id is one word: an entry with a space in it is a form that arrived joined, and
+		// keeping it would put a model in the list that no provider answers to
+		if id == "" || strings.ContainsAny(id, " \t") {
 			continue
 		}
-		seen[id] = true
-		out = append(out, ProviderModel{ID: id, Name: strings.TrimSpace(m.Name), Inputs: normalizeModalities(m.Inputs)})
+		if at, ok := seen[id]; ok {
+			// the same model may be reported by two listings: what either said about it stands
+			out[at].Name = firstNonEmpty(out[at].Name, strings.TrimSpace(m.Name))
+			out[at].Inputs = normalizeModalities(append(out[at].Inputs, m.Inputs...))
+			out[at].Chat = out[at].Chat || m.Chat
+			out[at].Decisions = out[at].Decisions || m.Decisions
+			continue
+		}
+		seen[id] = len(out)
+		chat := m.Chat || !m.Decisions // a model nothing said about answers a chat
+		out = append(out, ProviderModel{ID: id, Name: strings.TrimSpace(m.Name), Inputs: normalizeModalities(m.Inputs), Chat: chat, Decisions: m.Decisions})
 	}
 	return out
 }

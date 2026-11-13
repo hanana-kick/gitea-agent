@@ -11,6 +11,7 @@ import (
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
 	"gitea.dev/modules/setting"
+	agent_service "gitea.dev/services/agent"
 	"gitea.dev/services/context"
 )
 
@@ -47,5 +48,9 @@ func Approval(ctx *context.Context) {
 	ctx.Data["SessionURL"] = session
 	ctx.Data["AllowURL"] = session + "/approvals/" + ctx.PathParam("aid") + "/allow"
 	ctx.Data["RefuseURL"] = session + "/approvals/" + ctx.PathParam("aid") + "/refuse"
+	ctx.Data["AnswerURL"] = session + "/approvals/" + ctx.PathParam("aid") + "/answer"
+	question, options, why := agent_service.QuestionOf(approval)
+	ctx.Data["Question"], ctx.Data["Options"], ctx.Data["Why"] = question, options, why
+	ctx.Data["IsQuestion"] = approval.IsQuestion()
 	ctx.HTML(http.StatusOK, tplAgentApproval)
 }

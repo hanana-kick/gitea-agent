@@ -22,6 +22,14 @@ func (ToolPermission) TableName() string {
 }
 
 // ToolApproval statuses: a manual tool call waits here until its user decides.
+// Kinds of request a run can leave for its reader.
+const (
+	// ToolApprovalKindApproval is a call the reader allows or refuses.
+	ToolApprovalKindApproval = "approval"
+	// ToolApprovalKindQuestion is a question the run waits for an answer to.
+	ToolApprovalKindQuestion = "question"
+)
+
 const (
 	ToolApprovalPending = "pending"
 	ToolApprovalAllowed = "allowed"
@@ -36,6 +44,11 @@ type ToolApproval struct {
 	RunID          int64  `xorm:"INDEX NOT NULL"`
 	Tool           string `xorm:"VARCHAR(160) NOT NULL"`
 	Arguments      string `xorm:"TEXT NOT NULL"`
+	// Kind says what is being asked: a call that needs its reader's permission, or a question the
+	// run can not go on without. Both wait the same way and are answered in the same place.
+	Kind string `xorm:"VARCHAR(16) NOT NULL DEFAULT 'approval'"`
+	// Answer is what a reader wrote back, for the questions that take words rather than a yes.
+	Answer string `xorm:"TEXT"`
 	// Result is what the call returned, kept until the run that asked for it reads it back.
 	Result string `xorm:"TEXT"`
 	Status string `xorm:"VARCHAR(16) NOT NULL"`
@@ -47,6 +60,19 @@ type ToolApproval struct {
 
 func (ToolApproval) TableName() string {
 	return "agent_tool_approval"
+}
+
+// IsQuestion reports whether the request waits for words rather than for a yes or a no.
+func (a *ToolApproval) IsQuestion() bool {
+	return a.Kind == ToolApprovalKindQuestion
+}
+
+// KindOrDefault is the kind of a row written before kinds were stored, which was an approval.
+func (a *ToolApproval) KindOrDefault() string {
+	if a.Kind == "" {
+		return ToolApprovalKindApproval
+	}
+	return a.Kind
 }
 
 func init() {

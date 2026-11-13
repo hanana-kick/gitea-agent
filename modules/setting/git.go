@@ -89,7 +89,7 @@ func loadGitFrom(rootCfg ConfigProvider) {
 	GitConfig.Options = make(map[string]string)
 	GitConfig.SetOption("diff.algorithm", "histogram")
 	GitConfig.SetOption("core.logAllRefUpdates", "true")
-	GitConfig.SetOption("gc.reflogExpire", "90")
+	GitConfig.SetOption("maintenance.strategy", "gc") // git 2.54's push-time default "geometric" delays pushes and repacks concurrently with other writes
 
 	secGitReflog := rootCfg.Section("git.reflog")
 	if secGitReflog.HasKey("ENABLED") {
@@ -97,8 +97,8 @@ func loadGitFrom(rootCfg ConfigProvider) {
 		GitConfig.SetOption("core.logAllRefUpdates", secGitReflog.Key("ENABLED").In("true", []string{"true", "false"}))
 	}
 	if secGitReflog.HasKey("EXPIRATION") {
-		deprecatedSetting(rootCfg, "git.reflog", "EXPIRATION", "git.config", "core.reflogExpire", "1.21")
-		GitConfig.SetOption("gc.reflogExpire", secGitReflog.Key("EXPIRATION").String())
+		deprecatedSetting(rootCfg, "git.reflog", "EXPIRATION", "git.config", "gc.reflogExpire", "1.21")
+		GitConfig.SetOption("gc.reflogExpire", secGitReflog.Key("EXPIRATION").String()+".days")
 	}
 
 	for _, key := range secGitConfig.Keys() {

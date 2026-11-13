@@ -23,9 +23,11 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
+	"gitea.dev/modules/web"
 	agent_service "gitea.dev/services/agent"
 	agent_skills "gitea.dev/services/agent/skills"
 	"gitea.dev/services/context"
+	"gitea.dev/services/forms"
 )
 
 const (
@@ -595,7 +597,17 @@ func ChatDraftCreate(ctx *context.Context) {
 		ctx.Resp.WriteHeader(http.StatusNoContent)
 		return
 	}
-	ctx.Redirect(chatSessionURL(session.ID))
+	redirectBackOrChat(ctx, session.ID)
+}
+
+// redirectBackOrChat returns a reader to where they answered from, so answering in a thread does
+// not throw them into the session the run belongs to.
+func redirectBackOrChat(ctx *context.Context, sessionID int64) {
+	if back := ctx.FormString("back"); strings.HasPrefix(back, "/") && !strings.HasPrefix(back, "//") {
+		ctx.Redirect(back)
+		return
+	}
+	ctx.Redirect(chatSessionURL(sessionID))
 }
 
 // storeUploads saves the files sent with a message. A rejected file only fails itself.
@@ -925,6 +937,51 @@ func ChatApprovalAllow(ctx *context.Context) {
 	chatApproval(ctx, true)
 }
 
+// ChatAutopilot turns a session's own autopilot on or off, so a run can decide for itself instead
+// of waiting for a reader.
+func ChatAutopilot(ctx *context.Context) {
+	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
+	if err != nil {
+		chatError(ctx, err)
+		return
+	}
+	on := ctx.FormString("autopilot") == "on"
+	if err := agent_service.SetConversationAutopilot(ctx, session, on); err != nil {
+		ctx.ServerError("SetConversationAutopilot", err)
+		return
+	}
+	if on {
+		ctx.Flash.Success(ctx.Tr("agent.chat_autopilot_now_on"))
+	} else {
+		ctx.Flash.Success(ctx.Tr("agent.chat_autopilot_now_off"))
+	}
+	redirectBackOrChat(ctx, session.ID)
+}
+
+// ChatApprovalAnswer records what a reader wrote back to a question the agent is waiting on.
+func ChatApprovalAnswer(ctx *context.Context) {
+	session, err := agent_service.GetConversation(ctx, ctx.Doer, ctx.PathParamInt64("id"))
+	if err != nil {
+		chatError(ctx, err)
+		return
+	}
+	form := web.GetForm[*forms.AnswerRequestForm](ctx)
+	err = agent_service.AnswerQuestion(ctx, session.ID, ctx.PathParamInt64("aid"), ctx.Doer, form.Answer)
+	switch {
+	case err == nil:
+	case errors.Is(err, agent_service.ErrApprovalNotPending{}):
+		ctx.Flash.Error(ctx.Tr("agent.chat_approval_answered"))
+	case errors.Is(err, agent_service.ErrApprovalAnswerEmpty{}):
+		ctx.Flash.Error(ctx.Tr("agent.chat_answer_empty"))
+	case errors.Is(err, agent_service.ErrApprovalNotOwner{}):
+		ctx.Flash.Error(ctx.Tr("agent.chat_approval_not_yours"))
+	default:
+		ctx.ServerError("AnswerQuestion", err)
+		return
+	}
+	redirectBackOrChat(ctx, session.ID)
+}
+
 // ChatApprovalRefuse turns down a tool call the agent asked for.
 func ChatApprovalRefuse(ctx *context.Context) {
 	chatApproval(ctx, false)
@@ -937,7 +994,7 @@ func chatApproval(ctx *context.Context, allowed bool) {
 		chatError(ctx, err)
 		return
 	}
-	if err := agent_service.ResolveApproval(ctx, session.ID, ctx.PathParamInt64("aid"), ctx.Doer.ID, allowed); err != nil {
+	if err := agent_service.ResolveApproval(ctx, session.ID, ctx.PathParamInt64("aid"), ctx.Doer, allowed); err != nil {
 		switch {
 		case errors.Is(err, agent_service.ErrApprovalNotPending{}):
 			ctx.Flash.Error(ctx.Tr("agent.chat_approval_answered"))

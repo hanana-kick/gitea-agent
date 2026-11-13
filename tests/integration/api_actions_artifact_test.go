@@ -210,9 +210,11 @@ func TestActionsArtifactUploadSingleFile(t *testing.T) {
 	req = NewRequestWithBody(t, "PUT", url, strings.NewReader(body)).
 		AddTokenAuth("8061e833a55f6fc0157c98b883e91fcfeeb1a71a").
 		SetHeader("Content-Range", "bytes 0-1023/1024").
+		SetHeader("Content-Encoding", "video/mp4,text/html").
 		SetHeader("x-tfs-filelength", "1024").
 		SetHeader("x-actions-results-md5", "XVlf820rMInUi64wmMi6EA==") // base64(md5(body))
 	MakeRequest(t, req, http.StatusOK)
+	assert.Empty(t, unittest.AssertExistsAndLoadBean(t, &actions_model.ActionArtifact{RunID: 791, ArtifactName: "artifact", ArtifactPath: "abc-2.txt"}).ContentEncodingOrType)
 
 	t.Logf("Create artifact confirm")
 
@@ -682,7 +684,7 @@ jobs:
 	taskToken3 := task3.Context.GetFields()["gitea_runtime_token"].GetStringValue()
 
 	// the new attempt inherits what the previous attempt uploaded
-	assert.ElementsMatch(t, []string{"job1-only", "job1-shared"}, listArtifactNamesForRunV4(t, run.ID, job3.ID, taskToken3))
+	assert.Equal(t, []string{"job1-only", "job1-shared"}, listArtifactNamesForRunV4(t, run.ID, job3.ID, taskToken3))
 	assert.Equal(t, strings.Repeat("A", 32), downloadArtifactContentV4ByTask(t, run.ID, job3.ID, taskToken3, "job1-only"))
 	assert.Contains(t, listArtifactNamesForRun(t, run.ID, taskToken3), "job1-v3")
 
@@ -699,7 +701,7 @@ jobs:
 	inheritedSharedID := listArtifactIDForRunV4(t, run.ID, job3.ID, taskToken3, "job1-shared")
 	require.Len(t, listArtifactsByIDV4(t, run.ID, job3.ID, inheritedSharedID, taskToken3), 1)
 	uploadTestArtifactFileV4(t, run.ID, job3.ID, taskToken3, "job1-shared", strings.Repeat("C", 32))
-	assert.ElementsMatch(t, []string{"job1-only", "job1-shared"}, listArtifactNamesForRunV4(t, run.ID, job3.ID, taskToken3))
+	assert.Equal(t, []string{"job1-only", "job1-shared"}, listArtifactNamesForRunV4(t, run.ID, job3.ID, taskToken3))
 	assert.Equal(t, strings.Repeat("C", 32), downloadArtifactContentV4ByTask(t, run.ID, job3.ID, taskToken3, "job1-shared"))
 
 	// a shadowed artifact is not listed by id either: a download resolves by name

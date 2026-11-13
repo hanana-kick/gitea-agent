@@ -36,6 +36,18 @@
 			{{if .RunActive}}data-busy{{end}}>{{if .RunActive}}{{ctx.Locale.Tr "agent.chat_cancel"}}{{else}}{{ctx.Locale.Tr "agent.chat_send"}}{{end}}</button>
 	</form>
 {{end}}
+{{if not .IsDraft}}
+	{{/* a session decides for itself when this is on: no reader is asked, and what was decided
+		stays in the transcript */}}
+	<form class="agent-chat-autopilot" method="post" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/autopilot">
+		<input type="hidden" name="back" value="{{AppSubUrl}}/-/agent/{{.Session.ID}}">
+		<button type="submit" name="autopilot" value="{{if .Session.Autopilot}}off{{else}}on{{end}}"
+			class="ui tiny button{{if .Session.Autopilot}} primary{{end}}" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_autopilot_hint"}}">
+			{{svg "octicon-rocket" 14}} {{if .Session.Autopilot}}{{ctx.Locale.Tr "agent.chat_autopilot_on"}}{{else}}{{ctx.Locale.Tr "agent.chat_autopilot_off"}}{{end}}
+		</button>
+	</form>
+{{end}}
+
 {{if not .CanAnswer}}
 	<p class="agent-chat-hint agent-chat-hint-block">{{ctx.Locale.Tr "agent.chat_model_required"}}</p>
 {{end}}

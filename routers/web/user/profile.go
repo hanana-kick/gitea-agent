@@ -44,6 +44,7 @@ func OwnerProfile(ctx *context.Context) {
 		return
 	}
 
+	// HINT: USER-TYPE-GLOSSARY: in the future it needs to handle more user types correctly
 	if ctx.ContextUser.IsOrganization() {
 		org.Home(ctx)
 	} else {
@@ -203,7 +204,7 @@ func prepareUserProfileTabData(ctx *context.Context, profileDbRepo *repo_model.R
 			Actor:              ctx.Doer,
 			Keyword:            keyword,
 			OrderBy:            orderBy,
-			Private:            ctx.IsSigned,
+			Private:            ctx.IsSigned && !context.TokenIsPublicOnly(ctx),
 			StarredByID:        ctx.ContextUser.ID,
 			Collaborate:        optional.Some(false),
 			TopicOnly:          topicOnly,
@@ -230,7 +231,7 @@ func prepareUserProfileTabData(ctx *context.Context, profileDbRepo *repo_model.R
 			Actor:              ctx.Doer,
 			Keyword:            keyword,
 			OrderBy:            orderBy,
-			Private:            ctx.IsSigned,
+			Private:            ctx.IsSigned && !context.TokenIsPublicOnly(ctx),
 			WatchedByID:        ctx.ContextUser.ID,
 			Collaborate:        optional.Some(false),
 			TopicOnly:          topicOnly,
@@ -274,7 +275,11 @@ func prepareUserProfileTabData(ctx *context.Context, profileDbRepo *repo_model.R
 			ctx.ServerError("GetUserOrganizations", err)
 			return
 		}
-		ctx.Data["Cards"] = orgs
+		cards := make([]*user_model.User, 0, len(orgs))
+		for _, org := range orgs {
+			cards = append(cards, org.AsUser())
+		}
+		ctx.Data["Cards"] = cards // user_cards needs User-only methods
 		total = count
 	default: // default to "repositories"
 		repos, count, err = repo_model.SearchRepository(ctx, repo_model.SearchRepoOptions{
@@ -286,7 +291,7 @@ func prepareUserProfileTabData(ctx *context.Context, profileDbRepo *repo_model.R
 			Keyword:            keyword,
 			OwnerID:            ctx.ContextUser.ID,
 			OrderBy:            orderBy,
-			Private:            ctx.IsSigned,
+			Private:            ctx.IsSigned && !context.TokenIsPublicOnly(ctx),
 			Collaborate:        optional.Some(false),
 			TopicOnly:          topicOnly,
 			Language:           language,
@@ -336,25 +341,22 @@ func ActionUserFollow(ctx *context.Context) {
 	case "unfollow":
 		err = user_model.UnfollowUser(ctx, ctx.Doer.ID, ctx.ContextUser.ID)
 	}
-
 	if err != nil {
-		log.Error("Failed to apply action %q: %v", ctx.FormString("action"), err)
-		ctx.HTTPError(http.StatusBadRequest, fmt.Sprintf("Action %q failed", ctx.FormString("action")))
+		ctx.ServerError("ActionUserFollow", err)
 		return
 	}
+
 	if _, err := shared_user.RenderUserOrgHeader(ctx); err != nil {
 		ctx.ServerError("RenderUserOrgHeader", err)
 		return
 	}
-	if ctx.ContextUser.IsIndividual() {
-		ctx.HTML(http.StatusOK, tplProfileBigAvatar)
-		return
-	} else if ctx.ContextUser.IsOrganization() {
+
+	// HINT: USER-TYPE-GLOSSARY: follow the logic in OwnerProfile
+	if ctx.ContextUser.IsOrganization() {
 		ctx.Data["Org"] = ctx.ContextUser
-		ctx.Data["IsFollowing"] = ctx.Doer != nil && user_model.IsFollowing(ctx, ctx.Doer.ID, ctx.ContextUser.ID)
+		ctx.Data["IsFollowing"] = user_model.IsFollowing(ctx, ctx.Doer.ID, ctx.ContextUser.ID)
 		ctx.HTML(http.StatusOK, tplFollowUnfollow)
-		return
+	} else {
+		ctx.HTML(http.StatusOK, tplProfileBigAvatar)
 	}
-	log.Error("Failed to apply action %q: unsupported context user type: %s", ctx.FormString("action"), ctx.ContextUser.Type)
-	ctx.HTTPError(http.StatusBadRequest, fmt.Sprintf("Action %q failed", ctx.FormString("action")))
 }

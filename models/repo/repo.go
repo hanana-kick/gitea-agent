@@ -494,10 +494,9 @@ func (repo *Repository) composeCommonMetas(ctx context.Context) map[string]strin
 		repo.MustOwner(ctx)
 		if repo.Owner.IsOrganization() {
 			teams := make([]string, 0, 5)
-			_ = db.GetEngine(ctx).Table("team_repo").
+			_ = db.GetEngine(ctx).Select("team.lower_name").Table("team_repo").
 				Join("INNER", "team", "team.id = team_repo.team_id").
 				Where("team_repo.repo_id = ?", repo.ID).
-				Select("team.lower_name").
 				OrderBy("team.lower_name").
 				Find(&teams)
 			metas["teams"] = "," + strings.Join(teams, ",") + ","
@@ -616,6 +615,15 @@ func ComposeHTTPSCloneURL(ctx context.Context, owner, repo string) string {
 
 // ComposeSSHCloneURL returns SSH clone URL based on the given owner and repository name.
 func ComposeSSHCloneURL(doer *user_model.User, ownerName, repoName string) string {
+	return composeSSHCloneURL(doer, ownerName, repoName, setting.Repository.UseCompatSSHURI)
+}
+
+// ComposeSSHCloneURI is like ComposeSSHCloneURL but always returns the "ssh://" form, because "go get" rejects scp-style addresses
+func ComposeSSHCloneURI(doer *user_model.User, ownerName, repoName string) string {
+	return composeSSHCloneURL(doer, ownerName, repoName, true)
+}
+
+func composeSSHCloneURL(doer *user_model.User, ownerName, repoName string, useURI bool) string {
 	sshUser := setting.SSH.User
 	sshDomain := setting.SSH.Domain
 
@@ -642,7 +650,7 @@ func ComposeSSHCloneURL(doer *user_model.User, ownerName, repoName string) strin
 	if ip := net.ParseIP(sshHost); ip != nil && ip.To4() == nil {
 		sshHost = "[" + sshHost + "]" // for IPv6 address, wrap it with brackets
 	}
-	if setting.Repository.UseCompatSSHURI {
+	if useURI {
 		return fmt.Sprintf("ssh://%s@%s/%s/%s.git", sshUser, sshHost, url.PathEscape(ownerName), url.PathEscape(repoName))
 	}
 	return fmt.Sprintf("%s@%s:%s/%s.git", sshUser, sshHost, url.PathEscape(ownerName), url.PathEscape(repoName))

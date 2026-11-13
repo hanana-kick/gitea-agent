@@ -25,6 +25,15 @@ const (
 type ModelOption struct {
 	Ref   string
 	Label string
+	// Chat and Decisions say which APIs the model serves, so a picker can offer a role the models
+	// that can answer it.
+	Chat      bool
+	Decisions bool
+}
+
+// IsGroupRef reports whether a model reference names a group rather than one provider's model.
+func IsGroupRef(ref string) bool {
+	return strings.HasPrefix(ref, modelRefGroup+":")
 }
 
 // ModelRefForGroup names a group as a session model.
@@ -64,6 +73,40 @@ func (err ErrModelRoleNotSet) Is(target error) bool {
 }
 
 // ModelOptions lists what a role may answer with: groups first, then provider models.
+// ModelOptionsByClass returns the models of each class of role: the ones that answer a chat, and
+// the ones that answer the decisions API. An instance no provider has reported a decision model to
+// is given every model for the decision class, so a decision role stays settable.
+func ModelOptionsByClass(ctx context.Context, limit int) (map[string][]ModelOption, error) {
+	options, err := ModelOptions(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	byClass := map[string][]ModelOption{
+		agent_model.ModelRoleClassModel:    make([]ModelOption, 0, len(options)),
+		agent_model.ModelRoleClassDecision: make([]ModelOption, 0, len(options)),
+	}
+	for _, option := range options {
+		if option.Chat {
+			byClass[agent_model.ModelRoleClassModel] = append(byClass[agent_model.ModelRoleClassModel], option)
+		}
+		if option.Decisions {
+			byClass[agent_model.ModelRoleClassDecision] = append(byClass[agent_model.ModelRoleClassDecision], option)
+		}
+	}
+	if len(byClass[agent_model.ModelRoleClassDecision]) == 0 {
+		// an instance that reported no decisions model offers what it has, so the role can be
+		// answered at all; groups keep the kind they were given
+		fallback := make([]ModelOption, 0, len(options))
+		for _, option := range options {
+			if !IsGroupRef(option.Ref) {
+				fallback = append(fallback, option)
+			}
+		}
+		byClass[agent_model.ModelRoleClassDecision] = fallback
+	}
+	return byClass, nil
+}
+
 func ModelOptions(ctx context.Context, limit int) ([]ModelOption, error) {
 	groups, _, err := FindModelGroups(ctx, agent_model.FindModelGroupsOptions{
 		ListOptions: db.ListOptions{Page: 1, PageSize: limit},
@@ -73,7 +116,14 @@ func ModelOptions(ctx context.Context, limit int) ([]ModelOption, error) {
 	}
 	options := make([]ModelOption, 0, len(groups))
 	for _, group := range groups {
-		options = append(options, ModelOption{Ref: ModelRefForGroup(group.Slug), Label: group.Name})
+		// a group fronts one kind of model, and its members are of that kind, so it is offered
+		// where a model of that kind may be chosen
+		options = append(options, ModelOption{
+			Ref:       ModelRefForGroup(group.Slug),
+			Label:     group.Name,
+			Chat:      !group.Decisions,
+			Decisions: group.Decisions,
+		})
 	}
 
 	providers, err := GetProviders(ctx, "")
@@ -83,8 +133,10 @@ func ModelOptions(ctx context.Context, limit int) ([]ModelOption, error) {
 	for _, provider := range providers {
 		for _, model := range provider.Models() {
 			options = append(options, ModelOption{
-				Ref:   ModelRefForProvider(provider.ID, model.ID),
-				Label: provider.Name + " / " + model.DisplayName(),
+				Ref:       ModelRefForProvider(provider.ID, model.ID),
+				Label:     provider.Name + " / " + model.DisplayName(),
+				Chat:      model.Chat,
+				Decisions: model.Decisions,
 			})
 		}
 	}

@@ -15,13 +15,13 @@ import (
 
 func TestParseModelLines(t *testing.T) {
 	assert.Equal(t, []agent_model.ProviderModel{
-		{ID: "gpt-4o"},
-		{ID: "claude-sonnet-4", Name: "Claude Sonnet 4"},
-		{ID: "meta-llama-3.1-70b", Name: "Llama 70B"},
+		{ID: "gpt-4o", Chat: true},
+		{ID: "claude-sonnet-4", Name: "Claude Sonnet 4", Chat: true},
+		{ID: "meta-llama-3.1-70b", Name: "Llama 70B", Chat: true},
 	}, ParseModelLines("gpt-4o\n\nclaude-sonnet-4 = Claude Sonnet 4\nmeta-llama-3.1-70b - Llama 70B\n"))
 
 	// a bare id keeps its dashes, duplicates collapse, blanks drop
-	assert.Equal(t, []agent_model.ProviderModel{{ID: "gpt-4o-mini"}},
+	assert.Equal(t, []agent_model.ProviderModel{{ID: "gpt-4o-mini", Chat: true}},
 		ParseModelLines(" gpt-4o-mini \ngpt-4o-mini\n   "))
 	assert.Empty(t, ParseModelLines(""))
 }
@@ -31,6 +31,20 @@ func TestFormatModelLines(t *testing.T) {
 	assert.Equal(t, "gpt-4o = GPT-4o",
 		FormatModelLines([]agent_model.ProviderModel{{ID: "gpt-4o", Name: "GPT-4o"}}))
 	assert.Equal(t, "a\nb = B", FormatModelLines([]agent_model.ProviderModel{{ID: "a"}, {ID: "b", Name: "B"}}))
+}
+
+// An entry a form delivered joined is not a model: a model id is one word, and keeping a line that
+// carries several of them would put a model in the list that no provider answers to.
+func TestNormalizeModelsDropsWhatIsNotAnID(t *testing.T) {
+	models := agent_model.NormalizeModels([]agent_model.ProviderModel{
+		{ID: "  liquid/lfm-3-1.7b:free  "},
+		{ID: "['a/one:free', 'b/two:free']"},
+		{ID: "an id with spaces"},
+		{ID: ""},
+		{ID: "liquid/lfm-3-1.7b:free"},
+	})
+	require.Len(t, models, 1)
+	assert.Equal(t, "liquid/lfm-3-1.7b:free", models[0].ID)
 }
 
 func TestProviderModelInputsRoundTrip(t *testing.T) {

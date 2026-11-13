@@ -38,6 +38,9 @@ type Conversation struct {
 	OwnerID int64  `xorm:"INDEX NOT NULL DEFAULT 0"` // the session list owner; 0 is the instance-wide resident
 	RepoID  int64  `xorm:"INDEX NOT NULL DEFAULT 0"` // only set for repository sessions
 	Title   string `xorm:"VARCHAR(100) NOT NULL"`
+	// Autopilot lets this session decide for itself instead of asking a reader, whether or not
+	// the instance turns it on for everyone.
+	Autopilot bool `xorm:"NOT NULL DEFAULT false"`
 	// Summary describes the recent work of the session. The resident session keeps its name,
 	// so its generated name is shown as this summary instead.
 	Summary string `xorm:"VARCHAR(200) NOT NULL DEFAULT ''"`

@@ -241,6 +241,10 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 	if landing := landingPrompt(offerings); landing != "" {
 		system += "\n\n" + landing
 	}
+	if AutopilotOf(ctx, conversation) {
+		system += "\n\n" + "Autopilot is on for this session: no reader will answer a question, so " +
+			"decide with what you have, say what you assumed, and go on."
+	}
 	if skills := skillCatalogPrompt(catalog); skills != "" {
 		system += "\n\n" + skills
 	}

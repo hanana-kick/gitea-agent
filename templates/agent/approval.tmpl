@@ -1,30 +1,61 @@
 {{/* one call that waits for its reader, reachable from the thread it was made in */}}
 <div class="ui container admin-page agent-approval-page">
-	<h4 class="ui top attached header">{{ctx.Locale.Tr "agent.approval_title" .Approval.Tool}}</h4>
+	<h4 class="ui top attached header">
+		{{if .IsQuestion}}
+			{{ctx.Locale.Tr "agent.request_question_title"}}
+		{{else}}
+			{{ctx.Locale.Tr "agent.approval_title" .Approval.Tool}}
+		{{end}}
+	</h4>
 	<div class="ui attached segment">
 		{{if .Pending}}
-			<p>{{ctx.Locale.Tr "agent.approval_help"}}</p>
-			<table class="ui very basic table">
-				<tbody>
-					<tr>
-						<td class="tw-w-24">{{ctx.Locale.Tr "agent.approval_tool"}}</td>
-						<td><span class="agent-chat-approval-name">{{.Approval.Tool}}</span></td>
-					</tr>
-					<tr>
-						<td>{{ctx.Locale.Tr "agent.approval_arguments"}}</td>
-						<td class="tw-break-anywhere"><code>{{.Approval.Arguments}}</code></td>
-					</tr>
-				</tbody>
-			</table>
-			<div class="tw-flex tw-gap-2">
-				<form method="post" action="{{.AllowURL}}">
-					<button type="submit" class="ui primary button">{{ctx.Locale.Tr "agent.approval_allow"}}</button>
+			{{if .IsQuestion}}
+				<p class="agent-request-question">{{.Question}}</p>
+				{{if .Why}}
+					<p class="tw-text-text-light">{{.Why}}</p>
+				{{end}}
+				{{if .Options}}
+					<div class="tw-text-text-light">{{ctx.Locale.Tr "agent.request_options"}}</div>
+					<ul>
+						{{range .Options}}
+							<li>{{.}}</li>
+						{{end}}
+					</ul>
+				{{end}}
+				<form method="post" action="{{.AnswerURL}}" class="ui form">
+					<div class="field">
+						<label for="agent-request-answer">{{ctx.Locale.Tr "agent.request_answer_label"}}</label>
+						<textarea id="agent-request-answer" name="answer" rows="4" required placeholder="{{ctx.Locale.Tr "agent.request_answer_placeholder"}}"></textarea>
+					</div>
+					<div class="tw-flex tw-gap-2">
+						<button type="submit" class="ui primary button">{{ctx.Locale.Tr "agent.request_send"}}</button>
+						<a class="ui button" href="{{.SessionURL}}">{{ctx.Locale.Tr "agent.approval_session"}}</a>
+					</div>
 				</form>
-				<form method="post" action="{{.RefuseURL}}">
-					<button type="submit" class="ui button">{{ctx.Locale.Tr "agent.approval_refuse"}}</button>
-				</form>
-				<a class="ui button" href="{{.SessionURL}}">{{ctx.Locale.Tr "agent.approval_session"}}</a>
-			</div>
+			{{else}}
+				<p>{{ctx.Locale.Tr "agent.approval_help"}}</p>
+				<table class="ui very basic table">
+					<tbody>
+						<tr>
+							<td class="tw-w-24">{{ctx.Locale.Tr "agent.approval_tool"}}</td>
+							<td><span class="agent-chat-approval-name">{{.Approval.Tool}}</span></td>
+						</tr>
+						<tr>
+							<td>{{ctx.Locale.Tr "agent.approval_arguments"}}</td>
+							<td class="tw-break-anywhere"><code>{{.Approval.Arguments}}</code></td>
+						</tr>
+					</tbody>
+				</table>
+				<div class="tw-flex tw-gap-2">
+					<form method="post" action="{{.AllowURL}}">
+						<button type="submit" class="ui primary button">{{ctx.Locale.Tr "agent.approval_allow"}}</button>
+					</form>
+					<form method="post" action="{{.RefuseURL}}">
+						<button type="submit" class="ui button">{{ctx.Locale.Tr "agent.approval_refuse"}}</button>
+					</form>
+					<a class="ui button" href="{{.SessionURL}}">{{ctx.Locale.Tr "agent.approval_session"}}</a>
+				</div>
+			{{end}}
 		{{else}}
 			<p>{{ctx.Locale.Tr "agent.approval_answered"}}</p>
 			<a class="ui button" href="{{.SessionURL}}">{{ctx.Locale.Tr "agent.approval_session"}}</a>

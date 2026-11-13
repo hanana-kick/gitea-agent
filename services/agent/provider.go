@@ -10,6 +10,7 @@ import (
 
 	agent_model "gitea.dev/models/agent"
 	"gitea.dev/models/db"
+	"gitea.dev/modules/log"
 	llm "gitea.dev/services/agent/llm"
 )
 
@@ -88,6 +89,10 @@ type ModelFetchOptions struct {
 	Headers  map[string]string
 }
 
+// DecisionsEndpoint is the API path a model serves when it answers typed decisions rather than a
+// chat: a gateway lists those models apart from the chat ones.
+const DecisionsEndpoint = "/api/alpha/decisions"
+
 // FetchModels lists the models a provider offers, without storing anything. The
 // catalog is passed through as the provider reports it: picking from it is the
 // operator's job.
@@ -108,16 +113,31 @@ func FetchModels(ctx context.Context, opts ModelFetchOptions) ([]agent_model.Pro
 	if err != nil {
 		return nil, err
 	}
+	// a gateway that fronts several kinds of model lists the ones that answer decisions apart;
+	// they are the models a decision role is meant to answer with
+	deciding := make(map[string]agent_model.ProviderModel)
+	if list, err := client.ListModelsServing(ctx, DecisionsEndpoint); err == nil {
+		for _, m := range list {
+			deciding[m.ID] = agent_model.ProviderModel{ID: m.ID, Name: m.Name, Decisions: true}
+		}
+	} else {
+		log.Trace("agent provider %s: no separate decisions listing: %v", opts.Provider, err)
+	}
 
 	// providers rarely describe their models, so the shared catalog fills the gaps
 	catalog := llm.LoadCatalog(ctx)
-	out := make([]agent_model.ProviderModel, 0, len(models))
+	out := make([]agent_model.ProviderModel, 0, len(models)+len(deciding))
 	for _, m := range models {
 		inputs := m.InputModalities()
 		if len(inputs) == 0 {
 			inputs = catalog.InputModalities(opts.Provider, m.ID)
 		}
-		out = append(out, agent_model.ProviderModel{ID: m.ID, Name: m.Name, Inputs: inputs})
+		out = append(out, agent_model.ProviderModel{
+			ID: m.ID, Name: m.Name, Inputs: inputs, Chat: true, Decisions: deciding[m.ID].Decisions,
+		})
+	}
+	for _, m := range deciding {
+		out = append(out, m) // NormalizeModels merges what both listings said about one model
 	}
 	return agent_model.NormalizeModels(out), nil
 }

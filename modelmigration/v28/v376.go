@@ -7,40 +7,40 @@ import (
 	"context"
 
 	"gitea.dev/modelmigration/base"
+	"gitea.dev/modules/timeutil"
+
+	"xorm.io/xorm"
 )
 
-// agentToolApprovalRunColumns are the columns of a run that the previous migration added to the
-// approval table: its frozen shape named the wrong table, so the table grew fields no approval
-// has. Nothing reads them.
-var agentToolApprovalRunColumns = []string{
-	"user_id", "model", "error", "reply_repo_id", "reply_issue_id", "status_comment_id",
-	"started_unix", "finished_unix",
+// agentRunV376 is the frozen shape of agent_run, with the thread a run reports into and the
+// comment it says how it is going in.
+type agentRunV376 struct {
+	ID             int64  `xorm:"pk autoincr"`
+	ConversationID int64  `xorm:"INDEX NOT NULL"`
+	UserID         int64  `xorm:"NOT NULL DEFAULT 0"`
+	Status         string `xorm:"VARCHAR(16) NOT NULL"`
+	Model          string `xorm:"VARCHAR(160) NOT NULL DEFAULT ''"`
+	Error          string `xorm:"TEXT"`
+
+	ReplyRepoID     int64 `xorm:"NOT NULL DEFAULT 0"`
+	ReplyIssueID    int64 `xorm:"NOT NULL DEFAULT 0"`
+	StatusCommentID int64 `xorm:"NOT NULL DEFAULT 0"`
+
+	CreatedUnix  timeutil.TimeStamp `xorm:"created NOT NULL"`
+	StartedUnix  timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
+	FinishedUnix timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
 }
 
-// DropAgentToolApprovalRunColumns takes back the columns of a run that the approval table was
-// given by mistake. A fresh installation never had them, and this then does nothing.
-func DropAgentToolApprovalRunColumns(ctx context.Context, x base.EngineMigration) error {
-	sess := x.NewSession()
-	defer sess.Close()
-	if err := sess.Begin(); err != nil {
-		return err
-	}
+func (agentRunV376) TableName() string {
+	return "agent_run"
+}
 
-	present := make([]string, 0, len(agentToolApprovalRunColumns))
-	for _, column := range agentToolApprovalRunColumns {
-		exist, err := x.Dialect().IsColumnExist(sess.DB(), ctx, "agent_tool_approval", column)
-		if err != nil {
-			return err
-		}
-		if exist {
-			present = append(present, column)
-		}
-	}
-	if len(present) == 0 {
-		return sess.Commit() // a fresh installation never had them
-	}
-	if err := base.DropTableColumns(sess, "agent_tool_approval", present...); err != nil {
-		return err
-	}
-	return sess.Commit()
+// AddAgentRunStatusComment records where a run says how it is going: the thread it answers in,
+// and the comment a reader watches.
+func AddAgentRunStatusComment(_ context.Context, x base.EngineMigration) error {
+	_, err := x.SyncWithOptions(xorm.SyncOptions{
+		IgnoreConstrains:  true,
+		IgnoreDropIndices: true,
+	}, new(agentRunV376))
+	return err
 }

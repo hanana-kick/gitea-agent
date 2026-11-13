@@ -12,31 +12,29 @@ import (
 	"xorm.io/xorm"
 )
 
-// agentToolApprovalV375 is the frozen shape of agent_tool_approval, with what the call returned,
-// kept until the run that asked for it reads it back.
-type agentToolApprovalV375 struct {
+// agentMessageV375 is the frozen shape of the transcript table, with the reasoning a model
+// wrote before its answer.
+type agentMessageV375 struct {
 	ID             int64  `xorm:"pk autoincr"`
 	ConversationID int64  `xorm:"INDEX NOT NULL"`
-	RunID          int64  `xorm:"INDEX NOT NULL"`
-	Tool           string `xorm:"VARCHAR(160) NOT NULL"`
-	Arguments      string `xorm:"TEXT NOT NULL"`
-	Status         string `xorm:"VARCHAR(16) NOT NULL"`
-	DecidedUserID  int64  `xorm:"NOT NULL DEFAULT 0"`
+	Role           string `xorm:"VARCHAR(16) NOT NULL"`
+	Content        string `xorm:"TEXT NOT NULL"`
+	Reasoning      string `xorm:"TEXT"`
 
 	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
-	DecidedUnix timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
+	EditedUnix  timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
 }
 
-func (agentToolApprovalV375) TableName() string {
-	return "agent_tool_approval"
+func (agentMessageV375) TableName() string {
+	return "agent_message"
 }
 
-// AddAgentToolApprovalResult keeps what an allowed call returned, so the run it paused continues
-// with it after the answer, however late that answer comes.
-func AddAgentToolApprovalResult(_ context.Context, x base.EngineMigration) error {
+// AddAgentMessageReasoning stores the reasoning of an answer in the transcript, so a reader
+// can open it again after the run is over.
+func AddAgentMessageReasoning(_ context.Context, x base.EngineMigration) error {
 	_, err := x.SyncWithOptions(xorm.SyncOptions{
 		IgnoreConstrains:  true,
 		IgnoreDropIndices: true,
-	}, new(agentToolApprovalV375))
+	}, new(agentMessageV375))
 	return err
 }

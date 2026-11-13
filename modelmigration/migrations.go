@@ -33,6 +33,7 @@ import (
 	"gitea.dev/modelmigration/v1_8"
 	"gitea.dev/modelmigration/v1_9"
 	"gitea.dev/modelmigration/v28"
+	"gitea.dev/modelmigration/v29"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
@@ -429,27 +430,35 @@ func prepareMigrationTasks() []*migration {
 		newMigration(353, "Add audit event table", v28.AddAuditEventTable),
 		newMigration(354, "Add Actions job queue indexes", v28.AddActionQueueIndexes),
 		newMigration(355, "Add AutoMerge merged_commit_id column", v28.AddAutoMergeMergedCommitID),
-		newMigration(356, "Add agent_provider table for BYOK LLM provider keys", v28.AddAgentProviderTable),
-		newMigration(357, "Add agent_provider custom headers column", v28.AddAgentProviderHeadersColumn),
-		newMigration(358, "Add agent_model_group tables", v28.AddAgentModelGroupTables),
-		newMigration(359, "Add agent conversation and message tables", v28.AddAgentConversationTables),
-		newMigration(360, "Add agent run table and session model binding", v28.AddAgentRunTable),
-		newMigration(361, "Move provider credentials into agent_api_key", v28.AddAgentAPIKeyTable),
-		newMigration(362, "Add agent session icon and title state", v28.AddAgentConversationTitleAndIcon),
-		newMigration(363, "Add agent conversation folders", v28.AddAgentConversationFolders),
-		newMigration(364, "Add agent attachments", v28.AddAgentAttachments),
-		newMigration(365, "Add agent session summary", v28.AddAgentConversationSummary),
-		newMigration(366, "Add agent model roles", v28.AddAgentModelRole),
-		newMigration(367, "Add agent tool permissions", v28.AddAgentToolPermission),
-		newMigration(368, "Add agent conversation owner", v28.AddAgentConversationOwner),
-		newMigration(369, "Add agent message edited", v28.AddAgentMessageEdited),
-		newMigration(370, "Add agent run user", v28.AddAgentRunUser),
-		newMigration(371, "Add agent tool approval", v28.AddAgentToolApproval),
-		newMigration(372, "Add agent skills", v28.AddAgentSkill),
-		newMigration(373, "Add agent message reasoning", v28.AddAgentMessageReasoning),
-		newMigration(374, "Add agent run status comment", v28.AddAgentRunStatusComment),
-		newMigration(375, "Add agent tool approval result", v28.AddAgentToolApprovalResult),
-		newMigration(376, "Drop the run columns the agent tool approval table was given", v28.DropAgentToolApprovalRunColumns),
+		// Gitea 28.0.0 ends at migration ID number 355 (database version 356)
+		// HERE: 2 migrations from 29 are added since they don't change database structure
+		newMigration(356, "Add index on action_run commit_sha", v29.AddActionRunCommitSHAIndex),
+		newMigration(357, "Normalize legacy team authorize values", v29.NormalizeLegacyTeamAuthorize),
+		newMigration(358, "Add agent_provider table for BYOK LLM provider keys", v28.AddAgentProviderTable),
+		newMigration(359, "Add agent_provider custom headers column", v28.AddAgentProviderHeadersColumn),
+		newMigration(360, "Add agent_model_group tables", v28.AddAgentModelGroupTables),
+		newMigration(361, "Add agent conversation and message tables", v28.AddAgentConversationTables),
+		newMigration(362, "Add agent run table and session model binding", v28.AddAgentRunTable),
+		newMigration(363, "Move provider credentials into agent_api_key", v28.AddAgentAPIKeyTable),
+		newMigration(364, "Add agent session icon and title state", v28.AddAgentConversationTitleAndIcon),
+		newMigration(365, "Add agent conversation folders", v28.AddAgentConversationFolders),
+		newMigration(366, "Add agent attachments", v28.AddAgentAttachments),
+		newMigration(367, "Add agent session summary", v28.AddAgentConversationSummary),
+		newMigration(368, "Add agent model roles", v28.AddAgentModelRole),
+		newMigration(369, "Add agent tool permissions", v28.AddAgentToolPermission),
+		newMigration(370, "Add agent conversation owner", v28.AddAgentConversationOwner),
+		newMigration(371, "Add agent message edited", v28.AddAgentMessageEdited),
+		newMigration(372, "Add agent run user", v28.AddAgentRunUser),
+		newMigration(373, "Add agent tool approval", v28.AddAgentToolApproval),
+		newMigration(374, "Add agent skills", v28.AddAgentSkill),
+		newMigration(375, "Add agent message reasoning", v28.AddAgentMessageReasoning),
+		newMigration(376, "Add agent run status comment", v28.AddAgentRunStatusComment),
+		newMigration(377, "Add agent tool approval result", v28.AddAgentToolApprovalResult),
+		newMigration(378, "Drop the run columns the agent tool approval table was given", v28.DropAgentToolApprovalRunColumns),
+		newMigration(379, "Add agent request kind and answer", v28.AddAgentRequestKindAndAnswer),
+		newMigration(380, "Add agent conversation autopilot", v28.AddAgentConversationAutopilot),
+		newMigration(381, "Rename the agent review role to decision", v28.RenameAgentReviewRoleToDecision),
+		newMigration(382, "Add agent model group decisions", v28.AddAgentModelGroupDecisions),
 	}
 	return preparedMigrations
 }

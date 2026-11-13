@@ -46,7 +46,7 @@ func resolveLinkRelative(ctx context.Context, base, cur, link string, absolute b
 			finalLink += "?" + linkURL.RawQuery
 		}
 		if linkURL.Fragment != "" {
-			finalLink += "#" + linkURL.Fragment
+			finalLink += "#" + linkURL.EscapedFragment()
 		}
 	}
 

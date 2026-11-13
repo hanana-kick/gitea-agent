@@ -12,30 +12,27 @@ import (
 	"xorm.io/xorm"
 )
 
-// agentToolApprovalV371 is the frozen shape of the table holding tool calls that wait for
-// a reader to allow them.
-type agentToolApprovalV371 struct {
+// agentMessageV371 is the frozen shape of agent_message with the mark of the messages a
+// user rewrote.
+type agentMessageV371 struct {
 	ID             int64  `xorm:"pk autoincr"`
 	ConversationID int64  `xorm:"INDEX NOT NULL"`
-	RunID          int64  `xorm:"INDEX NOT NULL"`
-	Tool           string `xorm:"VARCHAR(160) NOT NULL"`
-	Arguments      string `xorm:"TEXT NOT NULL"`
-	Status         string `xorm:"VARCHAR(16) NOT NULL"`
+	Role           string `xorm:"VARCHAR(16) NOT NULL"`
+	Content        string `xorm:"TEXT NOT NULL"`
 
-	DecidedUserID int64              `xorm:"NOT NULL DEFAULT 0"`
-	CreatedUnix   timeutil.TimeStamp `xorm:"created NOT NULL"`
-	DecidedUnix   timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
+	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
+	EditedUnix  timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
 }
 
-func (agentToolApprovalV371) TableName() string {
-	return "agent_tool_approval"
+func (agentMessageV371) TableName() string {
+	return "agent_message"
 }
 
-// AddAgentToolApproval stores the tool calls waiting for a user to allow them.
-func AddAgentToolApproval(_ context.Context, x base.EngineMigration) error {
+// AddAgentMessageEdited marks the messages a user rewrote.
+func AddAgentMessageEdited(_ context.Context, x base.EngineMigration) error {
 	_, err := x.SyncWithOptions(xorm.SyncOptions{
 		IgnoreConstrains:  true,
 		IgnoreDropIndices: true,
-	}, new(agentToolApprovalV371))
+	}, new(agentMessageV371))
 	return err
 }

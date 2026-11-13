@@ -12,29 +12,30 @@ import (
 	"xorm.io/xorm"
 )
 
-// agentMessageV373 is the frozen shape of the transcript table, with the reasoning a model
-// wrote before its answer.
-type agentMessageV373 struct {
+// agentToolApprovalV373 is the frozen shape of the table holding tool calls that wait for
+// a reader to allow them.
+type agentToolApprovalV373 struct {
 	ID             int64  `xorm:"pk autoincr"`
 	ConversationID int64  `xorm:"INDEX NOT NULL"`
-	Role           string `xorm:"VARCHAR(16) NOT NULL"`
-	Content        string `xorm:"TEXT NOT NULL"`
-	Reasoning      string `xorm:"TEXT"`
+	RunID          int64  `xorm:"INDEX NOT NULL"`
+	Tool           string `xorm:"VARCHAR(160) NOT NULL"`
+	Arguments      string `xorm:"TEXT NOT NULL"`
+	Status         string `xorm:"VARCHAR(16) NOT NULL"`
 
-	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
-	EditedUnix  timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
+	DecidedUserID int64              `xorm:"NOT NULL DEFAULT 0"`
+	CreatedUnix   timeutil.TimeStamp `xorm:"created NOT NULL"`
+	DecidedUnix   timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
 }
 
-func (agentMessageV373) TableName() string {
-	return "agent_message"
+func (agentToolApprovalV373) TableName() string {
+	return "agent_tool_approval"
 }
 
-// AddAgentMessageReasoning stores the reasoning of an answer in the transcript, so a reader
-// can open it again after the run is over.
-func AddAgentMessageReasoning(_ context.Context, x base.EngineMigration) error {
+// AddAgentToolApproval stores the tool calls waiting for a user to allow them.
+func AddAgentToolApproval(_ context.Context, x base.EngineMigration) error {
 	_, err := x.SyncWithOptions(xorm.SyncOptions{
 		IgnoreConstrains:  true,
 		IgnoreDropIndices: true,
-	}, new(agentMessageV373))
+	}, new(agentToolApprovalV373))
 	return err
 }

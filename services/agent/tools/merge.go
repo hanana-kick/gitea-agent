@@ -146,7 +146,7 @@ func (mergePullRequestTool) merge(ctx context.Context, doer *user_model.User, se
 			return "", err
 		}
 	}
-	if err := pull_service.Merge(pr.ID, actor, style, "", message, false); err != nil {
+	if err := pull_service.Merge(ctx, pr.ID, actor, style, "", message, false); err != nil {
 		switch {
 		case pull_service.IsErrInvalidMergeStyle(err):
 			return fmt.Sprintf("%s does not allow the %s merge style.", repository.FullName(), style), nil

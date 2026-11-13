@@ -10,6 +10,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// A row stored before models said what they serve still reads as a model that answers a chat.
+func TestProviderModelsReadWhatAModelServes(t *testing.T) {
+	p := &Provider{}
+	p.ModelsJSON = `[{"id":"acme/legacy","name":"Acme: Legacy"},{"id":"only/decides","decisions":true}]`
+	models := p.Models()
+	require.Len(t, models, 2)
+	assert.True(t, models[0].Chat, "a model stored earlier lost its place in the lists")
+	assert.False(t, models[0].Decisions)
+	assert.True(t, models[1].Decisions)
+	assert.False(t, models[1].Chat, "a decisions-only model is offered to the roles that write")
+}
+
 func TestProviderCustomHeaders(t *testing.T) {
 	p := &Provider{}
 	assert.Nil(t, p.CustomHeaders())

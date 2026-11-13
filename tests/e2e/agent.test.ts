@@ -301,6 +301,15 @@ test.describe.serial('agent', () => {
     await page.goto('/-/admin/agent/skills');
     await expect(page.locator('button.show-modal[data-modal="#agent-skill-modal"]')).toBeVisible();
 
+    // the roles page offers the tiers an instance pays for, and the ways to split the roles
+    await page.goto('/-/admin/agent/roles');
+    // the selects are the native fields Fomantic replaces, so they are present rather than visible
+    await expect(page.locator('select[name="cheap"]')).toHaveCount(1);
+    await expect(page.locator('select[name="strong"]')).toHaveCount(1);
+    await expect(page.locator('select[name="decision"]')).toHaveCount(1);
+    await expect(page.locator('button[name="preset"][value="balanced"]')).toBeVisible();
+    await expect(page.locator('select[name="role_decision"]')).toHaveCount(1);
+
     await page.goto('/-/admin/agent/runs');
     const row = page.locator('.agent-runs tbody tr[data-run-id]').first();
     await expect(row).toBeVisible();
@@ -588,6 +597,12 @@ test.describe.serial('agent surfaces and guards', () => {
         await page.locator('.agent-chat-send').click();
         await expect(page.locator('.agent-chat-message.assistant').filter({hasText: 'the stub answered'})).toBeVisible();
 
+        // a session can decide for itself, and the toggle says which way it is set
+        const autopilot = page.locator('form.agent-chat-autopilot button[name="autopilot"]');
+        await expect(autopilot).toHaveAttribute('value', 'on');
+        await autopilot.click();
+        await expect(page.locator('form.agent-chat-autopilot button[name="autopilot"]')).toHaveAttribute('value', 'off');
+
         const exported = await page.request.get(`/-/agent/${session}/export`);
         expect(exported.status()).toBe(200);
         expect(exported.headers()['content-disposition']).toContain('attachment');
@@ -633,5 +648,35 @@ test.describe.serial('agent surfaces and guards', () => {
       const loaded = await page.goto(path);
       expect(loaded?.status(), path).toBe(200);
     }
+
+    // a group says what it fronts, and its members are of that kind: what answers the other kind
+    // is not offered at all
+    await page.goto('/-/admin/agent/groups/new');
+    await expect(page.locator('input[name=class]')).toHaveCount(2);
+    await expect(page.locator('input[name=class][value=model]')).toBeChecked();
+    expect(await page.locator('select[name=member] option[data-class=model]').count()).toBeGreaterThan(0);
+    await page.locator('input[name=class][value=decision]').check();
+    await expect(page.locator('select[name=member] option[data-class=model]')).toHaveCount(0);
+
+    const listed = await (await page.request.get(`/-/admin/agent/providers?q=${provider}`)).text();
+    const providerId = /\/-\/admin\/agent\/providers\/(\d+)\/edit/.exec(listed)?.[1];
+    expect(providerId, 'the new provider is not on the providers page').toBeTruthy();
+
+    const group = `e2e-group-${randomString(6)}`;
+    const saved = await page.request.post('/-/admin/agent/groups/new', {
+      form: {name: group, description: '', mode: 'fallback', class: 'model', member: `model:${providerId}/${modelId}`},
+      maxRedirects: 0,
+    });
+    expect(saved.status(), await saved.text()).toBe(303);
+
+    await page.goto(`/-/admin/agent/groups?q=${group}`);
+    const row = page.locator('tbody tr', {hasText: group});
+    await expect(row).toBeVisible();
+    await expect(row.getByText('LLM')).toBeVisible();
+
+    // the role that decides does not answer with a group that fronts what writes
+    await page.goto('/-/admin/agent/roles');
+    await expect(page.locator('select[name=role_decision] option', {hasText: group})).toHaveCount(0);
+    await expect(page.locator('select[name=role_repository] option', {hasText: group})).toHaveCount(1);
   });
 });

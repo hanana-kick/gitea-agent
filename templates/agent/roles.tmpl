@@ -5,18 +5,66 @@
 		</h4>
 		<div class="ui attached segment">
 			<p class="help">{{ctx.Locale.Tr "agent.roles_help"}}</p>
-			<form class="ui form" method="post" action="{{AppSubUrl}}/-/admin/agent/roles">
-				{{range .Rows}}
-					{{$row := .}}
+			{{/* the two models an instance pays for, and the three ways of splitting the roles
+				between them: the small jobs are where the cheap one belongs */}}
+			<form class="ui form" method="post" action="{{AppSubUrl}}/-/admin/agent/roles/preset">
+				<h5 class="ui header">{{ctx.Locale.Tr "agent.roles_preset_title"}}</h5>
+				<p class="help">{{ctx.Locale.Tr "agent.roles_preset_help"}}</p>
+				<div class="two fields">
 					<div class="field">
-						<label for="agent-role-{{.Role}}">{{ctx.Locale.Tr (printf "agent.role_%s" .Role)}}</label>
-						<select id="agent-role-{{.Role}}" name="role_{{.Role}}" class="ui dropdown">
-							<option value="">{{ctx.Locale.Tr "agent.roles_none"}}</option>
-							{{range $.ModelOptions}}
-								<option value="{{.Ref}}"{{if eq .Ref $row.Ref}} selected{{end}}>{{.Label}}</option>
-							{{end}}
+						<label for="agent-preset-cheap">{{ctx.Locale.Tr "agent.roles_preset_cheap"}}</label>
+						<select id="agent-preset-cheap" name="cheap" class="ui dropdown">
+							{{range index .OptionsByClass "model"}}<option value="{{.Ref}}">{{.Label}}</option>{{end}}
 						</select>
 					</div>
+					<div class="field">
+						<label for="agent-preset-strong">{{ctx.Locale.Tr "agent.roles_preset_strong"}}</label>
+						<select id="agent-preset-strong" name="strong" class="ui dropdown">
+							{{range index .OptionsByClass "model"}}<option value="{{.Ref}}">{{.Label}}</option>{{end}}
+						</select>
+					</div>
+				</div>
+				<div class="field">
+					<label for="agent-preset-decision">{{ctx.Locale.Tr "agent.roles_preset_decision"}}</label>
+					<select id="agent-preset-decision" name="decision" class="ui dropdown">
+						<option value="">{{ctx.Locale.Tr "agent.roles_preset_decision_same"}}</option>
+						{{range index .OptionsByClass "decision"}}<option value="{{.Ref}}">{{.Label}}</option>{{end}}
+					</select>
+					<p class="help">{{ctx.Locale.Tr "agent.roles_preset_decision_help"}}</p>
+					{{if .NoDecisionModels}}<p class="help">{{ctx.Locale.Tr "agent.roles_no_decision_models"}}</p>{{end}}
+				</div>
+				<div class="tw-flex tw-flex-wrap tw-gap-2">
+					<button class="ui button" type="submit" name="preset" value="economy">{{ctx.Locale.Tr "agent.roles_preset_economy"}}</button>
+					<button class="ui button" type="submit" name="preset" value="balanced">{{ctx.Locale.Tr "agent.roles_preset_balanced"}}</button>
+					<button class="ui button" type="submit" name="preset" value="quality">{{ctx.Locale.Tr "agent.roles_preset_quality"}}</button>
+				</div>
+			</form>
+
+			<div class="ui divider"></div>
+
+			<form class="ui form" method="post" action="{{AppSubUrl}}/-/admin/agent/roles">
+				{{/* the roles are listed by what they need of a model: one that decides, and one that
+					writes the answers and the work */}}
+				{{range $class := .RoleClasses}}
+					<h5 class="ui header">
+						{{ctx.Locale.Tr (printf "agent.roles_class_%s" $class)}}
+					</h5>
+					<p class="help">{{ctx.Locale.Tr (printf "agent.roles_class_%s_help" $class)}}</p>
+					{{range $row := index $.RowsByClass $class}}
+						{{$row := .}}
+						<div class="field">
+							<label for="agent-role-{{.Role}}">
+								{{ctx.Locale.Tr (printf "agent.role_%s" .Role)}}
+								{{if .Light}}<span class="ui basic label tw-ml-1">{{ctx.Locale.Tr "agent.roles_light"}}</span>{{end}}
+							</label>
+							<select id="agent-role-{{.Role}}" name="role_{{.Role}}" class="ui dropdown">
+								<option value="">{{ctx.Locale.Tr "agent.roles_none"}}</option>
+								{{range index $.OptionsByClass $row.Class}}
+									<option value="{{.Ref}}"{{if eq .Ref $row.Ref}} selected{{end}}>{{.Label}}</option>
+								{{end}}
+							</select>
+						</div>
+					{{end}}
 				{{end}}
 				<button class="ui primary button" type="submit">{{ctx.Locale.Tr "save"}}</button>
 			</form>

@@ -12,28 +12,29 @@ import (
 	"xorm.io/xorm"
 )
 
-// agentSkillV372 is the frozen shape of the table holding the procedures the agent can open.
-type agentSkillV372 struct {
-	ID          int64  `xorm:"pk autoincr"`
-	Name        string `xorm:"UNIQUE NOT NULL"`
-	Description string `xorm:"VARCHAR(255) NOT NULL"`
-	Body        string `xorm:"TEXT NOT NULL"`
-	Scope       string `xorm:"VARCHAR(16) NOT NULL DEFAULT 'common'"`
-	Enabled     bool   `xorm:"NOT NULL DEFAULT TRUE"`
+// agentRunV372 is the frozen shape of agent_run when the asking user was added.
+type agentRunV372 struct {
+	ID             int64  `xorm:"pk autoincr"`
+	ConversationID int64  `xorm:"INDEX NOT NULL"`
+	UserID         int64  `xorm:"NOT NULL DEFAULT 0"`
+	Status         string `xorm:"VARCHAR(16) NOT NULL"`
+	Model          string `xorm:"VARCHAR(160) NOT NULL DEFAULT ''"`
+	Error          string `xorm:"TEXT"`
 
-	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
-	UpdatedUnix timeutil.TimeStamp `xorm:"updated NOT NULL"`
+	CreatedUnix  timeutil.TimeStamp `xorm:"created NOT NULL"`
+	StartedUnix  timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
+	FinishedUnix timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
 }
 
-func (agentSkillV372) TableName() string {
-	return "agent_skill"
+func (agentRunV372) TableName() string {
+	return "agent_run"
 }
 
-// AddAgentSkill stores the skills an agent may open by name.
-func AddAgentSkill(_ context.Context, x base.EngineMigration) error {
+// AddAgentRunUser records who asked for a run, so its tools run with that user's rights.
+func AddAgentRunUser(_ context.Context, x base.EngineMigration) error {
 	_, err := x.SyncWithOptions(xorm.SyncOptions{
 		IgnoreConstrains:  true,
 		IgnoreDropIndices: true,
-	}, new(agentSkillV372))
+	}, new(agentRunV372))
 	return err
 }

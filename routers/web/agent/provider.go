@@ -83,6 +83,13 @@ func Providers(ctx *context.Context) {
 		return
 	}
 
+	// each provider's models are listed by what they serve, the way they are picked: what answers
+	// a chat, and what answers the decisions API
+	classes := make(map[int64][]providerCatalogClass, len(providers))
+	for _, provider := range providers {
+		classes[provider.ID] = catalogByClass(provider.Models())
+	}
+	ctx.Data["ProviderClasses"] = classes
 	ctx.Data["Providers"] = providers
 	ctx.Data["Total"] = total
 	ctx.Data["Page"] = context.NewPagerBuilder(ctx).TotalCount(total).PerPageLimit(pageSize).CurPage(page).Build()
@@ -307,7 +314,9 @@ func modelsFrom(ctx *context.Context, form providerForm) []agent_model.ProviderM
 
 	models := make([]agent_model.ProviderModel, 0, len(form.Selected)+1)
 	for _, id := range form.Selected {
-		models = append(models, agent_model.ProviderModel{ID: id, Name: known[id].Name, Inputs: known[id].Inputs})
+		// what the listing said about the model is part of the model: a decision model is picked
+		// for a decision role
+		models = append(models, agent_model.ProviderModel{ID: id, Name: known[id].Name, Inputs: known[id].Inputs, Decisions: known[id].Decisions})
 	}
 	models = append(models, agent_service.ParseModelLines(form.ManualRaw)...)
 	return agent_model.NormalizeModels(models)
@@ -365,6 +374,36 @@ func encodeCatalog(models []agent_model.ProviderModel) string {
 }
 
 // renderProviderForm renders the create form when p is nil, the edit form otherwise.
+// catalogByClass splits what a gateway reported by what the models serve, so the ones that answer
+// the decisions API are picked apart from the ones that answer a chat. A model that serves both is
+// listed in both: the list it is in says what it can answer.
+func catalogByClass(catalog []agent_model.ProviderModel) []providerCatalogClass {
+	classes := make([]providerCatalogClass, 0, 2)
+	chat := make([]agent_model.ProviderModel, 0, len(catalog))
+	decisions := make([]agent_model.ProviderModel, 0, 4)
+	for _, model := range catalog {
+		if model.Chat {
+			chat = append(chat, model)
+		}
+		if model.Decisions {
+			decisions = append(decisions, model)
+		}
+	}
+	if len(chat) > 0 {
+		classes = append(classes, providerCatalogClass{Class: agent_model.ModelRoleClassModel, Models: chat})
+	}
+	if len(decisions) > 0 {
+		classes = append(classes, providerCatalogClass{Class: agent_model.ModelRoleClassDecision, Models: decisions})
+	}
+	return classes
+}
+
+// providerCatalogClass is one kind of model a gateway reported, with the models of that kind.
+type providerCatalogClass struct {
+	Class  string
+	Models []agent_model.ProviderModel
+}
+
 func renderProviderForm(ctx *context.Context, p *agent_model.Provider, form providerForm, catalog []agent_model.ProviderModel, errMsg string) {
 	providerTypes := llm.Providers()
 	if form.Provider == "" && len(providerTypes) > 0 {
@@ -390,6 +429,7 @@ func renderProviderForm(ctx *context.Context, p *agent_model.Provider, form prov
 	ctx.Data["Form"] = form
 	ctx.Data["Catalog"] = catalog
 	ctx.Data["CatalogEncoded"] = encodeCatalog(catalog)
+	ctx.Data["CatalogByClass"] = catalogByClass(catalog)
 	ctx.Data["ErrorMsg"] = errMsg
 	ctx.Data["IsEdit"] = isEdit
 	ctx.Data["FormAction"] = setting.AppSubURL + formAction

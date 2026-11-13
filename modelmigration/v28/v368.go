@@ -12,32 +12,24 @@ import (
 	"xorm.io/xorm"
 )
 
-// agentConversationV368 is the frozen shape of agent_conversation with its owner.
-type agentConversationV368 struct {
-	ID      int64  `xorm:"pk autoincr"`
-	Kind    string `xorm:"VARCHAR(16) NOT NULL"`
-	OwnerID int64  `xorm:"INDEX NOT NULL DEFAULT 0"`
-	RepoID  int64  `xorm:"INDEX NOT NULL DEFAULT 0"`
-	Title   string `xorm:"VARCHAR(100) NOT NULL"`
-
-	Summary  string `xorm:"VARCHAR(200) NOT NULL DEFAULT ''"`
-	Icon     string `xorm:"VARCHAR(60) NOT NULL DEFAULT ''"`
-	FolderID int64  `xorm:"INDEX NOT NULL DEFAULT 0"`
-	TitleSet bool   `xorm:"NOT NULL DEFAULT FALSE"`
-
-	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
+// agentModelRoleV368 is the frozen shape of agent_model_role, a model assigned to one
+// role of the agent.
+type agentModelRoleV368 struct {
+	ID          int64              `xorm:"pk autoincr"`
+	Role        string             `xorm:"UNIQUE NOT NULL"`
+	ModelRef    string             `xorm:"VARCHAR(160) NOT NULL DEFAULT ''"`
 	UpdatedUnix timeutil.TimeStamp `xorm:"updated NOT NULL"`
 }
 
-func (agentConversationV368) TableName() string {
-	return "agent_conversation"
+func (agentModelRoleV368) TableName() string {
+	return "agent_model_role"
 }
 
-// AddAgentConversationOwner gives every agent session an owner.
-func AddAgentConversationOwner(_ context.Context, x base.EngineMigration) error {
+// AddAgentModelRole adds the models the admin assigns to the agent roles.
+func AddAgentModelRole(_ context.Context, x base.EngineMigration) error {
 	_, err := x.SyncWithOptions(xorm.SyncOptions{
 		IgnoreConstrains:  true,
 		IgnoreDropIndices: true,
-	}, new(agentConversationV368))
+	}, new(agentModelRoleV368))
 	return err
 }

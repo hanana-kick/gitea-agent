@@ -378,7 +378,7 @@ func (pr *PullRequest) getReviewedByLines(ctx context.Context, writer io.Writer)
 	reviewersWritten := 0
 
 	for _, review := range reviews {
-		if maxReviewers > 0 && reviewersWritten > maxReviewers {
+		if maxReviewers > 0 && reviewersWritten >= maxReviewers {
 			break
 		}
 
@@ -405,6 +405,21 @@ func (pr *PullRequest) getReviewedByLines(ctx context.Context, writer io.Writer)
 // GetGitHeadRefName returns git ref for hidden pull request branch
 func (pr *PullRequest) GetGitHeadRefName() string { // TODO: make it return RefName but not string
 	return git.RefNameFromPullIndex(pr.Index).String()
+}
+
+func (pr *PullRequest) GetInstructionsCliArgs() (ret struct {
+	BaseBranchArg  string
+	HeadBranchArg  string
+	LocalBranchArg string
+},
+) {
+	ret.BaseBranchArg = util.ShellEscape(pr.BaseBranch)
+	ret.HeadBranchArg = util.ShellEscape(pr.HeadBranch)
+	ret.LocalBranchArg = ret.HeadBranchArg
+	if pr.HeadRepo != nil && pr.HeadRepoID != pr.BaseRepoID {
+		ret.LocalBranchArg = util.ShellEscape(pr.HeadRepo.OwnerName) + "-" + ret.HeadBranchArg
+	}
+	return ret
 }
 
 // GetReviewCommentsCount returns the number of review comments made on the diff of a PR review (not including comments on commits or issues in a PR)

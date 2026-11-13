@@ -7,32 +7,28 @@ import (
 	"context"
 
 	"gitea.dev/modelmigration/base"
-	"gitea.dev/modules/timeutil"
 
 	"xorm.io/xorm"
 )
 
-// agentMessageV369 is the frozen shape of agent_message with the mark of the messages a
-// user rewrote.
-type agentMessageV369 struct {
-	ID             int64  `xorm:"pk autoincr"`
-	ConversationID int64  `xorm:"INDEX NOT NULL"`
-	Role           string `xorm:"VARCHAR(16) NOT NULL"`
-	Content        string `xorm:"TEXT NOT NULL"`
-
-	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
-	EditedUnix  timeutil.TimeStamp `xorm:"NOT NULL DEFAULT 0"`
+// agentToolPermissionV369 is the frozen shape of agent_tool_permission, the admin-chosen
+// mode of one agent tool.
+type agentToolPermissionV369 struct {
+	ID      int64  `xorm:"pk autoincr"`
+	Tool    string `xorm:"UNIQUE NOT NULL"`
+	Mode    string `xorm:"NOT NULL DEFAULT 'llm'"`
+	Enabled bool   `xorm:"NOT NULL DEFAULT TRUE"`
 }
 
-func (agentMessageV369) TableName() string {
-	return "agent_message"
+func (agentToolPermissionV369) TableName() string {
+	return "agent_tool_permission"
 }
 
-// AddAgentMessageEdited marks the messages a user rewrote.
-func AddAgentMessageEdited(_ context.Context, x base.EngineMigration) error {
+// AddAgentToolPermission adds the per-tool permission modes of the agent.
+func AddAgentToolPermission(_ context.Context, x base.EngineMigration) error {
 	_, err := x.SyncWithOptions(xorm.SyncOptions{
 		IgnoreConstrains:  true,
 		IgnoreDropIndices: true,
-	}, new(agentMessageV369))
+	}, new(agentToolPermissionV369))
 	return err
 }

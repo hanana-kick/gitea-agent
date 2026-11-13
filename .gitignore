@@ -120,3 +120,12 @@ prime/
 
 # A Makefile for custom make targets
 Makefile.local
+
+# tool indexes kept beside the checkout
+.codegraph/
+graphify-out/
+# python bytecode the scripts leave behind
+__pycache__/
+
+# the harness writes what it observed next to itself
+harness-*.json

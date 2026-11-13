@@ -1,0 +1,59 @@
+{{/* the request a run of this thread waits on: a call to allow or refuse, or a question to answer */}}
+{{if .AgentRequest}}
+	<div class="timeline-item comment agent-request">
+		<div class="timeline-avatar tw-text-purple">{{svg "octicon-hubot" 40}}</div>
+		<div class="content">
+			<div class="ui segment avatar-content-left-arrow">
+				<div class="flex-text-block tw-justify-between tw-items-start">
+					<span class="tw-font-semibold">
+						{{if .AgentRequest.Request.IsQuestion}}
+							{{ctx.Locale.Tr "agent.request_question_title"}}
+						{{else}}
+							{{ctx.Locale.Tr "agent.approval_title" .AgentRequest.Question}}
+						{{end}}
+					</span>
+					<a class="tw-text-text-light" href="{{.AgentRequestSessionURL}}">{{ctx.Locale.Tr "agent.approval_session"}}</a>
+				</div>
+				{{if .AgentRequest.Request.IsQuestion}}
+					<p class="agent-request-question">{{.AgentRequest.Question}}</p>
+				{{else if .AgentRequest.Request.Arguments}}
+					<details>
+						<summary>{{ctx.Locale.Tr "agent.approval_arguments"}}</summary>
+						<code class="tw-break-anywhere">{{.AgentRequest.Request.Arguments}}</code>
+					</details>
+				{{end}}
+				{{if .AgentRequest.Why}}
+					<p class="tw-text-text-light">{{.AgentRequest.Why}}</p>
+				{{end}}
+				{{if .AgentRequest.Request.IsQuestion}}
+					{{if .AgentRequest.Options}}
+						<div class="tw-text-text-light">{{ctx.Locale.Tr "agent.request_options"}}</div>
+						<ul>
+							{{range .AgentRequest.Options}}
+								<li>{{.}}</li>
+							{{end}}
+						</ul>
+					{{end}}
+					<form method="post" action="{{.AgentRequestAnswerURL}}" class="ui form">
+						<input type="hidden" name="back" value="{{.AgentRequestBack}}">
+						<div class="field">
+							<textarea name="answer" rows="3" required aria-label="{{ctx.Locale.Tr "agent.request_answer_label"}}" placeholder="{{ctx.Locale.Tr "agent.request_answer_placeholder"}}"></textarea>
+						</div>
+						<button type="submit" class="ui primary button">{{ctx.Locale.Tr "agent.request_send"}}</button>
+					</form>
+				{{else}}
+					<div class="tw-flex tw-gap-2">
+						<form method="post" action="{{.AgentRequestAllowURL}}">
+							<input type="hidden" name="back" value="{{.AgentRequestBack}}">
+							<button type="submit" class="ui primary button">{{ctx.Locale.Tr "agent.approval_allow"}}</button>
+						</form>
+						<form method="post" action="{{.AgentRequestRefuseURL}}">
+							<input type="hidden" name="back" value="{{.AgentRequestBack}}">
+							<button type="submit" class="ui button">{{ctx.Locale.Tr "agent.approval_refuse"}}</button>
+						</form>
+					</div>
+				{{end}}
+			</div>
+		</div>
+	</div>
+{{end}}

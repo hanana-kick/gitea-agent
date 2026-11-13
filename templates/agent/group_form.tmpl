@@ -7,7 +7,7 @@
 			{{if .ErrorMsg}}
 				<div class="ui error message">{{.ErrorMsg}}</div>
 			{{end}}
-			{{if .GroupMembers}}
+			{{if .GroupMemberClasses}}
 				<form class="ui form" id="group-form" action="{{.FormAction}}" method="post">
 					<div class="required field">
 						<label for="name">{{ctx.Locale.Tr "agent.group_name"}}</label>
@@ -34,6 +34,20 @@
 						<p class="help">{{ctx.Locale.Tr "agent.group_mode_help"}}</p>
 					</div>
 					<div class="required field">
+						<label>{{ctx.Locale.Tr "agent.group_class"}}</label>
+						<div class="tw-flex tw-gap-4">
+							<div class="ui radio checkbox">
+								<input type="radio" name="class" value="model" {{if ne .Form.Class "decision"}}checked{{end}}>
+								<label>{{ctx.Locale.Tr "agent.models_class_llm"}}</label>
+							</div>
+							<div class="ui radio checkbox">
+								<input type="radio" name="class" value="decision" {{if eq .Form.Class "decision"}}checked{{end}}>
+								<label>{{ctx.Locale.Tr "agent.models_class_decision"}}</label>
+							</div>
+						</div>
+						<p class="help">{{ctx.Locale.Tr "agent.group_class_help"}}</p>
+					</div>
+					<div class="required field">
 						<label>{{ctx.Locale.Tr "agent.group_members"}}</label>
 						<div id="group-members">
 							{{range .Form.Members}}
@@ -41,8 +55,12 @@
 									<div class="tw-flex-1">
 										<select class="ui search selection dropdown custom tw-w-full" name="member" required>
 											{{$selected := .}}
-											{{range $.GroupMembers}}
-												<option value="{{.Value}}" {{if eq .Value $selected}}selected{{end}}>{{.Label}}</option>
+											{{range $.GroupMemberClasses}}
+												<optgroup label="{{ctx.Locale.Tr (printf "agent.models_class_%s" .Class)}}">
+													{{range .Options}}
+														<option data-class="{{.Class}}" value="{{.Value}}" {{if eq .Value $selected}}selected{{end}}>{{.Label}}</option>
+													{{end}}
+												</optgroup>
 											{{end}}
 										</select>
 									</div>
@@ -69,13 +87,17 @@
 		</div>
 	</div>
 
-	{{if .GroupMembers}}
+	{{if .GroupMemberClasses}}
 		<template id="group-member-template">
 			<div class="group-member flex-text-block tw-mb-2">
 				<div class="tw-flex-1">
 					<select class="ui search selection dropdown custom tw-w-full" name="member" required>
-						{{range .GroupMembers}}
-							<option value="{{.Value}}">{{.Label}}</option>
+						{{range .GroupMemberClasses}}
+							<optgroup label="{{ctx.Locale.Tr (printf "agent.models_class_%s" .Class)}}">
+								{{range .Options}}
+									<option data-class="{{.Class}}" value="{{.Value}}">{{.Label}}</option>
+								{{end}}
+							</optgroup>
 						{{end}}
 					</select>
 				</div>
@@ -95,14 +117,39 @@
 					window.$(select).dropdown({fullTextSearch: true, hideDividers: "empty"});
 				};
 
+				// a group holds what answers the same as it does, so only those members are offered.
+				// A dropdown is built from its select once, so the matching one is a new select in a
+				// fresh holder: the catalogue kept in the row template, minus the other kind.
+				const syncMemberClasses = () => {
+					const chosen = document.querySelector('#group-form input[name=class]:checked')?.value || "model";
+					const catalogue = template.content.querySelector("select");
+					for (const holder of list.querySelectorAll(".tw-flex-1")) {
+						const kept = holder.querySelector("select")?.value;
+						const select = catalogue.cloneNode(true);
+						for (const option of Array.from(select.options)) {
+							if (option.dataset.class !== chosen) option.remove();
+						}
+						if (kept && select.querySelector(`option[value="${CSS.escape(kept)}"]`)) select.value = kept;
+						if (select.selectedIndex < 0) select.selectedIndex = 0;
+						const fresh = holder.cloneNode(false);
+						fresh.append(select);
+						holder.replaceWith(fresh);
+						initMemberSelect(select);
+					}
+				};
+
 				const addRow = () => {
 					const row = template.content.cloneNode(true);
 					list.append(row);
-					initMemberSelect(list.lastElementChild.querySelector("select"));
+					syncMemberClasses();
 				};
 
 				list.querySelectorAll("select").forEach(initMemberSelect);
 				if (!list.children.length) addRow();
+				syncMemberClasses();
+				document.querySelectorAll('#group-form input[name=class]').forEach((input) => {
+					input.addEventListener("change", syncMemberClasses);
+				});
 				document.getElementById("add-member").addEventListener("click", addRow);
 				list.addEventListener("click", (e) => {
 					if (!e.target.closest(".js-remove-member")) return;

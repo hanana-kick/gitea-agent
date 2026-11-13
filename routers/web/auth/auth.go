@@ -77,9 +77,9 @@ func prepareCommonAuthPageData(ctx *context.Context, opt CommonAuthOptions) {
 
 // autoSignIn reads cookie and try to auto-login.
 func autoSignIn(ctx *context.Context) (bool, error) {
-	isSucceed := false
+	keepRememberCookie := false
 	defer func() {
-		if !isSucceed {
+		if !keepRememberCookie {
 			ctx.DeleteSiteCookie(setting.CookieRememberName)
 		}
 	}()
@@ -112,14 +112,20 @@ func autoSignIn(ctx *context.Context) (bool, error) {
 		return false, fmt.Errorf("HasTwoFactorOrWebAuthn: %w", err)
 	}
 
-	isSucceed = true
-
 	nt, token, err := auth_service.RegenerateAuthToken(ctx, t)
+	if errors.Is(err, auth_service.ErrAuthTokenRotationConflict) {
+		keepRememberCookie = true // A late response must not clear the winner's cookie.
+		return false, nil
+	}
+	if errors.Is(err, auth_service.ErrAuthTokenExpired) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
 
 	ctx.SetSiteCookie(setting.CookieRememberName, nt.ID+":"+token, setting.LogInRememberDays*timeutil.Day)
+	keepRememberCookie = true
 
 	if err := regenerateSession(ctx, map[string]any{
 		session.KeyUID:                  u.ID,
@@ -441,6 +447,14 @@ func extractUserNameFromOAuth2(gothUser *goth.User) (string, error) {
 	}
 }
 
+func oauth2IdentityMatchesUser(gothUser *goth.User, u *user_model.User) bool {
+	if gothUser.Email != "" && strings.EqualFold(gothUser.Email, u.Email) {
+		return true
+	}
+	uname, err := extractUserNameFromOAuth2(gothUser)
+	return err == nil && uname != "" && strings.EqualFold(uname, u.Name)
+}
+
 // HandleSignOut resets the session and sets the cookies
 func HandleSignOut(ctx *context.Context) {
 	_ = ctx.Session.Flush()
@@ -639,6 +653,9 @@ func createUserInContext(ctx *context.Context, tpl templates.TplName, form any, 
 						}
 						return false
 					}
+				}
+				if !oauth2IdentityMatchesUser(&possibleLinkAccountData.GothUser, user) {
+					break // name or email came from the sign-up form, report the conflict instead of linking
 				}
 				// TODO: probably we should respect 'remember' user's choice...
 				oauth2LinkAccount(ctx, user, possibleLinkAccountData, true)

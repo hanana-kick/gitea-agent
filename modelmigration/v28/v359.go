@@ -12,41 +12,33 @@ import (
 	"xorm.io/xorm"
 )
 
-// agentConversationV359 is the frozen shape of agent_conversation, one agent chat session.
-type agentConversationV359 struct {
-	ID      int64  `xorm:"pk autoincr"`
-	Kind    string `xorm:"VARCHAR(16) NOT NULL"`
-	OwnerID int64  `xorm:"INDEX NOT NULL DEFAULT 0"`
-	RepoID  int64  `xorm:"INDEX NOT NULL DEFAULT 0"`
-	Title   string `xorm:"VARCHAR(100) NOT NULL"`
+// agentProviderV359 is the frozen shape of agent_provider with the custom request
+// headers column.
+type agentProviderV359 struct {
+	ID         int64  `xorm:"pk autoincr"`
+	UserID     int64  `xorm:"INDEX NOT NULL"`
+	Name       string `xorm:"NOT NULL"`
+	Provider   string `xorm:"NOT NULL"`
+	BaseURL    string
+	Model      string `xorm:"NOT NULL"`
+	ModelsJSON string `xorm:"TEXT"`
 
+	APIKeyID    int64              `xorm:"INDEX NOT NULL DEFAULT 0"`
+	HeadersJSON string             `xorm:"TEXT"`
+	HasKey      bool               `xorm:"-"`
 	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
 	UpdatedUnix timeutil.TimeStamp `xorm:"updated NOT NULL"`
 }
 
-func (agentConversationV359) TableName() string {
-	return "agent_conversation"
+func (agentProviderV359) TableName() string {
+	return "agent_provider"
 }
 
-// agentMessageV359 is the frozen shape of agent_message, one transcript entry.
-type agentMessageV359 struct {
-	ID             int64  `xorm:"pk autoincr"`
-	ConversationID int64  `xorm:"INDEX NOT NULL"`
-	Role           string `xorm:"VARCHAR(16) NOT NULL"`
-	Content        string `xorm:"TEXT NOT NULL"`
-
-	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
-}
-
-func (agentMessageV359) TableName() string {
-	return "agent_message"
-}
-
-// AddAgentConversationTables creates the session and transcript tables of the agent.
-func AddAgentConversationTables(_ context.Context, x base.EngineMigration) error {
+// AddAgentProviderHeadersColumn adds the custom request headers column to agent_provider.
+func AddAgentProviderHeadersColumn(_ context.Context, x base.EngineMigration) error {
 	_, err := x.SyncWithOptions(xorm.SyncOptions{
 		IgnoreConstrains:  true,
 		IgnoreDropIndices: true,
-	}, new(agentConversationV359), new(agentMessageV359))
+	}, new(agentProviderV359))
 	return err
 }

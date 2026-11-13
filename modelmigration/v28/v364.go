@@ -12,26 +12,32 @@ import (
 	"xorm.io/xorm"
 )
 
-// agentAttachmentV364 is the frozen shape of agent_attachment, a file sent with a message.
-type agentAttachmentV364 struct {
-	ID             int64  `xorm:"pk autoincr"`
-	ConversationID int64  `xorm:"INDEX NOT NULL"`
-	MessageID      int64  `xorm:"INDEX NOT NULL"`
-	Name           string `xorm:"VARCHAR(255) NOT NULL"`
-	Size           int64  `xorm:"NOT NULL DEFAULT 0"`
+// agentConversationV364 is the frozen shape of agent_conversation with the naming state
+// and the icon of a session.
+type agentConversationV364 struct {
+	ID      int64  `xorm:"pk autoincr"`
+	Kind    string `xorm:"VARCHAR(16) NOT NULL"`
+	OwnerID int64  `xorm:"INDEX NOT NULL DEFAULT 0"`
+	RepoID  int64  `xorm:"INDEX NOT NULL DEFAULT 0"`
+	Title   string `xorm:"VARCHAR(100) NOT NULL"`
+
+	Summary  string `xorm:"VARCHAR(200) NOT NULL DEFAULT ''"`
+	Icon     string `xorm:"VARCHAR(60) NOT NULL DEFAULT ''"`
+	TitleSet bool   `xorm:"NOT NULL DEFAULT FALSE"`
 
 	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
+	UpdatedUnix timeutil.TimeStamp `xorm:"updated NOT NULL"`
 }
 
-func (agentAttachmentV364) TableName() string {
-	return "agent_attachment"
+func (agentConversationV364) TableName() string {
+	return "agent_conversation"
 }
 
-// AddAgentAttachments creates the table of files sent with a message.
-func AddAgentAttachments(_ context.Context, x base.EngineMigration) error {
+// AddAgentConversationTitleAndIcon adds the naming state and the icon of a session.
+func AddAgentConversationTitleAndIcon(_ context.Context, x base.EngineMigration) error {
 	_, err := x.SyncWithOptions(xorm.SyncOptions{
 		IgnoreConstrains:  true,
 		IgnoreDropIndices: true,
-	}, new(agentAttachmentV364))
+	}, new(agentConversationV364))
 	return err
 }

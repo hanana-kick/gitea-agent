@@ -68,13 +68,20 @@ const (
 	UserTypeRemoteUser // 5
 )
 
+// AdminListedUserTypes HINT: USER-TYPE-GLOSSARY: administrators list every user type except organizations
+var AdminListedUserTypes = []UserType{UserTypeIndividual, UserTypeUserReserved, UserTypeBot, UserTypeRemoteUser}
+
 // DisplayName returns the English name of the user type for logs and the CLI, the UI translates "concept_user_*" instead
 func (t UserType) DisplayName() string {
 	switch t {
 	case UserTypeOrganization, UserTypeOrganizationReserved:
 		return "Organization"
+	case UserTypeUserReserved:
+		return "Reserved"
 	case UserTypeBot:
 		return "Bot"
+	case UserTypeRemoteUser:
+		return "Remote"
 	default:
 		return "User"
 	}
@@ -250,10 +257,10 @@ func (u *User) GetEmail() string {
 	return u.Email
 }
 
-// GetAllUsers returns a slice of all individual users found in DB.
-func GetAllUsers(ctx context.Context) ([]*User, error) {
-	users := make([]*User, 0)
-	return users, db.GetEngine(ctx).OrderBy("id").Where("type = ?", UserTypeIndividual).Find(&users)
+// GetAllUsersForAdminListing returns a slice of all users of AdminListedUserTypes found in DB.
+func GetAllUsersForAdminListing(ctx context.Context) (users []*User, err error) {
+	err = db.GetEngine(ctx).OrderBy("id").In("type", AdminListedUserTypes).Find(&users)
+	return users, err
 }
 
 // IsLocal returns true if user login type is LoginPlain.
@@ -438,6 +445,18 @@ func (u *User) IsOrganization() bool {
 // IsIndividual returns true if user is actually an individual user.
 func (u *User) IsIndividual() bool {
 	return u.ID > 0 && u.Type == UserTypeIndividual
+}
+
+// IsFollowable returns whether other users can follow this user (individuals, bots and organizations)
+func (u *User) IsFollowable() bool {
+	if u.ID <= 0 {
+		return false
+	}
+	switch u.Type {
+	case UserTypeIndividual, UserTypeBot, UserTypeOrganization:
+		return true
+	}
+	return false
 }
 
 // IsTypeBot returns whether the user is of type bot
@@ -1021,7 +1040,8 @@ func GetInactiveUsers(ctx context.Context, olderThan time.Duration) ([]*User, er
 		Find(&users)
 }
 
-// GetUserByID returns the user object by given ID if exists.
+// GetUserByID returns the user object by given ID if exists. TODO: for most cases, this function should be avoided.
+// Use correct GetXxxUser functions instead to handle user types & states correctly.
 func GetUserByID(ctx context.Context, id int64) (*User, error) {
 	u := new(User)
 	has, err := db.GetEngine(ctx).ID(id).Get(u)
@@ -1033,7 +1053,8 @@ func GetUserByID(ctx context.Context, id int64) (*User, error) {
 	return u, nil
 }
 
-// GetUserByIDs returns the user objects by given IDs if exists.
+// GetUserByIDs returns the user objects by given IDs if exists. TODO: for most cases, this function should be avoided.
+// Use correct GetXxxUser functions instead to handle user types & states correctly.
 func GetUserByIDs(ctx context.Context, ids []int64) ([]*User, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -1045,6 +1066,13 @@ func GetUserByIDs(ctx context.Context, ids []int64) ([]*User, error) {
 		Find(&users)
 	return users, err
 }
+
+// HINT: USER-TYPE-GLOSSARY: Glossaries for XxxUser:
+// * Possible: The user may or may not exist in the database, but we can still return a valid user object (e.g. Ghost user) for the given ID.
+// * Individual: The user is a real person, not an organization or a bot.
+// * Doer: The user is the one performing an action
+// * Valid: The user is an active user and not prohibited from signing in
+// * System: Negative ID (e.g. Ghost, Actions, DeployKey, etc.) and not a real person, Ghost is not included if there is no "Possible" keyword
 
 // GetPossibleUserByID returns the possible user and its ID. If the user doesn't exist, it returns Ghost user
 func GetPossibleUserByID(ctx context.Context, id int64) (_ int64, u *User, err error) {
@@ -1080,6 +1108,23 @@ func GetPossibleUserByIDs(ctx context.Context, ids []int64) ([]*User, error) {
 	}
 	users = append(users, res...)
 	return users, nil
+}
+
+func GetValidDoerUserByID(ctx context.Context, id int64) (*User, error) {
+	u, err := GetUserByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !u.IsIndividual() && !u.IsTypeBot() {
+		return nil, util.NewNotExistErrorf("user %d is not a doer", id)
+	}
+	if !u.IsActive {
+		return nil, util.NewPermissionDeniedErrorf("user %d is inactive", id)
+	}
+	if u.ProhibitLogin {
+		return nil, util.NewPermissionDeniedErrorf("user %d is prohibited from login", id)
+	}
+	return u, nil
 }
 
 func getUserByNameWithTypes(ctx context.Context, name string, types ...UserType) (*User, error) {
@@ -1201,6 +1246,9 @@ func GetUsersByEmails(ctx context.Context, emails []string) (*EmailUserMap, erro
 	noReplyAddressSuffix := "@" + strings.ToLower(setting.Service.NoReplyAddress)
 	for _, email := range emails {
 		emailLower := strings.ToLower(email)
+		if emailLower == "" {
+			continue // a commit without an author email names no user
+		}
 		needCheckEmails.Add(emailLower)
 		if localPart, ok := strings.CutSuffix(emailLower, noReplyAddressSuffix); ok {
 			name, id := parseLocalPartToNameID(localPart)

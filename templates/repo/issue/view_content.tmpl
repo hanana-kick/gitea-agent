@@ -72,6 +72,9 @@
 				{{template "repo/issue/view_content/pull_merge_box".}}
 			{{end}}
 
+			{{/* the answer the run of this thread waits on, given where it was asked */}}
+			{{template "repo/issue/view_content/agent_request" .}}
+
 			{{if .IsSigned}}
 				{{if and (or .IsRepoAdmin .HasIssuesOrPullsWritePermission (not .Issue.IsLocked)) (not .Repository.IsArchived)}}
 				<div class="timeline-item comment form">

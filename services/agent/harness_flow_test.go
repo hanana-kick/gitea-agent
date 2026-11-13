@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitrepo"
 	"gitea.dev/modules/setting"
+	llm "gitea.dev/services/agent/llm"
 	agent_tools "gitea.dev/services/agent/tools"
 	notify_service "gitea.dev/services/notify"
 
@@ -84,6 +86,197 @@ func TestHarnessReadsACallTheModelWroteAsText(t *testing.T) {
 		assert.NotContains(t, message.Content, "<tool_call>", "a stored message carries the call format")
 		assert.NotContains(t, message.Content, "gitea_create_branch>")
 	}
+}
+
+// A run that can not go on without an answer asks for one: the question waits in the session, and
+// what the reader writes back is what the call returned.
+func TestHarnessAsksAQuestionAndUsesTheAnswer(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	model := newScriptedModel(t, agent_tools.AskUserToolName, `{"question":"Which branch should this land in?","options":"main|develop"}`, "landing it in develop")
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	_, run, err := SubmitUserMessage(ctx, conversation, user.ID, "land the change somewhere")
+	require.NoError(t, err)
+
+	// the question waits for its reader instead of being answered by nobody
+	var question *agent_model.ToolApproval
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) && question == nil {
+		pending, err := PendingApprovals(ctx, conversation.ID)
+		require.NoError(t, err)
+		if len(pending) > 0 {
+			question = pending[0]
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	require.NotNil(t, question, "the question was never put to its reader")
+	assert.Equal(t, agent_model.ToolApprovalKindQuestion, question.Kind, "a question is asked as one")
+	assert.Contains(t, question.Arguments, "Which branch")
+
+	require.NoError(t, AnswerQuestion(ctx, conversation.ID, question.ID, user, "develop"))
+	finished := waitForRunToEnd(t, conversation.ID, run.ID)
+	assert.Equal(t, agent_model.RunStatusSucceeded, finished.Status, finished.Error)
+
+	// the answer reached the model as what the call returned, and is what it answered from
+	asked := model.requestsMade()
+	require.GreaterOrEqual(t, len(asked), 2)
+	last := asked[len(asked)-1].Messages
+	replayed := last[len(last)-1]
+	assert.Equal(t, "tool", replayed.Role)
+	assert.Contains(t, replayed.Content, "develop")
+	final := messagesOf(t, conversation.ID)
+	assert.Equal(t, "landing it in develop", final[len(final)-1].Content)
+
+	// the session itself reads as a conversation: what was asked, and what was answered
+	askedLine := ""
+	answerLine := ""
+	for _, message := range final {
+		if strings.Contains(message.Content, "Asked the reader") {
+			askedLine = message.Content
+		}
+		if strings.Contains(message.Content, "The reader answered: develop") {
+			answerLine = message.Content
+		}
+	}
+	assert.Contains(t, askedLine, "Which branch should this land in?")
+	assert.Contains(t, askedLine, "main; develop", "the answers offered are part of what was asked")
+	assert.NotEmpty(t, answerLine, "the session does not show what the reader answered")
+}
+
+// With nobody to ask, the decision model answers the question the run would have put to a person:
+// autopilot works on, and the session says what was decided in its place.
+func TestHarnessDecisionModelAnswersForAutopilot(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	model := newScriptedModel(t, agent_tools.AskUserToolName,
+		`{"question":"Which branch should this land in?","options":"main|develop"}`, "landing it in develop")
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	// the decision model, offered only to that role
+	decider := newScriptedModel(t, "", "", "develop, because the change is not ready for main")
+	owner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	key, err := CreateAPIKey(ctx, owner.ID, "decision-key", "sk-decision")
+	require.NoError(t, err)
+	provider := &agent_model.Provider{UserID: owner.ID, Name: "decider", Provider: "openai", BaseURL: decider.url, Model: "decider", APIKeyID: key.ID}
+	require.NoError(t, db.Insert(ctx, provider))
+	require.NoError(t, SetModelRoleRef(ctx, agent_model.ModelRoleDecision, fmt.Sprintf("provider:%d/decider", provider.ID)))
+	require.NoError(t, SetConversationAutopilot(ctx, conversation, true))
+
+	run := runTurn(t, conversation, user, "land the change somewhere")
+	assert.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	assert.NotEmpty(t, decider.requestsMade(), "the decision model was not asked to answer the question")
+
+	// no reader was asked, and the session says what was decided instead
+	pending, err := PendingApprovals(ctx, conversation.ID)
+	require.NoError(t, err)
+	assert.Empty(t, pending, "autopilot left a question for a reader")
+	record := toolRecord(t, conversation.ID, agent_tools.AskUserToolName)
+	assert.Contains(t, record, "Autopilot answered this instead of asking", "the session does not say the run decided")
+	assert.Contains(t, record, "develop, because the change is not ready for main")
+
+	// the answer is what the call returned, so the run goes on from it
+	final := messagesOf(t, conversation.ID)
+	require.NotEmpty(t, final)
+	assert.Contains(t, final[len(final)-1].Content, "landing it in develop")
+}
+
+// The review a call gets before it runs on its own is a decision, so it answers from the
+// decision role when an instance has set one: a decision takes a model worth asking.
+func TestHarnessDecidesWithItsOwnRole(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"review-role-branch","from_branch":"main","repository":"user2/repo1"}`, "the branch is there")
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+
+	// a second model, offered only to the review role
+	review := newScriptedModel(t, "", "", "")
+	review.review = `{"allow": true, "reason": "the request asks for a branch"}`
+	owner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	key, err := CreateAPIKey(ctx, owner.ID, "review-key", "sk-review")
+	require.NoError(t, err)
+	provider := &agent_model.Provider{UserID: owner.ID, Name: "review", Provider: "openai", BaseURL: review.url, Model: "review", APIKeyID: key.ID}
+	require.NoError(t, db.Insert(ctx, provider))
+	require.NoError(t, SetModelRoleRef(ctx, agent_model.ModelRoleDecision, fmt.Sprintf("provider:%d/review", provider.ID)))
+
+	require.NoError(t, SetConversationAutopilot(ctx, conversation, true))
+	require.NoError(t, agent_tools.SetMode(ctx, "gitea_create_branch", agent_tools.PermissionManual, true))
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	require.NoError(t, os.RemoveAll(filepath.Join(gitrepo.RepoLocalPath(repo), "hooks")))
+
+	run := runTurn(t, conversation, user, "put this on a branch of its own")
+	assert.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	assert.NotEmpty(t, review.requestsMade(), "the review role was not asked to review the call")
+	assert.Contains(t, toolRecord(t, conversation.ID, "gitea_create_branch"), "the request asks for a branch")
+}
+
+// Autopilot decides for a run instead of asking a reader: the call is reviewed by the model, it
+// runs when the review says so, and what was decided stays in the transcript.
+func TestHarnessAutopilotAllowsAManualCallWithoutAReader(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"autopilot-branch","from_branch":"main","repository":"user2/repo1"}`, "the branch is there")
+	model.review = `{"allow": true, "reason": "the request asks for a branch of its own"}`
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+	require.NoError(t, SetConversationAutopilot(ctx, conversation, true))
+	require.NoError(t, agent_tools.SetMode(ctx, "gitea_create_branch", agent_tools.PermissionManual, true))
+	// the fixture hooks exec the built binary with a config a unit test never has
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	require.NoError(t, os.RemoveAll(filepath.Join(gitrepo.RepoLocalPath(repo), "hooks")))
+
+	run := runTurn(t, conversation, user, "put this on a branch of its own")
+	assert.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	pending, err := PendingApprovals(ctx, conversation.ID)
+	require.NoError(t, err)
+	assert.Empty(t, pending, "autopilot left a call waiting for a reader")
+
+	record := toolRecord(t, conversation.ID, "gitea_create_branch")
+	require.NotEmpty(t, record, "the call autopilot allowed did not run")
+	assert.Contains(t, record, "autopilot allowed this call", "the transcript does not say who decided")
+	assert.Contains(t, record, "the request asks for a branch of its own")
+}
+
+// A review that does not vouch for the call is a refusal: nothing runs on a decision nobody made.
+func TestHarnessAutopilotRefusesWhatItsReviewRefuses(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"autopilot-branch","from_branch":"main","repository":"user2/repo1"}`, "I did not make the branch")
+	model.review = `{"allow": false, "reason": "the request does not need a branch"}`
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+	require.NoError(t, SetConversationAutopilot(ctx, conversation, true))
+	require.NoError(t, agent_tools.SetMode(ctx, "gitea_create_branch", agent_tools.PermissionManual, true))
+	// the fixture hooks exec the built binary with a config a unit test never has
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	require.NoError(t, os.RemoveAll(filepath.Join(gitrepo.RepoLocalPath(repo), "hooks")))
+
+	run := runTurn(t, conversation, user, "put this on a branch of its own")
+	assert.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	refused := toolRecord(t, conversation.ID, "gitea_create_branch")
+	assert.Contains(t, refused, "Autopilot refused this call", "the refusal is not in the transcript")
+	assert.NotContains(t, refused, "created from", "a call autopilot refused ran anyway")
+	final := messagesOf(t, conversation.ID)
+	require.NotEmpty(t, final)
+	answered := model.requestsMade()
+	last := answered[len(answered)-1].Messages
+	assert.Contains(t, last[len(last)-1].Content, "Autopilot refused this call: the request does not need a branch")
+}
+
+// A member that opens a stream and sends nothing is a member that is not answering: the run has
+// to fail saying so, so the router falls over and the reader is not left with a session that
+// waits. Read as a cancellation, it looked like the reader had stopped it.
+func TestHarnessFailsARunWhoseMemberStaysSilent(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	restore := llm.SetStreamLimitsForTest(200*time.Millisecond, 400*time.Millisecond, 20*time.Millisecond)
+	defer restore()
+
+	model := newScriptedModel(t, "", "", "never reached")
+	model.silent = true
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindServer, 0)
+
+	run := runTurn(t, conversation, user, "hello there")
+	assert.Equal(t, agent_model.RunStatusFailed, run.Status, "a silent member ended the run as %q", run.Status)
+	assert.Contains(t, run.Error, "sent nothing", "the run does not say why it failed")
+	assert.Contains(t, run.Error, "scripted", "the run does not name the member it could not read")
 }
 
 // A comment that names the agent is answered where it was written: the run is told what it was
@@ -192,7 +385,7 @@ func TestHarnessApprovalLetsTheChangeLand(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, agent_model.RunStatusWaiting, latest.Status, "the run was put down, not held")
 
-	require.NoError(t, ResolveApproval(ctx, conversation.ID, approval.ID, user.ID, true))
+	require.NoError(t, ResolveApproval(ctx, conversation.ID, approval.ID, user, true))
 	deadline = time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		latest, err = LatestRun(ctx, conversation.ID)

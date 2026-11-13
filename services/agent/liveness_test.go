@@ -171,7 +171,7 @@ func TestAFinishedRunLeavesNoCallBehind(t *testing.T) {
 	assert.NotZero(t, found.DecidedUnix)
 
 	// the reader can no longer answer it, and nothing runs for it
-	require.ErrorIs(t, ResolveApproval(ctx, run.ConversationID, approval.ID, user.ID, true), ErrApprovalNotPending{})
+	require.ErrorIs(t, ResolveApproval(ctx, run.ConversationID, approval.ID, user, true), ErrApprovalNotPending{})
 	assert.Empty(t, toolRecord(t, run.ConversationID, "gitea_commit_files"))
 	assert.Empty(t, messagesOf(t, run.ConversationID))
 }
