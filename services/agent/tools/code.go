@@ -6,12 +6,18 @@ package tools
 import (
 	"context"
 	"fmt"
+	"html"
+	"html/template"
+	"regexp"
 	"strings"
 
+	"gitea.dev/models/db"
 	unit_model "gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/base"
 	"gitea.dev/modules/git"
+	"gitea.dev/modules/indexer"
+	code_indexer "gitea.dev/modules/indexer/code"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
@@ -231,14 +237,62 @@ func (listBranchesTool) list(ctx context.Context, doer *user_model.User, session
 	return clip(strings.Join(lines, "\n")), nil
 }
 
+// indexedSearch reports whether the instance's own index can answer this search: one is running,
+// and nothing asked for a directory the index does not hold. The index carries the default branch,
+// which is the revision this tool reads, so the two agree.
+func indexedSearch(ctx context.Context, path string) bool {
+	if strings.TrimSpace(path) != "" || !setting.Indexer.RepoIndexerEnabled {
+		return false
+	}
+	return code_indexer.IsAvailable(ctx)
+}
+
+// indexedLinePattern is the markup an index marks what it matched with; the model reads the text.
+var indexedLinePattern = regexp.MustCompile(`<[^>]*>`)
+
+// searchLineText renders one indexed line as the text it is.
+func searchLineText(formatted template.HTML) string {
+	return strings.TrimSpace(html.UnescapeString(indexedLinePattern.ReplaceAllString(string(formatted), "")))
+}
+
+// searchIndexedCode asks the instance's index, which ranks what it finds. It answers "" when the
+// index has nothing to say, so the caller can search what the index does not hold.
+func searchIndexedCode(ctx context.Context, found *sessionRepo, keyword, language string) (string, error) {
+	total, results, _, err := code_indexer.PerformSearch(ctx, &code_indexer.SearchOptions{
+		RepoIDs:    []int64{found.repository.ID},
+		Keyword:    keyword,
+		Language:   language,
+		SearchMode: indexer.SearchModeWords,
+		Paginator:  &db.ListOptions{Page: 1, PageSize: toolResultLimit},
+	})
+	if err != nil {
+		if code_indexer.IsAvailable(ctx) {
+			return "", err
+		}
+		return "", nil // the index went away between the check and the call: the files answer
+	}
+	if total == 0 {
+		return fmt.Sprintf("Nothing in %s at %s contains %s.", found.repository.FullName(), found.ref, keyword), nil
+	}
+	lines := make([]string, 0, total)
+	for _, result := range results {
+		for _, line := range result.Lines {
+			lines = append(lines, fmt.Sprintf("%s:%d: %s", result.Filename, line.Num, searchLineText(line.FormattedContent)))
+		}
+	}
+	log.Trace("Agent tool gitea_search_code answered from the index with %d files of %s", len(results), found.repository.FullName())
+	return clip(strings.Join(lines, "\n")), nil
+}
+
 // searchCodeTool finds where a text appears in a repository's code.
 type searchCodeTool struct{}
 
 func (searchCodeTool) Name() string { return "gitea_search_code" }
 
 func (searchCodeTool) Description() string {
-	return "Search a repository's code for a keyword, returning path, line and text. Use it to find " +
-		"where something is written when you do not know the file."
+	return "Search a repository's code for a word or a phrase, returning path, line and text. What the " +
+		"instance has indexed is searched as words, and the default branch answers. Use it to find where " +
+		"something is written when you do not know the file."
 }
 
 func (searchCodeTool) Scope() Scope { return ScopeRepository }
@@ -246,8 +300,9 @@ func (searchCodeTool) Scope() Scope { return ScopeRepository }
 func (searchCodeTool) Args() []Arg {
 	return []Arg{
 		repositoryArg("the code"),
-		{Name: "keyword", Description: "Text to look for, verbatim"},
-		{Name: "path", Optional: true, Description: "Directory or file to search within, like `services/agent/`"},
+		{Name: "keyword", Description: "Word or phrase to look for"},
+		{Name: "path", Optional: true, Description: "Directory or file to search within, like `services/agent/`; reading the files takes what an index would not find"},
+		{Name: "language", Optional: true, Description: "Only files of this language, like `go` or `ts`"},
 	}
 }
 
@@ -264,6 +319,7 @@ func (searchCodeTool) search(ctx context.Context, doer *user_model.User, session
 		Repository string `json:"repository"`
 		Keyword    string `json:"keyword"`
 		Path       string `json:"path"`
+		Language   string `json:"language"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", err
@@ -277,6 +333,18 @@ func (searchCodeTool) search(ctx context.Context, doer *user_model.User, session
 		return "", err
 	}
 	defer found.gitRepo.Close()
+
+	// what the instance indexed answers first, and reading the files answers when it cannot: a
+	// path or a language narrows a search to something only the files know
+	if indexedSearch(ctx, params.Path) {
+		output, err := searchIndexedCode(ctx, found, params.Keyword, params.Language)
+		if err != nil {
+			return "", err
+		}
+		if output != "" {
+			return output, nil
+		}
+	}
 
 	results, err := git.GrepSearch(ctx, found.gitRepo, params.Keyword, git.GrepOptions{
 		RefName:           found.ref,

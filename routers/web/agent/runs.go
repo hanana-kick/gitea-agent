@@ -117,7 +117,26 @@ func Runs(ctx *context.Context) {
 		rows = append(rows, row)
 	}
 
+	// the window the page is read over: a week by default, and everything when it is asked for
+	days := ctx.FormInt("days")
+	switch days {
+	case 1, 7, 30, 0:
+	default:
+		days = 7
+	}
+	if ctx.FormTrim("days") == "all" {
+		days = 0
+	}
+	stats, err := agent_service.RunStatsSince(ctx, agent_service.RunStatsWindow(days, time.Now()))
+	if err != nil {
+		ctx.ServerError("RunStatsSince", err)
+		return
+	}
+
 	ctx.Data["Runs"] = rows
+	ctx.Data["Stats"] = stats
+	ctx.Data["StatsDays"] = days
+	ctx.Data["StatsWindows"] = []int{1, 7, 30, 0}
 	ctx.Data["Status"] = status
 	ctx.Data["Page"] = page
 	ctx.Data["Total"] = count

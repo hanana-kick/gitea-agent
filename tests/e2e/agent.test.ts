@@ -649,6 +649,12 @@ test.describe.serial('agent surfaces and guards', () => {
       expect(loaded?.status(), path).toBe(200);
     }
 
+    // the runs page says what the runs add up to, and the window it is read over can change
+    await expect(page.locator('.agent-runs-stats')).toBeVisible();
+    await expect(page.locator('.agent-runs-stats')).toContainText('Runs');
+    await page.goto('/-/admin/agent/runs?days=30');
+    await expect(page.locator('.agent-runs-stats')).toBeVisible();
+
     // a group says what it fronts, and its members are of that kind: what answers the other kind
     // is not offered at all
     await page.goto('/-/admin/agent/groups/new');

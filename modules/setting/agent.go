@@ -31,6 +31,10 @@ var Agent struct {
 	// someone is reviewed by the model and goes on, and a question is answered with what the run
 	// already knows. A session can turn it on for itself even where the instance leaves it off.
 	Autopilot bool
+	// Instructions names the files a repository leaves for the agent to read before it works in
+	// it, in the order they are read. AGENTS.md is the name agents agree on; an instance can name
+	// its own instead, and an empty list turns the reading off.
+	Instructions []string
 }
 
 // DefaultMentionsPerMinute is how often a repository may reach the agent when the instance does
@@ -44,6 +48,10 @@ const DefaultMaxConcurrentSessions = 4
 // DefaultPriorityKinds is which session kinds go ahead of the queue when the instance does not
 // say otherwise: the always-on session, which an instance under load must not starve.
 var DefaultPriorityKinds = []string{"resident"}
+
+// DefaultInstructions is the file a repository leaves for the agent when the instance does not
+// name one: the name agents of several kinds have come to agree on.
+var DefaultInstructions = []string{"AGENTS.md"}
 
 func loadAgentFrom(cfg ConfigProvider) {
 	section := cfg.Section("agent")
@@ -63,6 +71,12 @@ func loadAgentFrom(cfg ConfigProvider) {
 	for kind := range strings.SplitSeq(section.Key("PRIORITY_KINDS").MustString(strings.Join(DefaultPriorityKinds, ",")), ",") {
 		if kind = strings.TrimSpace(kind); kind != "" {
 			Agent.PriorityKinds = append(Agent.PriorityKinds, kind)
+		}
+	}
+	Agent.Instructions = make([]string, 0, len(DefaultInstructions))
+	for name := range strings.SplitSeq(section.Key("INSTRUCTIONS").MustString(strings.Join(DefaultInstructions, ",")), ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			Agent.Instructions = append(Agent.Instructions, name)
 		}
 	}
 	Agent.Autopilot = section.Key("AUTOPILOT").MustBool(false)

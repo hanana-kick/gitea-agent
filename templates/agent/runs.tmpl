@@ -12,6 +12,82 @@
 			<span class="tw-ml-auto tw-text-light">{{ctx.Locale.Tr "agent.runs_total" .Total}}</span>
 		</div>
 	</div>
+	<div class="ui attached segment agent-runs-stats">
+		<div class="tw-flex tw-items-center tw-gap-2 tw-flex-wrap tw-mb-2">
+			<strong>{{ctx.Locale.Tr "agent.stats_title"}}</strong>
+			<div class="ui tiny buttons tw-ml-auto">
+				{{range .StatsWindows}}
+					<a class="ui tiny button{{if eq . $.StatsDays}} primary{{end}}" href="{{AppSubUrl}}/-/admin/agent/runs?days={{.}}{{if $.Status}}&amp;status={{$.Status}}{{end}}">
+						{{if eq . 0}}{{ctx.Locale.Tr "agent.stats_window_all"}}{{else}}{{ctx.Locale.Tr "agent.stats_window_days" .}}{{end}}
+					</a>
+				{{end}}
+			</div>
+		</div>
+		<div class="tw-flex tw-gap-4 tw-flex-wrap">
+			<div><span class="tw-text-light">{{ctx.Locale.Tr "agent.stats_runs"}}</span> <strong>{{.Stats.Total}}</strong></div>
+			<div>
+				<span class="tw-text-light">{{ctx.Locale.Tr "agent.stats_answered"}}</span>
+				<strong>{{.Stats.SuccessRate}}%</strong>
+				<span class="tw-text-light">({{.Stats.Succeeded}}/{{.Stats.Finished}})</span>
+			</div>
+			<div><span class="tw-text-light">{{ctx.Locale.Tr "agent.stats_work_average"}}</span> <strong>{{.Stats.AverageTime}}</strong></div>
+			<div><span class="tw-text-light">{{ctx.Locale.Tr "agent.stats_work_longest"}}</span> <strong>{{.Stats.LongestTime}}</strong></div>
+			<div><span class="tw-text-light">{{ctx.Locale.Tr "agent.stats_wait_average"}}</span> <strong>{{.Stats.AverageWait}}</strong></div>
+			<div>
+				<span class="tw-text-light">{{ctx.Locale.Tr "agent.stats_asked"}}</span>
+				<strong>{{.Stats.ApprovalCount "allowed"}}</strong> <span class="tw-text-light">{{ctx.Locale.Tr "agent.stats_asked_allowed"}}</span>
+				<strong>{{.Stats.ApprovalCount "refused"}}</strong> <span class="tw-text-light">{{ctx.Locale.Tr "agent.stats_asked_refused"}}</span>
+				<strong>{{.Stats.ApprovalCount "pending"}}</strong> <span class="tw-text-light">{{ctx.Locale.Tr "agent.stats_asked_pending"}}</span>
+			</div>
+		</div>
+		{{if .Stats.Models}}
+			<table class="ui very basic compact table tw-mt-2">
+				<thead>
+					<tr>
+						<th>{{ctx.Locale.Tr "agent.stats_models"}}</th>
+						<th>{{ctx.Locale.Tr "agent.stats_runs"}}</th>
+						<th>{{ctx.Locale.Tr "agent.stats_answered"}}</th>
+						<th>{{ctx.Locale.Tr "agent.stats_failed"}}</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Stats.Models}}
+						<tr>
+							<td class="gt-ellipsis tw-max-w-96">{{.Model}}</td>
+							<td>{{.Runs}}</td>
+							<td>{{.Succeeded}}</td>
+							<td>{{.Failed}}</td>
+						</tr>
+					{{end}}
+				</tbody>
+			</table>
+		{{end}}
+		{{if .Stats.Tools}}
+			<table class="ui very basic compact table">
+				<thead>
+					<tr>
+						<th>{{ctx.Locale.Tr "agent.stats_tools"}}</th>
+						<th>{{ctx.Locale.Tr "agent.stats_tool_total"}}</th>
+						<th>{{ctx.Locale.Tr "agent.stats_tool_allowed"}}</th>
+						<th>{{ctx.Locale.Tr "agent.stats_tool_refused"}}</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Stats.Tools}}
+						<tr>
+							<td>{{.Tool}}</td>
+							<td>{{.Total}}</td>
+							<td>{{.Allowed}}</td>
+							<td>{{.Refused}}</td>
+						</tr>
+					{{end}}
+				</tbody>
+			</table>
+		{{end}}
+		{{if and (not .Stats.Models) (not .Stats.Tools)}}
+			<div class="tw-text-light">{{ctx.Locale.Tr "agent.stats_none"}}</div>
+		{{end}}
+	</div>
 	<table class="ui attached table segment">
 		<thead>
 			<tr>

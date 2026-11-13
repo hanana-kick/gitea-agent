@@ -5,6 +5,7 @@ package tools
 
 import (
 	"context"
+	"html/template"
 	"testing"
 
 	agent_model "gitea.dev/models/agent"
@@ -65,4 +66,31 @@ func TestCommitIsRefusedWhereItMustNotLand(t *testing.T) {
 	missing, err := commitFilesTool{}.Run(ctx, owner, session, `{"branch":"agent/notes"}`)
 	require.NoError(t, err)
 	assert.Contains(t, missing, "The branch and message arguments are required.")
+}
+
+// The search tool answers from what the instance indexed when it can, and from the files when it
+// cannot: an instance that runs no index, and a search narrowed to a path, read the files.
+func TestSearchCodeReadsTheFilesWhenNoIndexAnswers(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	session := Session{Kind: agent_model.ConversationKindRepository, RepoID: 1}
+	owner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+
+	assert.False(t, indexedSearch(ctx, ""), "an instance without a code index answered from one")
+	assert.False(t, indexedSearch(ctx, "services/"), "a search narrowed to a path was answered from the index")
+
+	found, err := searchCodeTool{}.Run(ctx, owner, session, `{"keyword":"Description"}`)
+	require.NoError(t, err)
+	assert.Contains(t, found, "README.md:3:", "the line the word is on is not named")
+	assert.Contains(t, found, "Description for repo1")
+
+	nothing, err := searchCodeTool{}.Run(ctx, owner, session, `{"keyword":"surely-not-in-this-fixture"}`)
+	require.NoError(t, err)
+	assert.Contains(t, nothing, "Nothing in")
+}
+
+// What an index marks a match with is markup, and the model is handed the line itself.
+func TestSearchLineTextDropsTheIndexMarkup(t *testing.T) {
+	assert.Equal(t, "const drift = 1800", searchLineText(template.HTML(`const <span class="ui label">drift</span> = 1800`)))
+	assert.Equal(t, "a < b > c", searchLineText(template.HTML("a &lt; b &gt; c")))
 }

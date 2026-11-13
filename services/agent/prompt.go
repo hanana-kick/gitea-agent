@@ -248,6 +248,9 @@ func buildPrompt(ctx context.Context, conversation *agent_model.Conversation, hi
 	if skills := skillCatalogPrompt(catalog); skills != "" {
 		system += "\n\n" + skills
 	}
+	if instructions := repositoryInstructions(ctx, conversation); instructions != "" {
+		system += "\n\n" + instructions
+	}
 	messages = append(messages, llm.Message{Role: "system", Content: system})
 
 	// keep the newest history when the transcript is long; the summary stands in for
