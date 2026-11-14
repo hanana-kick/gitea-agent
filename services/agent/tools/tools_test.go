@@ -29,7 +29,8 @@ func TestRegistryIsStableAndComplete(t *testing.T) {
 		"gitea_list_repos", "gitea_merge_pull_request", "gitea_move_file", "gitea_patch_file",
 		"gitea_read_commit", "gitea_read_file",
 		"gitea_read_issue", "gitea_read_pull_request", "gitea_read_pull_request_reviews",
-		"gitea_read_skill", "gitea_review_pull_request", "gitea_search_code", "gitea_search_issues",
+		"gitea_read_skill", "gitea_review_pull_request", "gitea_run_command",
+		"gitea_search_code", "gitea_search_issues",
 	}, names)
 }
 

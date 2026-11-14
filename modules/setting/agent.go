@@ -35,6 +35,25 @@ var Agent struct {
 	// it, in the order they are read. AGENTS.md is the name agents agree on; an instance can name
 	// its own instead, and an empty list turns the reading off.
 	Instructions []string
+
+	// Commands lets the agent run a command of a repository in a container of this instance's
+	// own. It is off, and stays off without an image, because a command is code someone else
+	// wrote, running with whatever the instance can reach.
+	Commands bool
+	// CommandImage is the container a command runs in, e.g. "docker.io/library/golang:1.27".
+	// Nothing is run without one: which toolchain a repository needs is the operator's call.
+	CommandImage string
+	// CommandRuntime is the container runtime to use, docker or podman. Empty looks for one.
+	CommandRuntime string
+	// CommandTimeout is how long one command may take, in seconds.
+	CommandTimeout int
+	// CommandMemoryMB and CommandCPUs bound one command: a repository that compiles, or that
+	// does not stop, must not take the instance's machine with it.
+	CommandMemoryMB int
+	CommandCPUs     string
+	// CommandNetwork lets a command reach the network. Off by default: a command that fetches
+	// what it needs is a command that already had it.
+	CommandNetwork bool
 }
 
 // DefaultMentionsPerMinute is how often a repository may reach the agent when the instance does
@@ -52,6 +71,13 @@ var DefaultPriorityKinds = []string{"resident"}
 // DefaultInstructions is the file a repository leaves for the agent when the instance does not
 // name one: the name agents of several kinds have come to agree on.
 var DefaultInstructions = []string{"AGENTS.md"}
+
+// DefaultCommand* bound one command when the instance does not say otherwise.
+const (
+	DefaultCommandTimeout  = 120
+	DefaultCommandMemoryMB = 2048
+	DefaultCommandCPUs     = "2"
+)
 
 func loadAgentFrom(cfg ConfigProvider) {
 	section := cfg.Section("agent")
@@ -79,6 +105,26 @@ func loadAgentFrom(cfg ConfigProvider) {
 			Agent.Instructions = append(Agent.Instructions, name)
 		}
 	}
+	Agent.Commands = section.Key("COMMANDS").MustBool(false)
+	Agent.CommandImage = strings.TrimSpace(section.Key("COMMAND_IMAGE").String())
+	Agent.CommandRuntime = strings.TrimSpace(section.Key("COMMAND_RUNTIME").String())
+	Agent.CommandTimeout = section.Key("COMMAND_TIMEOUT").MustInt(DefaultCommandTimeout)
+	if Agent.CommandTimeout <= 0 {
+		Agent.CommandTimeout = DefaultCommandTimeout
+	}
+	Agent.CommandMemoryMB = section.Key("COMMAND_MEMORY_MB").MustInt(DefaultCommandMemoryMB)
+	if Agent.CommandMemoryMB <= 0 {
+		Agent.CommandMemoryMB = DefaultCommandMemoryMB
+	}
+	Agent.CommandCPUs = section.Key("COMMAND_CPUS").MustString(DefaultCommandCPUs)
+	Agent.CommandNetwork = section.Key("COMMAND_NETWORK").MustBool(false)
+	if Agent.Commands && Agent.CommandImage == "" {
+		log.Warn("Agent: COMMANDS is on but no COMMAND_IMAGE is set, so no command is run")
+	}
+	if Agent.Commands && Agent.CommandImage != "" {
+		log.Info("Agent: a session may run a command in %s, for at most %ds", Agent.CommandImage, Agent.CommandTimeout)
+	}
+
 	Agent.Autopilot = section.Key("AUTOPILOT").MustBool(false)
 	if Agent.Autopilot {
 		log.Info("Agent: autopilot is on, so runs decide for themselves instead of asking")
