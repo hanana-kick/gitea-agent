@@ -490,6 +490,24 @@ button.agent-chat-card {
   overflow-wrap: anywhere;
 }
 
+/* an answer being written is rendered as markdown, so what is there are blocks: the caret stays at
+   the end of what has arrived */
+.agent-chat-live-text:has(.agent-markdown-block) {
+  white-space: normal;
+}
+
+.agent-chat-live-text .agent-markdown-block + .agent-markdown-block {
+  margin-top: 8px;
+}
+
+.agent-chat-live-text .agent-markdown-block > :first-child {
+  margin-top: 0;
+}
+
+.agent-chat-live-text .agent-markdown-block > :last-child {
+  margin-bottom: 0;
+}
+
 .agent-chat-live-text:not(:empty)::after {
   content: "▌";
   margin-left: 1px;

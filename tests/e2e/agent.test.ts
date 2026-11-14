@@ -102,7 +102,7 @@ async function readPermissions(page: Page) {
 }
 
 type StubReply = {content?: string; reasoning?: string; calls?: Array<{name: string; args: string}>};
-type ModelStub = {url: string; asked: Array<any>; close: () => Promise<void>; thought: () => void; answer: () => void};
+type ModelStub = {url: string; asked: Array<any>; close: () => Promise<void>; thought: () => void; piece: (text: string) => void; answer: () => void};
 
 /** A model gateway this spec scripts. The instance talks to whatever endpoint its provider
  * points at, so a stub is how a run can be made to call a tool or to answer on demand. */
@@ -110,6 +110,7 @@ async function startModelStub(answer: (body: any, index: number) => StubReply, {
   const asked: Array<any> = [];
   // a held stream the test lets out one frame at a time, so it can look at the page between them
   let sayThought: (() => void) | undefined;
+  let sayPiece: ((text: string) => void) | undefined;
   let sayAnswer: (() => void) | undefined;
   const server = createServer((req, res) => {
     const chunks: Array<Buffer> = [];
@@ -130,11 +131,24 @@ async function startModelStub(answer: (body: any, index: number) => StubReply, {
         const thought = calls.length ? {} : {reasoning: reply.reasoning};
         const said = calls.length ? {tool_calls: calls} : {content: message.content};
         res.writeHead(200, {'Content-Type': 'text/event-stream'});
-        if (hold && reply.reasoning) {
-          // the stream is held empty: the test says when the thought goes out and when the
-          // answer follows, so what the page does with each can be told apart
-          sayThought = () => res.write(frame({reasoning: reply.reasoning}));
-          sayAnswer = () => res.end(`${frame(said)}data: [DONE]\n\n`);
+        if (hold) {
+          // the stream is held open: the test says when the thought goes out, when each piece of
+          // the answer does, and when the answer ends, so what the page does with each is seen
+          let sentThought = false;
+          let sentPiece = false;
+          sayThought = () => {
+            sentThought = true;
+            res.write(frame({reasoning: reply.reasoning}));
+          };
+          sayPiece = (text: string) => {
+            sentPiece = true;
+            res.write(frame({content: text}));
+          };
+          sayAnswer = () => {
+            const opening = sentThought ? {} : thought;
+            const closing = sentPiece ? {content: ''} : said;
+            res.end(`${frame({...opening, ...closing})}data: [DONE]\n\n`);
+          };
           return;
         }
         res.end(`${frame({...thought, ...said})}data: [DONE]\n\n`);
@@ -153,7 +167,7 @@ async function startModelStub(answer: (body: any, index: number) => StubReply, {
     return done.promise;
   };
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
-  return {url, asked, close: closed, thought: () => sayThought?.(), answer: () => sayAnswer?.()};
+  return {url, asked, close: closed, thought: () => sayThought?.(), piece: (text) => sayPiece?.(text), answer: () => sayAnswer?.()};
 }
 
 /** The whole permissions form, so one tool can be changed without emptying the others. */
@@ -574,6 +588,54 @@ test.describe.serial('agent surfaces and guards', () => {
         stub.answer();
         await expect(page.locator('.agent-chat-message.assistant').filter({hasText: 'the stub answered'})).toBeVisible();
         expect(errors, errors.join(' | ')).toEqual([]);
+      });
+    } finally {
+      await stub.close();
+    }
+  });
+
+  // An answer is markdown as it is written: the list and the fence of a half-written answer are
+  // already read as one, and the run is still going while they are.
+  test('a streamed answer reads as markdown while it is being written', async ({page, request}) => {
+    await login(page);
+    const name = `e2e-markdown-${randomString(8)}`;
+    await apiCreateRepo(request, {name});
+    await ensureAgent(request, name);
+    const repo = await repoIdOf(request, name);
+
+    const pieces = ['Here is a list:\n\n', '- one\n', '- two\n\n', '```go\n', 'x := 1\n', '```\n'];
+    const stub = await startModelStub(() => ({reasoning: 'thinking it over', content: pieces.join('')}), {hold: true});
+    try {
+      await withInstanceLock(async () => {
+        await setRepositoryModel(page.request, stub.url);
+        const session = await sessionOf(page.request, repo);
+        await page.goto(`/-/agent/${session}`);
+        // the page is open and follows the session; the message goes in the way the composer sends
+        // it, so what this spec is about — the answer being written — is what is looked at
+        const posted = await page.request.post(`/-/agent/${session}/messages`, {form: {content: 'write me a list'}, maxRedirects: 0});
+        expect([200, 204, 303], await posted.text()).toContain(posted.status());
+        await expect.poll(() => stub.asked.length, {message: 'the run never reached the gateway'}).toBeGreaterThan(0);
+
+        const live = page.locator('.agent-chat-pending .agent-chat-live-text');
+        stub.thought();
+        await expect(page.locator('.agent-chat-thought pre')).toContainText('thinking it over');
+
+        for (const piece of pieces.slice(0, 3)) stub.piece(piece);
+        await expect(live, 'the answer is not being written into the page').toContainText('Here is a list:');
+        await expect(live.locator('ul li').first()).toHaveText('one');
+        // the run is still going: the send button offers to stop it, and the list above was drawn
+        // while the answer was still being written
+        await expect(page.locator('.agent-chat-send')).toHaveClass(/\bbusy\b/);
+
+        for (const piece of pieces.slice(3)) stub.piece(piece);
+        await expect(live).toContainText('x := 1');
+        await expect(live.locator('pre').first()).toBeVisible();
+        stub.answer();
+
+        // and what the server renders is what the reader is left with
+        const stored = page.locator('.agent-chat-message.assistant').filter({hasText: 'Here is a list'});
+        await expect(stored).toBeVisible();
+        await expect(stored.locator('ul li')).toHaveCount(2);
       });
     } finally {
       await stub.close();

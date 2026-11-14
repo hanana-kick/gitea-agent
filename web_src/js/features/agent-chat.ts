@@ -5,6 +5,7 @@ import {GET, POST} from '../modules/fetch.ts';
 import {errorMessage} from '../modules/errors.ts';
 import {toggleElem} from '../utils/dom.ts';
 import {followAgentLive, markSessionBusy, queuePlaceText, runIsBusy} from '../modules/agent-live.ts';
+import {StreamedAnswer} from '../modules/agent-markdown.ts';
 import type {AgentApproval, AgentDelta, AgentMessage, AgentRun} from '../modules/agent-live.ts';
 import {initAttachmentList, initComposerKeys, initDraftComposer, fitLayout} from './agent-chat/composer.ts';
 import {initComposerInput} from './agent-chat/input.ts';
@@ -144,11 +145,14 @@ export function initAgentChat() {
 
   let pendingEl = messagesEl.querySelector<HTMLElement>('.agent-chat-pending');
   let pendingRunID = Number(pendingEl?.getAttribute('data-run-id') ?? 0);
+  // the answer being written into the pending block, rendered as it arrives
+  let liveAnswer: StreamedAnswer | undefined;
   // the run the transcript is showing as waiting, and the clock that keeps its wait honest
   let queuedRun: AgentRun | undefined;
   let queuedTicker = 0;
 
   function dropPending() {
+    liveAnswer = undefined;
     pendingEl?.remove();
     pendingEl = null;
   }
@@ -174,11 +178,14 @@ export function initAgentChat() {
     if (!bubbleEl.querySelector('.agent-chat-pending-status')) {
       bubbleEl.prepend(buildStatus());
     }
-    if (!bubbleEl.querySelector('.agent-chat-live-text')) {
-      const liveEl = document.createElement('div');
+    let liveEl = bubbleEl.querySelector<HTMLElement>('.agent-chat-live-text');
+    if (!liveEl) {
+      liveEl = document.createElement('div');
       liveEl.className = 'agent-chat-live-text';
       bubbleEl.append(liveEl);
     }
+    // an answer is markdown as it is written, and it is rendered as it arrives
+    liveAnswer ??= new StreamedAnswer(liveEl);
     return pendingEl;
   }
 
@@ -231,7 +238,8 @@ export function initAgentChat() {
       thoughtEl.querySelector('pre')!.textContent += delta.reasoning;
     }
     if (delta.content) {
-      ensurePending().querySelector<HTMLElement>('.agent-chat-live-text')!.textContent += delta.content;
+      ensurePending();
+      liveAnswer?.append(delta.content);
       setPendingState('streaming', '');
     } else {
       setPendingState('reasoning', labels.reasoning); // the model thinks before it answers
@@ -299,6 +307,8 @@ export function initAgentChat() {
     }
     setBusy(false);
     stopQueuedTicker();
+    // the answer has stopped arriving for now, so what is written is drawn as it stands
+    liveAnswer?.finish();
     if (run.status === 'waiting') {
       // the run is not over: what it waits for is said under the message, beside the card its
       // reader answers, so the wait is never read as an end
