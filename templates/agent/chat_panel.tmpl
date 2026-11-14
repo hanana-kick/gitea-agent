@@ -10,6 +10,15 @@
 			{{if .RoleModelLabel}}<span class="agent-chat-model-label">{{.RoleModelLabel}}</span>{{end}}
 		</div>
 	</div>
+	{{/* who decides what a call may do is a property of the session, so it is set beside its
+		other controls; what was decided stays in the transcript either way */}}
+	<form class="agent-chat-autopilot" method="post" action="{{AppSubUrl}}/-/agent/{{.Session.ID}}/autopilot">
+		<input type="hidden" name="back" value="{{AppSubUrl}}/-/agent/{{.Session.ID}}">
+		<button type="submit" name="autopilot" value="{{if .Session.Autopilot}}off{{else}}on{{end}}"
+			class="ui basic button{{if .Session.Autopilot}} primary{{end}}" data-tooltip-content="{{ctx.Locale.Tr "agent.chat_autopilot_hint"}}">
+			{{svg "octicon-rocket" 14}} {{if .Session.Autopilot}}{{ctx.Locale.Tr "agent.chat_autopilot_on"}}{{else}}{{ctx.Locale.Tr "agent.chat_autopilot_off"}}{{end}}
+		</button>
+	</form>
 	<a class="ui basic icon button" href="{{AppSubUrl}}/-/agent/{{.Session.ID}}/export" download="conversation.md"
 		data-tooltip-content="{{ctx.Locale.Tr "agent.chat_download"}}">{{svg "octicon-download"}}</a>
 	{{if ne .Session.Kind "resident"}}
