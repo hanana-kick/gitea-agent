@@ -19,7 +19,11 @@ export class StreamedAnswer {
   private tail: HTMLElement | undefined;
   private frame = 0;
 
-  constructor(private readonly el: HTMLElement) {}
+  private readonly el: HTMLElement;
+
+  constructor(el: HTMLElement) {
+    this.el = el;
+  }
 
   /** append takes the next piece of the answer, drawn when the browser draws next. */
   append(piece: string): void {

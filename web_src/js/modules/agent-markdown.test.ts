@@ -1,4 +1,3 @@
-import {describe, expect, test} from 'vitest';
 import {StreamedAnswer, renderBlocks} from './agent-markdown.ts';
 
 // A piece of an answer drawn on its own reads as markdown, and an answer that contains markup is
@@ -34,7 +33,7 @@ describe('StreamedAnswer', () => {
     return el;
   };
 
-  test('draws the answer as it arrives, once it is whole', async () => {
+  test('draws the answer as it arrives, once it is whole', () => {
     const el = newEl();
     const answer = new StreamedAnswer(el);
     for (const piece of ['# Title', '\n\n- one', '\n- two', '\n\nDone.']) {
@@ -67,7 +66,7 @@ describe('StreamedAnswer', () => {
   test('draws a piece that answers nothing', () => {
     const el = newEl();
     const answer = new StreamedAnswer(el);
-    answer.append('   ');
+    answer.append(' '.repeat(3));
     answer.finish();
     expect(el.querySelectorAll('.agent-markdown-block')).toHaveLength(0);
   });
