@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	agent_model "gitea.dev/models/agent"
@@ -30,6 +31,18 @@ const (
 // this session.
 func Available(ctx context.Context, session Session) ([]Tool, error) {
 	list := Registry()
+	// a remote tool joins the ones of ours, and is narrowed by the same rules below; one that
+	// takes a name of ours is left out rather than let shadow it
+	ours := make(map[string]bool, len(list))
+	for _, tool := range list {
+		ours[tool.Name()] = true
+	}
+	for _, tool := range remoteToolsFor(ctx, session) {
+		if !ours[tool.Name()] {
+			list = append(list, tool)
+		}
+	}
+	slices.SortFunc(list, func(a, b Tool) int { return strings.Compare(a.Name(), b.Name()) })
 	usable := make([]Tool, 0, len(list))
 	for _, tool := range list {
 		if !tool.Scope().AllowedFor(session.Kind) {
@@ -70,6 +83,10 @@ func Check(ctx context.Context, session Session, name string) (Tool, Decision, e
 	}
 	tool, ok := Find(name)
 	if !ok {
+		// a call to a tool of a server, which our own registry does not hold
+		tool, ok = findRemote(name)
+	}
+	if !ok {
 		return nil, DecisionDenied, fmt.Errorf("unknown tool %q", name)
 	}
 	if !tool.Scope().AllowedFor(session.Kind) {
@@ -104,8 +121,14 @@ func Check(ctx context.Context, session Session, name string) (Tool, Decision, e
 // disabled tool is still reported, so the admin page can show what it will go back to.
 func ModeOf(ctx context.Context, tool string) (string, bool, error) {
 	defaultMode, defaultEnabled := PermissionLLM, true
-	if registered, ok := Find(tool); ok {
-		if setter, ok := registered.(ToolDefaultMode); ok {
+	registered, ok := Find(tool)
+	if !ok {
+		// a remote tool is a tool nobody here wrote: it is offered switched off, and asks its
+		// reader unless an administrator says it only reads
+		registered, ok = findRemote(tool)
+	}
+	if ok {
+		if setter, names := registered.(ToolDefaultMode); names {
 			// a tool that knows how it should be offered says so, whatever it writes
 			defaultMode = setter.DefaultMode()
 		} else if Writes(registered) {

@@ -6,6 +6,7 @@ package agent
 import (
 	"net/http"
 
+	agent_model "gitea.dev/models/agent"
 	"gitea.dev/modules/setting"
 	agent_tools "gitea.dev/services/agent/tools"
 	"gitea.dev/services/context"
@@ -32,7 +33,9 @@ func Tools(ctx *context.Context) {
 	ctx.Data["Title"] = ctx.Tr("agent.tools_title")
 	ctx.Data["PageIsAgentTools"] = true
 
-	list := agent_tools.Registry()
+	// the tools of the servers an administrator added are listed with ours, so they can be
+	// switched on one by one like any other
+	list := toolsOfPage(ctx)
 	rows := make([]ToolRow, 0, len(list))
 	for _, tool := range list {
 		mode, enabled, err := agent_tools.ModeOf(ctx, tool.Name())
@@ -52,10 +55,17 @@ func Tools(ctx *context.Context) {
 	ctx.HTML(http.StatusOK, tplAgentTools)
 }
 
+// toolsOfPage is every tool the page shows: the ones the instance ships with, and the ones the
+// servers it was given offer.
+func toolsOfPage(ctx *context.Context) []agent_tools.Tool {
+	list := agent_tools.Registry()
+	return append(list, agent_tools.RemoteTools(ctx, agent_tools.Session{Kind: agent_model.ConversationKindServer})...)
+}
+
 // ToolsPost stores the permission of every tool, so a tool taken out of the registry
 // since the page was rendered keeps no stale row.
 func ToolsPost(ctx *context.Context) {
-	for _, tool := range agent_tools.Registry() {
+	for _, tool := range toolsOfPage(ctx) {
 		name := tool.Name()
 		mode := ctx.FormTrim("mode_" + name)
 		switch mode {

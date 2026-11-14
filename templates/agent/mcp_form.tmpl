@@ -1,0 +1,66 @@
+{{template "admin/layout_head" (dict "pageClass" "admin agent")}}
+	<div class="admin-setting-content">
+		<h4 class="ui top attached header">
+			{{if .IsEdit}}{{ctx.Locale.Tr "agent.mcp_edit"}}{{else}}{{ctx.Locale.Tr "agent.mcp_new"}}{{end}}
+		</h4>
+		<div class="ui attached segment">
+			{{if .ErrorMsg}}
+				<div class="ui error message">{{.ErrorMsg}}</div>
+			{{end}}
+			<form class="ui form" action="{{.FormAction}}" method="post">
+				<div class="required field">
+					<label for="name">{{ctx.Locale.Tr "agent.name"}}</label>
+					<input id="name" type="text" name="name" value="{{.Form.Name}}" autofocus required maxlength="100">
+					<p class="help">{{ctx.Locale.Tr "agent.mcp_name_help"}}</p>
+				</div>
+				<div class="required field">
+					<label for="url">{{ctx.Locale.Tr "agent.mcp_url"}}</label>
+					<input id="url" type="text" name="url" value="{{.Form.URL}}" required placeholder="https://example.com/mcp">
+					<p class="help">{{ctx.Locale.Tr "agent.mcp_url_help"}}</p>
+				</div>
+				<div class="field">
+					<label for="description">{{ctx.Locale.Tr "agent.description"}}</label>
+					<input id="description" type="text" name="description" value="{{.Form.Description}}" maxlength="255">
+				</div>
+				<div class="field">
+					<label for="token">{{ctx.Locale.Tr "agent.mcp_token"}}</label>
+					<input id="token" type="password" name="token" value="" autocomplete="off" placeholder="{{if .Form.HasToken}}{{ctx.Locale.Tr "agent.mcp_token_kept"}}{{end}}">
+					<p class="help">{{ctx.Locale.Tr "agent.mcp_token_help"}}</p>
+					{{if .Form.HasToken}}
+						<div class="ui checkbox">
+							<input type="checkbox" name="clear_token" value="1" {{if .Form.ClearToken}}checked{{end}}>
+							<label>{{ctx.Locale.Tr "agent.mcp_token_clear"}}</label>
+						</div>
+					{{end}}
+				</div>
+				<div class="field">
+					<div class="ui checkbox">
+						<input type="checkbox" name="read_only" value="1" {{if .Form.ReadOnly}}checked{{end}}>
+						<label>{{ctx.Locale.Tr "agent.mcp_read_only"}}</label>
+					</div>
+					<p class="help">{{ctx.Locale.Tr "agent.mcp_read_only_help"}}</p>
+				</div>
+				<div class="field">
+					<div class="ui checkbox">
+						<input type="checkbox" name="enabled" value="1" {{if .Form.Enabled}}checked{{end}}>
+						<label>{{ctx.Locale.Tr "agent.enabled"}}</label>
+					</div>
+					<p class="help">{{ctx.Locale.Tr "agent.mcp_enabled_help"}}</p>
+				</div>
+				{{if .IsEdit}}
+					<div class="field">
+						<label>{{ctx.Locale.Tr "agent.mcp_tools"}}</label>
+						<code>{{.ToolPrefix}}…</code>
+						<p class="help">{{ctx.Locale.Tr "agent.mcp_tools_help"}}</p>
+					</div>
+				{{end}}
+				<div class="field">
+					<button type="submit" class="ui primary button">
+						{{if .IsEdit}}{{ctx.Locale.Tr "save"}}{{else}}{{ctx.Locale.Tr "agent.mcp_add"}}{{end}}
+					</button>
+					<a class="ui button" href="{{.CancelLink}}">{{ctx.Locale.Tr "cancel"}}</a>
+				</div>
+			</form>
+		</div>
+	</div>
+{{template "admin/layout_footer" .}}

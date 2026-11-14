@@ -954,6 +954,12 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			m.Combo("/roles").Get(agent_web.ModelRoles).Post(agent_web.ModelRolesPost)
 			m.Post("/roles/preset", agent_web.ModelRolesPreset)
 			m.Combo("/tools").Get(agent_web.Tools).Post(agent_web.ToolsPost)
+			m.Get("/mcp", agent_web.MCPServers)
+			m.Combo("/mcp/new").Get(agent_web.MCPServerNew).Post(agent_web.MCPServerNewPost)
+			m.Combo("/mcp/{id}/edit").Get(agent_web.MCPServerEdit).Post(agent_web.MCPServerEditPost)
+			m.Post("/mcp/{id}/delete", agent_web.MCPServerDelete)
+			m.Post("/mcp/{id}/test", agent_web.MCPServerTest)
+
 			m.Get("/runs", agent_web.Runs)
 			m.Get("/runs/events", agent_web.RunsEvents)
 			m.Get("/runs/{id}/trace", agent_web.RunTrace)

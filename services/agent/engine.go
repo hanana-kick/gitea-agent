@@ -22,6 +22,7 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/timeutil"
 	llm "gitea.dev/services/agent/llm"
+	agent_mcp "gitea.dev/services/agent/mcp"
 	agent_skills "gitea.dev/services/agent/skills"
 	agent_tools "gitea.dev/services/agent/tools"
 )
@@ -177,6 +178,8 @@ func InitEngine(ctx context.Context) error {
 	if err := recoverRuns(ctx); err != nil {
 		return err
 	}
+	// the tools a server offers join the ones the instance ships with, where the instance says so
+	agent_tools.SetRemote(agent_mcp.Source{})
 	InitMentions()
 	for range engineWorkerCount() {
 		go engine.work()

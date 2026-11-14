@@ -58,6 +58,8 @@ func MCPServerSlugFromName(name string) string {
 // FindMCPServersOptions describes which servers to read.
 type FindMCPServersOptions struct {
 	db.ListOptions
+	// Keyword matches a server by its name or its address, case-insensitively.
+	Keyword string
 	// EnabledOnly narrows the answer to the servers a run may call.
 	EnabledOnly bool
 }
@@ -66,6 +68,12 @@ func (opts FindMCPServersOptions) ToConds() builder.Cond {
 	cond := builder.NewCond()
 	if opts.EnabledOnly {
 		cond = cond.And(builder.Eq{"enabled": true})
+	}
+	if opts.Keyword != "" {
+		cond = cond.And(builder.Or(
+			db.BuildCaseInsensitiveLike("name", opts.Keyword),
+			db.BuildCaseInsensitiveLike("url", opts.Keyword),
+		))
 	}
 	return cond
 }

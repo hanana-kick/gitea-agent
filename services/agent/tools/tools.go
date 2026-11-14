@@ -146,6 +146,15 @@ func Find(name string) (Tool, bool) {
 func Definitions(list []Tool) []llm.ToolDef {
 	defs := make([]llm.ToolDef, 0, len(list))
 	for _, tool := range list {
+		if described, ok := tool.(Schema); ok {
+			// a tool of a server describes its own arguments, and the model reads what it said
+			defs = append(defs, llm.ToolDef{Type: "function", Function: llm.ToolFunction{
+				Name:        tool.Name(),
+				Description: tool.Description(),
+				Parameters:  described.ToolSchema(),
+			}})
+			continue
+		}
 		args := tool.Args()
 		properties := make(map[string]any, len(args))
 		required := make([]string, 0, len(args))
