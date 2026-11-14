@@ -35,10 +35,17 @@ var Agent struct {
 	// it, in the order they are read. AGENTS.md is the name agents agree on; an instance can name
 	// its own instead, and an empty list turns the reading off.
 	Instructions []string
+	// ReviewCalls puts a call that would wait for a reader to the decision model first, so a run
+	// goes on by itself wherever the model allows it. It is on: a call is decided with a reason
+	// that stays in the transcript, and a review that can not be read still waits for a person.
+	// Turn it off to have every such call put to a reader.
+	ReviewCalls bool
 
 	// Commands lets the agent run a command of a repository in a container of this instance's
-	// own. It is off, and stays off without an image, because a command is code someone else
-	// wrote, running with whatever the instance can reach.
+	// own, which is on: a command is code someone else wrote, so it runs bounded, without a
+	// network, in a copy of the checkout, and every call is reviewed or put to its reader. It
+	// stays off without an image, because which toolchain a repository needs is the operator's
+	// call.
 	Commands bool
 	// CommandImage is the container a command runs in, e.g. "docker.io/library/golang:1.27".
 	// Nothing is run without one: which toolchain a repository needs is the operator's call.
@@ -105,7 +112,7 @@ func loadAgentFrom(cfg ConfigProvider) {
 			Agent.Instructions = append(Agent.Instructions, name)
 		}
 	}
-	Agent.Commands = section.Key("COMMANDS").MustBool(false)
+	Agent.Commands = section.Key("COMMANDS").MustBool(true)
 	Agent.CommandImage = strings.TrimSpace(section.Key("COMMAND_IMAGE").String())
 	Agent.CommandRuntime = strings.TrimSpace(section.Key("COMMAND_RUNTIME").String())
 	Agent.CommandTimeout = section.Key("COMMAND_TIMEOUT").MustInt(DefaultCommandTimeout)
@@ -125,6 +132,7 @@ func loadAgentFrom(cfg ConfigProvider) {
 		log.Info("Agent: a session may run a command in %s, for at most %ds", Agent.CommandImage, Agent.CommandTimeout)
 	}
 
+	Agent.ReviewCalls = section.Key("REVIEW_CALLS").MustBool(true)
 	Agent.Autopilot = section.Key("AUTOPILOT").MustBool(false)
 	if Agent.Autopilot {
 		log.Info("Agent: autopilot is on, so runs decide for themselves instead of asking")

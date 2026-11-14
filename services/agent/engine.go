@@ -23,6 +23,7 @@ import (
 	"gitea.dev/modules/timeutil"
 	llm "gitea.dev/services/agent/llm"
 	agent_mcp "gitea.dev/services/agent/mcp"
+	agent_sandbox "gitea.dev/services/agent/sandbox"
 	agent_skills "gitea.dev/services/agent/skills"
 	agent_tools "gitea.dev/services/agent/tools"
 )
@@ -180,6 +181,8 @@ func InitEngine(ctx context.Context) error {
 	}
 	// the tools a server offers join the ones the instance ships with, where the instance says so
 	agent_tools.SetRemote(agent_mcp.Source{})
+	// a run that is over leaves its working tree behind; the instance is not a place to keep them
+	agent_sandbox.Sweep()
 	InitMentions()
 	for range engineWorkerCount() {
 		go engine.work()
@@ -1018,6 +1021,13 @@ func (e *Engine) callTool(ctx context.Context, conversation *agent_model.Convers
 		if answer, already := e.settledCall(ctx, run, call); already {
 			return answer, nil
 		}
+		// every call that would wait for a reader is reviewed first where the instance says so, so
+		// a run carries on by itself; a question and a review that cannot be read still wait
+		if setting.Agent.ReviewCalls && call.Function.Name != agent_tools.AskUserToolName {
+			if answer, reviewed := e.reviewedCall(ctx, conversation, run, doer, session, call); reviewed {
+				return answer, nil
+			}
+		}
 		if AutopilotOf(ctx, conversation) {
 			// nobody is asked: the run reviews the call itself and goes on
 			return e.autopilotCall(ctx, conversation, run, doer, session, call)
@@ -1053,22 +1063,66 @@ func (e *Engine) autopilotCall(ctx context.Context, conversation *agent_model.Co
 		}
 		return e.recordTool(ctx, conversation, call, "Autopilot is on, so no reader was asked: decide with what you have and say what you assumed."), nil
 	}
-	allow, reason := e.reviewCall(ctx, conversation, run, call)
+	allow, reason, _ := e.reviewCall(ctx, conversation, run, call)
 	if !allow {
 		return e.recordTool(ctx, conversation, call, "Autopilot refused this call: "+reason), nil
 	}
+	return e.runReviewed(ctx, conversation, run, doer, session, call, "(autopilot allowed this call: "+reason+")"), nil
+}
+
+// reviewedCall puts a call that would wait for a reader to the decision model instead. It reports
+// whether that decided the call: a review that could not be read is not a decision, and the call
+// is put to a reader after all.
+func (e *Engine) reviewedCall(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, doer *user_model.User, session agent_tools.Session, call llm.ToolCall) (string, bool) {
+	allow, reason, reviewed := e.reviewCall(ctx, conversation, run, call)
+	if !reviewed {
+		return "", false
+	}
+	// what a run decides for itself is kept where a reader's answer is kept, so the calls of a run
+	// are read back in one place whatever decided them — and with nobody as the decider
+	approval := &agent_model.ToolApproval{
+		ConversationID: conversation.ID,
+		RunID:          run.ID,
+		Tool:           call.Function.Name,
+		Arguments:      call.Function.Arguments,
+		Kind:           agent_model.ToolApprovalKindApproval,
+		Status:         agent_model.ToolApprovalAllowed,
+		DecidedUnix:    timeutil.TimeStampNow(),
+	}
+	if !allow {
+		approval.Status = agent_model.ToolApprovalRefused
+	}
+	if err := db.Insert(ctx, approval); err != nil {
+		log.Error("Agent engine: unable to store a reviewed call: %v", err)
+		return "", false
+	}
+	if !allow {
+		return e.recordTool(ctx, conversation, call, "(the run reviewed this call and refused it: "+reason+")"), true
+	}
+	return e.runReviewed(ctx, conversation, run, doer, session, call,
+		"(the run reviewed this call and allowed it: "+reason+")", approval), true
+}
+
+// runReviewed runs a call the run decided for itself, and keeps the decision with what the call
+// returned, so the transcript says what was decided however it is read later.
+func (e *Engine) runReviewed(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, doer *user_model.User, session agent_tools.Session, call llm.ToolCall, note string, kept ...*agent_model.ToolApproval) string {
 	tool, decision, err := agent_tools.Check(ctx, session, call.Function.Name)
 	if err != nil || decision == agent_tools.DecisionDenied {
-		return e.recordTool(ctx, conversation, call, "That tool is switched off for this session."), nil
+		return e.recordTool(ctx, conversation, call, "That tool is switched off for this session.")
 	}
 	output, err := runToolSafely(ctx, tool, doer, session, call)
 	if err != nil {
-		log.Error("Agent engine: tool %s of run %d failed under autopilot: %v", call.Function.Name, run.ID, err)
-		return e.recordTool(ctx, conversation, call, "The tool could not run: "+err.Error()), nil
+		log.Error("Agent engine: tool %s of run %d failed under a reviewed call: %v", call.Function.Name, run.ID, err)
+		return e.recordTool(ctx, conversation, call, "The tool could not run: "+err.Error())
 	}
-	// the decision is part of what the tool returned, so the transcript keeps it whatever the
-	// call was and whoever reads it later
-	return e.recordTool(ctx, conversation, call, "(autopilot allowed this call: "+reason+")\n"+output), nil
+	answer := note + "\n" + output
+	for _, approval := range kept {
+		if _, err := db.GetEngine(ctx).ID(approval.ID).Cols("result", "decided_unix").
+			Update(&agent_model.ToolApproval{Result: answer, DecidedUnix: timeutil.TimeStampNow()}); err != nil {
+			log.Error("Agent engine: unable to keep what a reviewed call returned: %v", err)
+		}
+	}
+	return e.recordTool(ctx, conversation, call, answer)
 }
 
 // decisionRef is the model a run decides with: the decision role, and failing that the model the
@@ -1121,17 +1175,17 @@ func (e *Engine) decideQuestion(ctx context.Context, conversation *agent_model.C
 
 // reviewCall asks the run's own model whether a call should go ahead, and why. A review that
 // cannot be read is a refusal: a call nothing vouched for does not run.
-func (e *Engine) reviewCall(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, call llm.ToolCall) (bool, string) {
+func (e *Engine) reviewCall(ctx context.Context, conversation *agent_model.Conversation, run *agent_model.Run, call llm.ToolCall) (allow bool, reason string, reviewed bool) {
 	ref, err := decisionRef(ctx, conversation)
 	if err != nil {
-		return false, "the decision role could not be read"
+		return false, "the decision role could not be read", false
 	}
 	if ref == "" {
-		return false, "no model is configured to decide this"
+		return false, "no model is configured to decide this", false
 	}
 	history, err := ListMessages(ctx, conversation.ID, 6)
 	if err != nil {
-		return false, "the session could not be read"
+		return false, "the session could not be read", false
 	}
 	var asked strings.Builder
 	for _, message := range slices.Backward(history) {
@@ -1154,8 +1208,8 @@ func (e *Engine) reviewCall(ctx context.Context, conversation *agent_model.Conve
 		{Role: "user", Content: user},
 	}})
 	if err != nil {
-		log.Warn("Agent engine: autopilot review of run %d failed: %v", run.ID, err)
-		return false, "the review could not be read"
+		log.Warn("Agent engine: the review of run %d could not be read: %v", run.ID, err)
+		return false, "the review could not be read", false
 	}
 	var verdict struct {
 		Allow  bool   `json:"allow"`
@@ -1163,13 +1217,13 @@ func (e *Engine) reviewCall(ctx context.Context, conversation *agent_model.Conve
 	}
 	start := strings.Index(answer, "{")
 	if start < 0 || json.Unmarshal([]byte(answer[start:strings.LastIndex(answer, "}")+1]), &verdict) != nil {
-		return false, "the review did not say whether to go on"
+		return false, "the review did not say whether to go on", false
 	}
-	reason := strings.TrimSpace(verdict.Reason)
+	reason = strings.TrimSpace(verdict.Reason)
 	if reason == "" {
 		reason = "it is what the request needs"
 	}
-	return verdict.Allow, reason
+	return verdict.Allow, reason, true
 }
 
 // resumedCall is the call a paused run continues from, and it is read once: the approval keeps

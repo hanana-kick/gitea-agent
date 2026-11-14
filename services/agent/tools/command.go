@@ -29,9 +29,11 @@ func (runCommandTool) Description() string {
 
 func (runCommandTool) Scope() Scope { return ScopeRepository }
 
-// Writes says this tool changes something, which is how a tool is kept switched off until an
-// administrator turns it on: running code is not something to offer a session by default.
+// Writes says this tool changes something, and DefaultMode that it asks its reader first: a run
+// offers it from the start, and every command is put to the reader it works for.
 func (runCommandTool) Writes() bool { return true }
+
+func (runCommandTool) DefaultMode() string { return PermissionManual }
 
 // Offered keeps the tool out of a session on an instance that cannot run a command at all, so the
 // model is not told about something that would only fail.
@@ -85,11 +87,12 @@ func (runCommandTool) run(ctx context.Context, doer *user_model.User, session Se
 	if err != nil {
 		return "", err
 	}
-	work, err := sandbox.Prepare(ctx, repository, params.Ref)
+	// the checkout of this revision is shared with the other commands of the run, so what one of
+	// them built is there for the next, and a commit the run made is what the next one reads
+	work, err := sandbox.Workspace(ctx, repository, params.Ref)
 	if err != nil {
 		return "", err
 	}
-	defer work.Close()
 
 	output, err := sandbox.Run(ctx, runtime, work.Dir, command)
 	head := "Ran `" + command + "` in " + setting.Agent.CommandImage + " at " + work.Ref +

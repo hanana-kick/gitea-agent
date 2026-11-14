@@ -215,6 +215,11 @@ func TestHarnessDecidesWithItsOwnRole(t *testing.T) {
 func TestHarnessAutopilotAllowsAManualCallWithoutAReader(t *testing.T) {
 	require.NoError(t, unittest.PrepareTestDatabase())
 	ctx := context.Background()
+	// an instance reviews a call before autopilot would, so this spec turns the instance review off
+	// to hold autopilot to the path of its own
+	originalReview := setting.Agent.ReviewCalls
+	setting.Agent.ReviewCalls = false
+	t.Cleanup(func() { setting.Agent.ReviewCalls = originalReview })
 	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"autopilot-branch","from_branch":"main","repository":"user2/repo1"}`, "the branch is there")
 	model.review = `{"allow": true, "reason": "the request asks for a branch of its own"}`
 	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
@@ -240,6 +245,11 @@ func TestHarnessAutopilotAllowsAManualCallWithoutAReader(t *testing.T) {
 func TestHarnessAutopilotRefusesWhatItsReviewRefuses(t *testing.T) {
 	require.NoError(t, unittest.PrepareTestDatabase())
 	ctx := context.Background()
+	// an instance reviews a call before autopilot would, so this spec turns the instance review off
+	// to hold autopilot to the path of its own
+	originalReview := setting.Agent.ReviewCalls
+	setting.Agent.ReviewCalls = false
+	t.Cleanup(func() { setting.Agent.ReviewCalls = originalReview })
 	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"autopilot-branch","from_branch":"main","repository":"user2/repo1"}`, "I did not make the branch")
 	model.review = `{"allow": false, "reason": "the request does not need a branch"}`
 	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
@@ -443,4 +453,99 @@ func TestHarnessPromptCarriesTheLandingRule(t *testing.T) {
 	system = requested[0].Messages[0]
 	require.Equal(t, "system", system.Role)
 	assert.Contains(t, system.Content, "decide what becomes of it")
+}
+
+// A call that would wait for a reader is put to the decision model, and the run goes on by itself:
+// what decided it is kept in the transcript, and where a reader's answer is kept, so the calls of a
+// run are read back in one place whatever decided them.
+func TestHarnessReviewsACallByDefault(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+	assert.True(t, setting.Agent.ReviewCalls, "an instance reviews a call unless it is told not to")
+
+	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"reviewed-branch","from_branch":"main","repository":"user2/repo1"}`, "the branch is there")
+	model.review = `{"allow": true, "reason": "the request asks for a branch of its own"}`
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+	require.NoError(t, agent_tools.SetMode(ctx, "gitea_create_branch", agent_tools.PermissionManual, true))
+	// the fixture hooks exec the built binary with a config a unit test never has
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	require.NoError(t, os.RemoveAll(filepath.Join(gitrepo.RepoLocalPath(repo), "hooks")))
+
+	run := runTurn(t, conversation, user, "put this on a branch of its own")
+	assert.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+	pending, err := PendingApprovals(ctx, conversation.ID)
+	require.NoError(t, err)
+	assert.Empty(t, pending, "a reviewed call was left waiting for a reader")
+
+	record := toolRecord(t, conversation.ID, "gitea_create_branch")
+	require.NotEmpty(t, record, "the call the run reviewed did not run")
+	assert.Contains(t, record, "the run reviewed this call and allowed it", "the transcript does not say who decided")
+	assert.Contains(t, record, "the request asks for a branch of its own")
+
+	decided := make([]*agent_model.ToolApproval, 0, 1)
+	require.NoError(t, db.GetEngine(ctx).Where("conversation_id = ?", conversation.ID).Find(&decided))
+	require.Len(t, decided, 1, "the decision was not kept where a reader's answer is kept")
+	assert.Equal(t, agent_model.ToolApprovalAllowed, decided[0].Status)
+	assert.EqualValues(t, 0, decided[0].DecidedUserID, "a reviewed call was recorded as a reader's decision")
+	assert.Contains(t, decided[0].Result, "created from", "what the call returned was not kept with the decision")
+}
+
+// A review that does not vouch for a call stops it, and a call is kept as refused rather than run
+// on a decision nobody made.
+func TestHarnessRefusesWhatTheReviewRefuses(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+
+	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"reviewed-branch","from_branch":"main","repository":"user2/repo1"}`, "I did not make the branch")
+	model.review = `{"allow": false, "reason": "the request does not need a branch"}`
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+	require.NoError(t, agent_tools.SetMode(ctx, "gitea_create_branch", agent_tools.PermissionManual, true))
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	require.NoError(t, os.RemoveAll(filepath.Join(gitrepo.RepoLocalPath(repo), "hooks")))
+
+	run := runTurn(t, conversation, user, "put this on a branch of its own")
+	assert.Equal(t, agent_model.RunStatusSucceeded, run.Status, run.Error)
+
+	refused := toolRecord(t, conversation.ID, "gitea_create_branch")
+	assert.Contains(t, refused, "the run reviewed this call and refused it")
+	assert.Contains(t, refused, "the request does not need a branch")
+	assert.NotContains(t, refused, "created from", "a call a review refused ran anyway")
+
+	decided := make([]*agent_model.ToolApproval, 0, 1)
+	require.NoError(t, db.GetEngine(ctx).Where("conversation_id = ?", conversation.ID).Find(&decided))
+	require.Len(t, decided, 1)
+	assert.Equal(t, agent_model.ToolApprovalRefused, decided[0].Status)
+}
+
+// A review that cannot be read is not a decision: the call is put to a reader after all, so nothing
+// runs on a review that said nothing.
+func TestHarnessWaitsForAReaderWhenTheReviewSaysNothing(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	ctx := context.Background()
+
+	// the model answers the review as it answers anything else: with a call, which is no decision
+	model := newScriptedModel(t, "gitea_create_branch", `{"branch":"reviewed-branch","from_branch":"main","repository":"user2/repo1"}`, "the branch is there")
+	conversation, user := startScriptedAgent(t, model, agent_model.ConversationKindRepository, 1)
+	require.NoError(t, agent_tools.SetMode(ctx, "gitea_create_branch", agent_tools.PermissionManual, true))
+	repo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
+	require.NoError(t, os.RemoveAll(filepath.Join(gitrepo.RepoLocalPath(repo), "hooks")))
+
+	_, run, err := SubmitUserMessage(ctx, conversation, user.ID, "put this on a branch of its own")
+	require.NoError(t, err)
+	require.NotNil(t, run)
+
+	var approval *agent_model.ToolApproval
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		pending, err := PendingApprovals(ctx, conversation.ID)
+		require.NoError(t, err)
+		if len(pending) > 0 {
+			approval = pending[0]
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	require.NotNil(t, approval, "a review that said nothing did not leave the call to a reader")
+	assert.Equal(t, "gitea_create_branch", approval.Tool)
+	assert.Empty(t, toolRecord(t, conversation.ID, "gitea_create_branch"), "a call ran on a review that said nothing")
 }
